@@ -92,7 +92,7 @@ Configuration lives in `.env`. The server loads it on startup, and environment v
 | --- | --- | --- |
 | `PORT` | `4000` | API/production server port. Falls back to `HTTP_PLATFORM_PORT`, which IIS assigns. |
 | `APP_NAME` | `Donutcash` | Initial platform name seed |
-| `APP_URL` | `http://localhost:5173` | Public client origin. In production this is the only allowed mutation origin and is used in reset links. Set it to the exact external URL. |
+| `APP_URL` | production: `https://donutcash.runasp.net`; development: `http://localhost:5173` | Public client origin used in every email link, reset URL, and session cookie decision. In production it is also the only allowed mutation origin. A missing, invalid, or loopback value falls back to the production default rather than sending localhost links. |
 | `DATABASE_PATH` | `data/aurum.db` | SQLite file. Parent directories are created automatically. |
 | `SESSION_SECRET` | generated | At least 32 characters. If unset in production, a random secret is generated once and persisted to `data/.session-secret`. |
 | `SESSION_DAYS` | `7` | Session lifetime |
@@ -227,12 +227,12 @@ npm start
 
 - Put the app behind a TLS-terminating reverse proxy and forward `/api` and the SPA to the Node process.
 - `APP_URL` must exactly match the browser origin. Production mutation requests with an unexpected `Origin` header are rejected.
-- Session cookies are `httpOnly`, `SameSite=Lax`, and `Secure` whenever `APP_URL` is an `https://` origin (`COOKIE_SECURE` overrides).
+- Session cookies are `httpOnly`, `SameSite=Lax`, and `Secure` whenever the resolved public origin is `https://` (`COOKIE_SECURE` overrides). In production the default origin is `https://donutcash.runasp.net`, so cookies are secure even when `APP_URL` is omitted.
 - Rate-limit windows live in the SQLite database whenever a file database is used, so two Node workers on the same host cannot each allow a full quota. SQLite still prefers a single writer; do not scale to multiple hosts.
 - Keep `data/`, `.env`, and backups out of version control, and never place the database in a folder served by `express.static` (`dist/`).
 - `SESSION_SECRET` is optional at runtime: when it is missing in production the server generates a random secret once and persists it to `data/.session-secret`. Set it explicitly to control rotation. A provided value shorter than 32 characters still fails closed.
 - `PORT` is read first, then `HTTP_PLATFORM_PORT` (the port IIS assigns). The app never hard-codes a listening port.
-- Production mutation requests must be same-origin or match `APP_URL`; a missing `APP_URL` trusts same-origin requests only.
+- Production mutation requests must be same-origin or match the resolved public origin. A missing or loopback `APP_URL` resolves to `https://donutcash.runasp.net`, not localhost.
 
 ### Deploying to MonsterASP (Windows / IIS + HttpPlatformHandler)
 
@@ -241,7 +241,7 @@ This is a **Node** app, not a static site. Publishing only the `dist` folder pro
 1. In **Websites → Git deploy**, pick **Node.js SSR app** (sometimes labelled “Node.js application”). Do **not** pick **Node.js SPA** with a build output folder of `dist`: that type only publishes the frontend build and never starts Node.
 2. Build command: `npm ci && npm run build` — this type-checks, writes the client to `dist/`, and compiles the server to `build/server/index.js`.
 3. Start command: **`server.js`** — the field wants a JavaScript file Node can run, not an npm script, so `npm start` fails with “Start command target not found in the build output”. `server.js` sits at the project root, loads the compiled server from `build/server/index.js`, and pins the working directory to the app root so `dist/`, `data/` and `.env` resolve correctly. `npm start` runs the same file locally.
-4. Set `APP_URL=https://your-site.runasp.net`, a 32+ character `SESSION_SECRET`, and the server-only `TURNSTILE_SECRET_KEY` in the website environment variables. `APP_URL` pins mutation origins to your domain, makes session cookies `Secure`, and keeps email links on the public origin; without it, email links fall back to localhost and cookies are not marked `Secure`. Turnstile stays disabled until the secret is present.
+4. Set `APP_URL=https://donutcash.runasp.net`, a 32+ character `SESSION_SECRET`, and the server-only `TURNSTILE_SECRET_KEY` in the website environment variables. `APP_URL` pins mutation origins to your domain, makes session cookies `Secure`, and keeps every email link on the public origin. If it is missing or set to localhost in production, the server now uses `https://donutcash.runasp.net` instead. Turnstile stays disabled until the secret is present.
 5. This repository ships [`web.config`](web.config) for manual IIS deployments. MonsterASP's Node.js SSR type generates its own `web.config` from the start command, so set `APP_URL`, `SESSION_SECRET`, and `TURNSTILE_SECRET_KEY` in the panel rather than relying on the repository copy. The server also rejects `/data`, `/server`, `/src` and other private prefixes in the SPA fallback.
 6. If the site still fails, enable **Control Panel → Websites → Logs → HttpPlatform** and read the startup output. A crash on boot, a missing dependency, or a native module that cannot load all show up there.
 

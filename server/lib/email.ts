@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import type { DB } from '../db/index.ts';
 import { getSetting, setSetting } from '../db/index.ts';
-import { config } from '../config.ts';
+import { config, isLoopbackHost } from '../config.ts';
 import { decryptSecret } from './crypto.ts';
 import { newId, nowIso, parseJson } from './core.ts';
 import type { EmailJobStatus, EmailJobSummary, EmailSettingsView } from '../../shared/types.ts';
@@ -129,7 +129,18 @@ function textValue(payload: Record<string, unknown>, key: string, fallback = '')
 }
 
 function safeUrl(email: EmailConfig, path: string): string {
-  if (/^https?:\/\//i.test(path)) return path;
+  if (/^https?:\/\//i.test(path)) {
+    try {
+      const url = new URL(path);
+      // Queued jobs can outlive a configuration change. Rewrite loopback links
+      // to the public origin so an old payload can never send users to a
+      // development address.
+      if (isLoopbackHost(url.hostname)) return `${email.appUrl}${url.pathname}${url.search}${url.hash}`;
+      return path;
+    } catch {
+      return `${email.appUrl}/`;
+    }
+  }
   return `${email.appUrl}${path.startsWith('/') ? path : `/${path}`}`;
 }
 

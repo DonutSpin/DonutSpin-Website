@@ -50,7 +50,7 @@ const server = app.listen(config.port, () => {
   console.info(`[donutcash] environment: ${config.isProduction ? 'production' : 'development'}`);
   console.info(`[donutcash] database: ${config.databasePath}`);
   console.info(`[donutcash] client build: ${config.clientDist}`);
-  console.info(`[donutcash] public url: ${config.appUrl}${config.appUrlConfigured ? '' : ' (APP_URL not set; same-origin requests are trusted)'}`);
+  console.info(`[donutcash] public url: ${config.appUrl}${config.appUrlConfigured ? '' : ' (default; set APP_URL to override)'}`);
   console.info(
     `[donutcash] client ip: ${
       config.trustProxyHeaders

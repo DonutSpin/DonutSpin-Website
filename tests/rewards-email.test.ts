@@ -5,7 +5,7 @@ import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/lib/crypto.ts';
 import { createWallet } from '../server/lib/wallet.ts';
 import { recordLegalAcceptance } from '../server/lib/legal.ts';
-import { getEmailConfig, renderEmail } from '../server/lib/email.ts';
+import { getEmailConfig, renderEmail, type EmailTemplate } from '../server/lib/email.ts';
 import { rewardDayKey } from '../server/lib/rewards.ts';
 
 type Agent = ReturnType<typeof request.agent>;
@@ -301,5 +301,47 @@ describe('email settings and queue', () => {
     const reset = renderEmail('password-reset', { username: 'tester', resetUrl: '/reset-password?token=abc' }, email);
     expect(reset.text).toContain('http://localhost:5173/reset-password?token=abc');
     expect(reset.html).toContain('Choose a new password');
+  });
+
+  it('uses the public production origin in every template and rewrites stale loopback links', () => {
+    const productionUrl = 'https://donutcash.runasp.net';
+    const email = { ...getEmailConfig(db), appUrl: productionUrl };
+    const templates: EmailTemplate[] = [
+      'welcome',
+      'verify-email',
+      'password-reset',
+      'password-changed',
+      'new-login',
+      'email-changed',
+      'reward-claimed',
+      'announcement',
+      'cashier-decision',
+      'test',
+    ];
+    const payload = {
+      username: 'tester',
+      amount: 50_000,
+      startingCredits: 5_000_000,
+      streakDay: 3,
+      nextResetAt: new Date().toISOString(),
+      changedAt: new Date().toISOString(),
+      verifyUrl: 'http://localhost:5173/verify-email?token=stale',
+      resetUrl: 'http://127.0.0.1:4000/reset-password?token=stale',
+      reference: 'CASH-123',
+      kind: 'Deposit',
+      status: 'approved',
+      title: 'Update',
+      body: 'Body',
+    };
+
+    for (const template of templates) {
+      const rendered = renderEmail(template, payload, email);
+      expect(rendered.html, template).toContain(productionUrl);
+      expect(rendered.text, template).toContain(productionUrl);
+      expect(rendered.html, template).not.toContain('localhost');
+      expect(rendered.text, template).not.toContain('localhost');
+      expect(rendered.html, template).not.toContain('127.0.0.1');
+      expect(rendered.text, template).not.toContain('127.0.0.1');
+    }
   });
 });

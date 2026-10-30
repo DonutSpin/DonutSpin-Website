@@ -20,6 +20,76 @@ const root = process.cwd();
 const isProduction = process.env.NODE_ENV === 'production';
 
 /**
+ * The production origin is the default so a missing or copied-development
+ * environment cannot put localhost links into real email. Development keeps
+ * the Vite origin; set APP_URL to point at any other host.
+ */
+export const DEFAULT_PRODUCTION_APP_URL = 'https://donutcash.runasp.net';
+export const DEFAULT_DEVELOPMENT_APP_URL = 'http://localhost:5173';
+
+export function isLoopbackHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return (
+    normalized === 'localhost' ||
+    normalized.endsWith('.localhost') ||
+    normalized === '127.0.0.1' ||
+    normalized === '::1' ||
+    normalized === '0.0.0.0'
+  );
+}
+
+/**
+ * Resolve the public origin once at startup. Besides normalising the value,
+ * production refuses loopback origins: a `.env` copied from development must
+ * never put `http://localhost:5173` into verification or reset emails.
+ */
+export function resolveAppUrl(
+  raw: string | undefined,
+  production: boolean,
+): { appUrl: string; configured: boolean; warning?: string } {
+  const fallback = production ? DEFAULT_PRODUCTION_APP_URL : DEFAULT_DEVELOPMENT_APP_URL;
+  const value = (raw ?? '').trim();
+  if (!value) {
+    return {
+      appUrl: fallback,
+      configured: false,
+      ...(production
+        ? { warning: `APP_URL is not set; using ${fallback} for email links and secure session cookies.` }
+        : {}),
+    };
+  }
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return {
+      appUrl: fallback,
+      configured: false,
+      warning: `APP_URL is not a valid http(s) origin; using ${fallback} instead.`,
+    };
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return {
+      appUrl: fallback,
+      configured: false,
+      warning: `APP_URL must use http or https; using ${fallback} instead.`,
+    };
+  }
+
+  if (production && isLoopbackHost(url.hostname)) {
+    return {
+      appUrl: fallback,
+      configured: false,
+      warning: `APP_URL points at loopback (${url.origin}), which cannot be used in production; using ${fallback} instead.`,
+    };
+  }
+
+  return { appUrl: url.origin, configured: true };
+}
+
+/**
  * Hosts that run Node behind IIS hand the port over in HTTP_PLATFORM_PORT and
  * usually map it to PORT. Accept both so a missing mapping cannot leave the
  * process listening on a port nothing forwards to.
@@ -28,12 +98,10 @@ const isProduction = process.env.NODE_ENV === 'production';
 // random port that nothing forwards to, so it is treated as unset.
 const port = intEnv('PORT', intEnv('HTTP_PLATFORM_PORT', 4000, 1), 1);
 
-const appUrl = (process.env.APP_URL || 'http://localhost:5173').replace(/\/+$/, '');
-/**
- * When APP_URL is not configured we cannot know the public origin up front, so
- * same-origin requests are trusted instead of locking the site to localhost.
- */
-const appUrlConfigured = Boolean(process.env.APP_URL);
+const resolvedAppUrl = resolveAppUrl(process.env.APP_URL, isProduction);
+const appUrl = resolvedAppUrl.appUrl;
+const appUrlConfigured = resolvedAppUrl.configured;
+if (resolvedAppUrl.warning) console.warn(`[config] ${resolvedAppUrl.warning}`);
 
 /**
  * Forwarded headers are opt-in, because a proxy that passes `X-Forwarded-For`
@@ -57,13 +125,6 @@ const trustedProxies = (process.env.TRUSTED_PROXY_IPS || '')
 const cookieSecureOverride = process.env.COOKIE_SECURE;
 const cookieSecure =
   cookieSecureOverride === undefined ? isProduction && appUrl.startsWith('https://') : cookieSecureOverride === 'true';
-
-if (isProduction && !appUrlConfigured) {
-  console.warn(
-    `[config] APP_URL is not set, so email links and reset URLs fall back to ${appUrl}. ` +
-      'Set APP_URL to the public origin before sending real email.',
-  );
-}
 
 const databasePath = path.resolve(root, process.env.DATABASE_PATH || path.join('data', 'aurum.db'));
 
