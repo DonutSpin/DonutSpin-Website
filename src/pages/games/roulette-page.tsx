@@ -1,18 +1,17 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CircleDot, RotateCcw, Trash2 } from 'lucide-react';
 import type { RouletteBet, RouletteView } from '../../../shared/types';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { errorMessage, requestId } from '../../lib/api';
+import { api, errorMessage, requestId } from '../../lib/api';
 import { acknowledgeRound, playGame, sleep } from '../../lib/games';
 import { useRestoreActiveRound } from '../../lib/useActiveRound';
 import { money } from '../../lib/format';
-import { compactAmount } from '../../lib/amount';
+import { compactAmount, parseAmount } from '../../lib/amount';
 import {
   BalanceRow,
   BoardCard,
-  ChipButton,
   GameError,
   GameLayout,
   GameSkeleton,
@@ -20,7 +19,7 @@ import {
   SidePanel,
   useGameConfig,
 } from '../../components/game';
-import { Alert, Badge, Button, Card, cn } from '../../components/ui';
+import { Alert, AmountInput, Badge, Button, Card, cn } from '../../components/ui';
 
 type Color = 'red' | 'black' | 'green';
 
@@ -39,7 +38,9 @@ const OUTSIDE_BETS: { type: RouletteBet['type']; label: string }[] = [
   { type: 'column3', label: 'Col 3' },
 ];
 
-const CHIP_VALUES = [10, 25, 100, 500];
+const CHIP_VALUES = [1, 5, 10, 25, 100, 500, 1_000];
+const DEFAULT_CHIP_VALUE = 10;
+const MAX_CHIP_VALUE = 1_000_000_000_000;
 
 /** Real European single-zero wheel order, clockwise from 0 at the top. */
 const WHEEL_ORDER = [
@@ -68,12 +69,31 @@ export function RoulettePage() {
   const { game, loading, error, refetch, maintenance, maxPayout } = useGameConfig('roulette');
   const { user, updateBalance } = useAuth();
   const { error: toastError } = useToast();
-  const [chip, setChip] = useState(10);
+  const [chipValue, setChipValue] = useState(DEFAULT_CHIP_VALUE);
+  const [customChip, setCustomChip] = useState<number | ''>(DEFAULT_CHIP_VALUE);
+  const [chipError, setChipError] = useState<string | null>(null);
   const [bets, setBets] = useState<RouletteBet[]>([]);
   const [view, setView] = useState<RouletteView | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [ballRotation, setBallRotation] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    api
+      .get<{ chipValue: number }>('/games/roulette/preferences')
+      .then((preference) => {
+        if (!live || !Number.isInteger(preference.chipValue) || preference.chipValue < 1) return;
+        setChipValue(preference.chipValue);
+        setCustomChip(preference.chipValue);
+      })
+      .catch(() => {
+        /* The default chip value is usable if preferences cannot be loaded. */
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const redNumbers = useMemo(() => {
     const raw = game?.config.redNumbers;
@@ -82,13 +102,17 @@ export function RoulettePage() {
 
   const maxBets = typeof game?.config.maxBetsPerSpin === 'number' ? (game.config.maxBetsPerSpin as number) : 10;
   const balance = user?.balance ?? 0;
-  const totalStake = bets.reduce((sum, bet) => sum + bet.amount, 0);
+  const totalChips = bets.reduce((sum, bet) => sum + bet.chips, 0);
+  const totalStake = totalChips * chipValue;
 
   // The server settles roulette immediately; restore that spin if the player
   // reloads or navigates back before the animation has finished.
   useRestoreActiveRound(game?.slug, (round) => {
     const restored = round.view as RouletteView;
+    const restoredChipValue = restored.chipValue ?? 1;
     setBets(restored.bets);
+    setChipValue(restoredChipValue);
+    setCustomChip(restoredChipValue);
     setBallRotation((current) => landingRotation(restored.winningNumber, current));
     setView(restored);
     updateBalance(restored.balance);
@@ -99,6 +123,35 @@ export function RoulettePage() {
   if (error || !game) return <GameError message={error ?? 'Game unavailable.'} onRetry={refetch} />;
 
   const colorOf = (n: number): Color => (n === 0 ? 'green' : redNumbers.has(n) ? 'red' : 'black');
+  const maxChipValue = Math.max(1, Math.min(MAX_CHIP_VALUE, game.maxBet));
+
+  const applyChipValue = (value: number) => {
+    if (busy) return;
+    if (!Number.isSafeInteger(value) || value < 1 || value > maxChipValue) {
+      setChipError(`Choose a whole chip value between 1 and ${money(maxChipValue)} money.`);
+      return;
+    }
+    setChipError(null);
+    if (value === chipValue) return;
+    setChipValue(value);
+    setCustomChip(value);
+    // Existing bets were priced at the old chip value, so switching clears the
+    // felt. Every new chip then costs exactly the selected value.
+    setBets([]);
+    setView(null);
+    setActionError(null);
+    void api
+      .put('/games/roulette/preferences', { chipValue: value })
+      .catch((err: unknown) => toastError('Could not save chip value', errorMessage(err)));
+  };
+
+  const commitCustomChip = (value: number | '' = customChip) => {
+    if (value === '') {
+      setChipError('Enter a chip value first.');
+      return;
+    }
+    applyChipValue(value);
+  };
 
   const addBet = (type: RouletteBet['type'], number?: number) => {
     if (busy) return;
@@ -110,10 +163,17 @@ export function RoulettePage() {
     }
     if (existingIndex >= 0) {
       setBets((current) =>
-        current.map((bet, index) => (index === existingIndex ? { ...bet, amount: bet.amount + chip } : bet)),
+        current.map((bet, index) => {
+          if (index !== existingIndex) return bet;
+          const chips = bet.chips + 1;
+          return { ...bet, chips, amount: chips * chipValue };
+        }),
       );
     } else {
-      setBets((current) => [...current, { type, ...(type === 'straight' ? { number } : {}), amount: chip }]);
+      setBets((current) => [
+        ...current,
+        { type, ...(type === 'straight' ? { number } : {}), chips: 1, amount: chipValue },
+      ]);
     }
   };
 
@@ -150,7 +210,12 @@ export function RoulettePage() {
       const response = await playGame<RouletteView>(game.slug, {
         requestId: requestId(),
         bet: totalStake,
-        bets,
+        chipValue,
+        bets: bets.map(({ type, number: betNumber, chips }) => ({
+          type,
+          ...(betNumber === undefined ? {} : { number: betNumber }),
+          chips,
+        })),
       });
       // The server already settled this spin. Derive the landing angle only from
       // that result; the static wheel and the ball can never disagree with it.
@@ -168,10 +233,10 @@ export function RoulettePage() {
   };
 
   const winningNumber = view?.winningNumber;
-  const straightAmount = (n: number) =>
-    bets.filter((bet) => bet.type === 'straight' && bet.number === n).reduce((sum, bet) => sum + bet.amount, 0);
-  const outsideAmount = (type: RouletteBet['type']) =>
-    bets.filter((bet) => bet.type === type).reduce((sum, bet) => sum + bet.amount, 0);
+  const straightChips = (n: number) =>
+    bets.filter((bet) => bet.type === 'straight' && bet.number === n).reduce((sum, bet) => sum + bet.chips, 0);
+  const outsideChips = (type: RouletteBet['type']) =>
+    bets.filter((bet) => bet.type === type).reduce((sum, bet) => sum + bet.chips, 0);
 
   const betLabel = (bet: RouletteBet) => {
     if (bet.type === 'straight') return `Straight ${bet.number}`;
@@ -187,6 +252,8 @@ export function RoulettePage() {
         <>
           <p>European single-zero wheel (0–36). Place one or more bets, then spin.</p>
           <ul className="list-disc space-y-1 pl-5">
+            <li>Every chip you place costs exactly the chip value you selected.</li>
+            <li>Payout multiples apply to the chip value, so the odds never change.</li>
             <li>Straight number pays 35:1 (36× returned).</li>
             <li>Red/black, odd/even, and low/high pay 1:1 (2× returned).</li>
             <li>Dozens and columns pay 2:1 (3× returned).</li>
@@ -279,7 +346,7 @@ export function RoulettePage() {
                       ? `${view.winningNumber} ${view.color} — you won`
                       : `${view.winningNumber} ${view.color} — no winning bets`
                   }
-                  detail={`${money(view.session.bet)} money staked across ${view.bets.length} bet${view.bets.length === 1 ? '' : 's'}`}
+                  detail={`${money(view.session.bet)} money staked across ${view.bets.length} bet${view.bets.length === 1 ? '' : 's'} at ${money(view.chipValue)} per chip`}
                   extra={
                     <span className={cn('font-display text-lg font-semibold tnum', view.totalPayout > 0 ? 'text-success' : 'text-muted')}>
                       {view.totalPayout > 0 ? `+${money(view.totalPayout)}` : '0'} <span className="text-[9px] uppercase">money</span>
@@ -305,7 +372,7 @@ export function RoulettePage() {
                     )}
                   >
                     0
-                    {straightAmount(0) > 0 && <span className="mx-auto mt-1 block h-1.5 w-1.5 rounded-full bg-gold" />}
+                    {straightChips(0) > 0 && <span className="mx-auto mt-1 block h-1.5 w-1.5 rounded-full bg-gold" />}
                   </button>
                   {[3, 2, 1].map((rowOffset) => {
                     const columnBet = rowOffset === 3 ? 'column3' : rowOffset === 2 ? 'column2' : 'column1';
@@ -330,9 +397,9 @@ export function RoulettePage() {
                               )}
                             >
                               {value}
-                              {straightAmount(value) > 0 && (
+                              {straightChips(value) > 0 && (
                                 <span className="absolute -right-1 -top-1 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-gold px-0.5 text-[8px] font-bold text-[#1a1408]">
-                                  {compactAmount(straightAmount(value))}
+                                  ×{straightChips(value)}
                                 </span>
                               )}
                             </button>
@@ -345,13 +412,13 @@ export function RoulettePage() {
                           title={`Bet on column ${columnNumber}`}
                           className={cn(
                             'relative h-9 rounded-md border border-line bg-surface-2 text-[9px] font-medium text-faint transition-colors hover:text-gold sm:h-10',
-                            outsideAmount(columnBet) > 0 && 'border-gold/50 text-gold',
+                            outsideChips(columnBet) > 0 && 'border-gold/50 text-gold',
                           )}
                         >
                           2:1
-                          {outsideAmount(columnBet) > 0 && (
+                          {outsideChips(columnBet) > 0 && (
                             <span className="absolute -right-1 -top-1 rounded-full bg-gold px-1 text-[8px] font-bold text-[#1a1408]">
-                              {compactAmount(outsideAmount(columnBet))}
+                              ×{outsideChips(columnBet)}
                             </span>
                           )}
                         </button>
@@ -372,13 +439,13 @@ export function RoulettePage() {
                         entry.type === 'red' && 'border-[#c9424b]/40 bg-[#a52a33]/35 text-[#ffb3b8]',
                         entry.type === 'black' && 'border-line-strong bg-[#12151b] text-muted',
                         !['red', 'black'].includes(entry.type) && 'border-line bg-surface-2 text-muted',
-                        outsideAmount(entry.type) > 0 && 'border-gold/50 text-gold',
+                        outsideChips(entry.type) > 0 && 'border-gold/50 text-gold',
                       )}
                     >
                       {entry.label}
-                      {outsideAmount(entry.type) > 0 && (
+                      {outsideChips(entry.type) > 0 && (
                         <span className="absolute -right-1 -top-1 rounded-full bg-gold px-1 text-[8px] font-bold text-[#1a1408]">
-                          {compactAmount(outsideAmount(entry.type))}
+                          ×{outsideChips(entry.type)}
                         </span>
                       )}
                     </button>
@@ -393,13 +460,13 @@ export function RoulettePage() {
                       disabled={busy}
                       className={cn(
                         'relative h-9 rounded-lg border border-line bg-surface-2 text-[10.5px] font-medium text-muted transition-all hover:border-gold/35',
-                        outsideAmount(entry.type) > 0 && 'border-gold/50 text-gold',
+                        outsideChips(entry.type) > 0 && 'border-gold/50 text-gold',
                       )}
                     >
                       {entry.label}
-                      {outsideAmount(entry.type) > 0 && (
+                      {outsideChips(entry.type) > 0 && (
                         <span className="absolute -right-1 -top-1 rounded-full bg-gold px-1 text-[8px] font-bold text-[#1a1408]">
-                          {compactAmount(outsideAmount(entry.type))}
+                          ×{outsideChips(entry.type)}
                         </span>
                       )}
                     </button>
@@ -410,7 +477,9 @@ export function RoulettePage() {
 
             <div className="w-full max-w-xl">
               {bets.length === 0 ? (
-                <p className="text-center text-[11px] text-faint">No chips placed. Select a chip and tap a spot on the felt.</p>
+                <p className="text-center text-[11px] text-faint">
+                  No chips placed. Pick a chip value and tap a spot on the felt.
+                </p>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {bets.map((bet, index) => (
@@ -423,7 +492,9 @@ export function RoulettePage() {
                       className="group flex items-center gap-1.5 rounded-full border border-gold/25 bg-gold/8 py-1 pl-2.5 pr-1.5 text-[10.5px] text-gold transition-colors hover:border-danger/40 hover:text-danger"
                     >
                       {betLabel(bet)}
-                      <span className="rounded-full bg-surface-1/60 px-1.5 py-0.5 font-semibold tnum">{money(bet.amount)}</span>
+                      <span className="rounded-full bg-surface-1/60 px-1.5 py-0.5 font-semibold tnum">
+                        {bet.chips} × {money(chipValue)}
+                      </span>
                       <Trash2 className="h-2.5 w-2.5 opacity-50 group-hover:opacity-100" />
                     </button>
                   ))}
@@ -449,10 +520,67 @@ export function RoulettePage() {
                   Clear board
                 </button>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {CHIP_VALUES.map((value) => (
-                  <ChipButton key={value} value={value} active={chip === value} onClick={() => setChip(value)} disabled={busy} />
-                ))}
+              <div className="mt-2 rounded-xl border border-gold/20 bg-gold/5 p-3">
+                <div className="flex items-end justify-between gap-2">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.1em] text-faint">1 chip =</span>
+                  <span className="font-display text-[18px] font-semibold leading-none text-gold-bright tnum">
+                    {money(chipValue)} <span className="text-[9px] uppercase tracking-wider text-gold-dim">money</span>
+                  </span>
+                </div>
+                <div className="mt-2.5 grid grid-cols-4 gap-1.5">
+                  {CHIP_VALUES.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => applyChipValue(value)}
+                      disabled={busy || value > maxChipValue}
+                      aria-pressed={chipValue === value}
+                      className={cn(
+                        'rounded-lg border py-1.5 text-[10.5px] font-semibold tnum transition-colors disabled:opacity-30',
+                        chipValue === value
+                          ? 'border-gold/50 bg-gold/15 text-gold'
+                          : 'border-line bg-surface-2 text-muted hover:border-line-strong hover:text-ink',
+                      )}
+                    >
+                      {compactAmount(value)}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 flex gap-1.5">
+                  <AmountInput
+                    value={customChip}
+                    onChange={setCustomChip}
+                    onInvalid={setChipError}
+                    invalid={Boolean(chipError)}
+                    disabled={busy}
+                    placeholder="Custom value"
+                    aria-label="Custom roulette chip value in money"
+                    className="h-9 text-[12px]"
+                    onBlur={(event) => {
+                      const parsed = parseAmount(event.target.value);
+                      if (parsed !== null) commitCustomChip(parsed);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        commitCustomChip();
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={busy || customChip === ''}
+                    onClick={() => commitCustomChip()}
+                  >
+                    Set
+                  </Button>
+                </div>
+                <p className="mt-1.5 text-[10px] leading-relaxed text-faint">
+                  Whole amounts from 1 to {money(maxChipValue)}. Changing the chip clears the felt.
+                </p>
+                {chipError && <p className="mt-1 text-[10.5px] text-danger">{chipError}</p>}
               </div>
             </div>
             <div className="rounded-xl border border-line bg-surface-2/60 p-3 text-[11.5px]">
@@ -462,7 +590,13 @@ export function RoulettePage() {
               </div>
               <div className="mt-1.5 flex justify-between">
                 <span className="text-muted">Chips on table</span>
-                <span className="text-ink tnum">{bets.length} / {maxBets}</span>
+                <span className="text-ink tnum">
+                  {totalChips} <span className="text-faint">({bets.length}/{maxBets} spots)</span>
+                </span>
+              </div>
+              <div className="mt-1.5 flex justify-between">
+                <span className="text-muted">Spin cost</span>
+                <span className="text-ink tnum">{totalChips} × {money(chipValue)}</span>
               </div>
               <div className="mt-1.5 flex justify-between">
                 <span className="text-muted">Limits</span>

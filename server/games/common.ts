@@ -6,6 +6,7 @@ import { randomInt } from 'node:crypto';
 import { getSetting } from '../db/index.ts';
 import { compactAmount } from '../../shared/amount.ts';
 import { recordBetActivity } from '../lib/rewards.ts';
+import { defaultWinChance } from './config.ts';
 
 export interface GameRow {
   id: string;
@@ -30,6 +31,8 @@ export interface GameSessionRow {
   idempotency_key: string;
   wager_ledger_id: string | null;
   payout_ledger_id: string | null;
+  config_snapshot: string | null;
+  configured_win_chance: number | null;
   created_at: string;
   ended_at: string | null;
 }
@@ -87,6 +90,11 @@ export function numberConfig(config: Record<string, unknown>, key: string, fallb
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+/** Reads the validated win chance, tolerating legacy configs without one. */
+export function configuredWinChance(gameId: string, config: Record<string, unknown>): number {
+  return Math.round(Math.min(99, Math.max(1, numberConfig(config, 'winChance', defaultWinChance(gameId)))) * 100) / 100;
+}
+
 export function findReplay(db: DB, userId: string, requestId: string): GameSessionRow | undefined {
   return db
     .prepare('SELECT * FROM game_sessions WHERE user_id = ? AND idempotency_key = ?')
@@ -128,12 +136,16 @@ export function insertSession(
     outcome?: unknown;
     requestId: string;
     wagerLedgerId: string | null;
+    /** The exact validated game configuration this round started with. */
+    gameConfig: Record<string, unknown>;
     endedAt?: string | null;
   },
 ): void {
   db.prepare(
-    `INSERT INTO game_sessions (id, user_id, game_id, bet, status, payout, state, outcome, idempotency_key, wager_ledger_id, created_at, ended_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO game_sessions
+       (id, user_id, game_id, bet, status, payout, state, outcome, idempotency_key, wager_ledger_id,
+        config_snapshot, configured_win_chance, created_at, ended_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.userId,
@@ -145,6 +157,8 @@ export function insertSession(
     input.outcome === undefined ? null : JSON.stringify(input.outcome),
     input.requestId,
     input.wagerLedgerId,
+    JSON.stringify(input.gameConfig),
+    configuredWinChance(input.gameId, input.gameConfig),
     nowIso(),
     input.endedAt ?? (input.status === 'active' ? null : nowIso()),
   );

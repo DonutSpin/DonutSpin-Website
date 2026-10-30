@@ -242,6 +242,7 @@ export const blackjack: GameModule = {
       state,
       requestId: ctx.requestId,
       wagerLedgerId,
+      gameConfig: ctx.gameConfig,
     });
 
     const playerNatural = isNatural(player);

@@ -8,7 +8,8 @@ Donutcash is a self-hosted **casino for DonutSMP money**, with a player lobby, s
 
 - **Players** — registration with email verification, wallet and ledger history, six games, daily/streak rewards, support tickets, cashier requests, notifications, and profile settings.
 - **Rewards** — a manual daily claim with configurable reset timezone, an increasing streak, milestone bonuses, grace-day handling, claim history, and a countdown to the next reset.
-- **Games** — Coinflip, Mines, Blackjack, Roulette, Towers, and Plinko. Wagers, randomness, outcomes, and payouts are settled by the server; animations only reveal settled results.
+- **Games** — Coinflip, Mines, Blackjack, Roulette, Towers, and Plinko. Wagers, randomness, outcomes, and payouts are settled by the server; animations only reveal settled results. Roulette players choose their own chip value, which scales every wager and payout without changing the table's odds.
+- **Game analytics** — per-game settled-round statistics, date-range filters, win-rate and payout trends, per-round configuration snapshots, sample-aware deviation warnings, and audited win-chance configuration.
 - **Cashier** — the only place for DonutSMP money requests: amount-only deposit and withdrawal requests with a conversation thread and owner/admin decisions.
 - **Support desk** — ticket queue, assignment, internal notes, replies, status and priority workflow, and staff activity views. Money requests are not accepted in tickets.
 - **Administration** — user and role management, wallet adjustments, ticket oversight, game configuration, reward configuration, email settings and delivery log, platform settings, announcements, and an audit log.
@@ -164,6 +165,28 @@ Deposits and withdrawals are settled in DonutSMP money only. Every approval writ
 - Acknowledging an unfinished round is rejected; only a settled result can release the slot early.
 - Unfinished sessions from databases created before the lock existed are adopted on the next active-round load or wager attempt, so legacy rounds cannot be bypassed.
 - Amounts are displayed in K/M/B/T shorthand, and every amount input and server route accepts the same shorthand.
+
+### Roulette chip values
+
+Roulette has a per-player **chip value** setting in the table sidebar. The presets are 1, 5, 10, 25, 100, 500 and 1,000 money, and a custom whole amount can be entered up to the current table maximum. The choice is stored in `game_preferences` and loaded when the page opens.
+
+- Each click places exactly **one chip**; the server multiplies the position's chip count by the round's chip value to get its wager.
+- The request is rejected unless the chips, their money amounts and the declared total wager agree. Invalid values, fractional chip amounts and stacks above the table or platform limits are refused before any ledger entry is written.
+- Payouts are calculated on chips first and then multiplied by the selected chip value, preserving the original 36×, 3× and 2× table and the single-zero house edge at every denomination.
+- The chosen chip value and per-position chip counts are stored on the session, so a restored round settles and displays exactly as it started. Changing the chip value clears any unspun felt; settled results are never repriced.
+
+### Game statistics and win chances
+
+Staff and administrators have two separate surfaces:
+
+- **Staff workspace → Game statistics** (`/staff/games`) shows settled bets, wins/losses/pushes, actual win rate, configured chance, wagers, payouts, house profit/loss, RTP, and open rounds for all six games. Search, sort, and the 24h/7d/30d/90d/all-time filters are server-backed. Opening a game shows its win-rate and house-profit history, recent periods, and configuration history.
+- **Admin panel → Game configuration** (`/admin/games`) edits each game independently. The win chance is validated server-side to 1–99% with at most two decimals. Only `games.manage` (administrator and owner) can change it, and every change writes both `game_config_history` and an audit entry with the administrator, timestamp, and previous/new values.
+
+Every new round stores the exact validated game configuration and configured chance on the session. Existing rounds keep the configuration they started with; the migration deliberately leaves pre-existing sessions without a fabricated snapshot, so they are never judged against newer settings.
+
+**Outcome control** is used only where a single binary result and a fixed payout make the percentage meaningful (Coinflip). The chance is applied once, at round creation. **Monitoring target** is used for Roulette, Plinko, Mines, Towers, and Blackjack: their fixed wheels, tables, cards, mine layouts, and trap rules still decide outcomes, while the configured percentage provides a baseline for drift monitoring. This avoids silently changing a skill/strategy game or breaking its payout mathematics.
+
+Actual and configured percentages are always shown separately. A deviation warning requires at least 50 settled non-push rounds carrying a configuration snapshot, a two-sided 3σ z-score, and a difference of at least 5 percentage points. The UI also shows the Wilson 95% interval and the sample size. Warnings are descriptive only; no code path changes a probability automatically from short-term results.
 
 ## Maintenance mode
 
@@ -398,7 +421,7 @@ The self-exclusion endpoint is `POST /api/me/self-exclusion` with `{ duration: '
 
 ## Tests
 
-The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, archived legacy money-request records, cashier deposits/withdrawals and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, idempotency, admin controls, public configuration, and maintenance blocking.
+The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, archived legacy money-request records, cashier deposits/withdrawals and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, and maintenance blocking.
 
 ```bash
 npm run typecheck
@@ -420,7 +443,7 @@ src/                 React client
 server/              Express API
   db/                SQLite connection, schema migrations, seeds, pre-migration safety
   games/             Server-authoritative game modules and validated game configs
-  lib/               Auth helpers, wallet ledger, tickets, cashier, rewards, email queue/templates, audit, maintenance guard, active-round lock
+  lib/               Auth helpers, wallet ledger, tickets, cashier, rewards, email queue/templates, game statistics, audit, maintenance guard, active-round lock
   routes/            Public, auth, player, game, ticket, cashier, rewards, staff, admin APIs
   scripts/           Owner bootstrap, migration status, backups, deployment verification
 deploy/              Tracked web.config.example for manual IIS (live web.config is generated)

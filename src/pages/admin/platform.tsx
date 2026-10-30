@@ -2,13 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
+  ArrowUpRight,
   CheckCircle2,
   ChevronDown,
   Gamepad2,
   Gift,
+  History,
   Loader2,
   Mail,
   Megaphone,
+  Percent,
   Plus,
   ScrollText,
   Search,
@@ -17,7 +20,12 @@ import {
   Ticket,
   Users,
 } from 'lucide-react';
-import type { GameConfig, SupportCategory } from '../../../shared/types';
+import {
+  GAME_WIN_CHANCE_INFO,
+  type GameConfig,
+  type GameConfigHistoryEntry,
+  type SupportCategory,
+} from '../../../shared/types';
 import { useApiQuery } from '../../lib/useApi';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -40,6 +48,7 @@ import {
   LoadingBlock,
   Modal,
   Pagination,
+  Progress,
   Select,
   Skeleton,
   TableWrap,
@@ -84,22 +93,63 @@ export function AdminGamesPage() {
   const [maxBet, setMaxBet] = useState<number | ''>(10000);
   const [enabled, setEnabled] = useState(true);
   const [config, setConfig] = useState<Record<string, unknown>>({});
+  const [winChance, setWinChance] = useState<number | ''>(50);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [history, setHistory] = useState<GameConfigHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const openEdit = (game: GameConfig) => {
+    const rules = { ...game.config };
+    delete rules.winChance;
+    const chance = game.config.winChance;
     setEditing(game);
     setMinBet(game.minBet);
     setMaxBet(game.maxBet);
     setEnabled(game.enabled);
-    setConfig({ ...game.config });
+    setConfig(rules);
+    setWinChance(
+      typeof chance === 'number' && Number.isFinite(chance)
+        ? chance
+        : (GAME_WIN_CHANCE_INFO[game.slug]?.defaultChance ?? 50),
+    );
     setError(null);
     setFields({});
   };
 
+  useEffect(() => {
+    if (!editing) {
+      setHistory([]);
+      return;
+    }
+    let active = true;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    api
+      .get<{ history: GameConfigHistoryEntry[] }>(`/admin/games/${editing.slug}/history?limit=10`)
+      .then((data) => {
+        if (active) setHistory(data.history);
+      })
+      .catch((err: unknown) => {
+        if (active) setHistoryError(errorMessage(err));
+      })
+      .finally(() => {
+        if (active) setHistoryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [editing?.slug]);
+
   const save = async () => {
     if (!editing) return;
+    const parsedChance = winChance === '' ? Number.NaN : Number(winChance);
+    if (!Number.isFinite(parsedChance) || parsedChance < 1 || parsedChance > 99) {
+      setFields({ 'config.winChance': 'Enter a win chance between 1% and 99%.' });
+      return;
+    }
     setBusy(true);
     setError(null);
     setFields({});
@@ -108,7 +158,7 @@ export function AdminGamesPage() {
         enabled,
         minBet: minBet === '' ? 1 : minBet,
         maxBet: maxBet === '' ? 1 : maxBet,
-        config,
+        config: { ...config, winChance: Math.round(parsedChance * 100) / 100 },
       });
       success('Game configuration saved');
       setEditing(null);
@@ -122,16 +172,29 @@ export function AdminGamesPage() {
   };
 
   const risks = Array.isArray(config.enabledRisks) ? (config.enabledRisks as string[]) : [];
+  const chanceInfo = GAME_WIN_CHANCE_INFO[editing?.slug ?? ''];
+  const multiplier = typeof config.winMultiplier === 'number' ? config.winMultiplier : null;
+  const expectedReturn =
+    editing?.slug === 'coinflip' && multiplier !== null && winChance !== ''
+      ? (Number(winChance) / 100) * multiplier * 100
+      : null;
 
   return (
     <div>
       <PageHeader
-        title="Games & configuration"
-        description="Set availability, wager limits, and validated game rules. Every change is audited."
+        title="Game configuration"
+        description="Set availability, wager limits, game rules and the configured win chance for every game. Every change is audited."
         actions={
-          <Button variant="secondary" onClick={query.refetch} leftIcon={<Loader2 className="h-4 w-4" />}>
-            Refresh
-          </Button>
+          <>
+            <Link to="/admin/game-stats">
+              <Button variant="secondary" leftIcon={<Percent className="h-4 w-4" />}>
+                Game statistics
+              </Button>
+            </Link>
+            <Button variant="secondary" onClick={query.refetch} leftIcon={<Loader2 className="h-4 w-4" />}>
+              Refresh
+            </Button>
+          </>
         }
       />
 
@@ -139,60 +202,84 @@ export function AdminGamesPage() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {query.loading
-          ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-64 rounded-2xl" />)
-          : (query.data?.games ?? []).map((game) => (
-              <Card key={game.slug} className="flex flex-col overflow-hidden">
-                <div className="p-3.5 pb-0">
-                  <GameArtwork slug={game.slug} compact />
-                </div>
-                <div className="flex flex-1 flex-col p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="font-display text-[15px] font-semibold text-ink">{game.name}</h3>
-                    {game.enabled ? <Badge tone="success" dot>Live</Badge> : <Badge tone="warning" dot>Offline</Badge>}
+          ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-80 rounded-2xl" />)
+          : (query.data?.games ?? []).map((game) => {
+              const info = GAME_WIN_CHANCE_INFO[game.slug];
+              const chance = typeof game.config.winChance === 'number' ? game.config.winChance : (info?.defaultChance ?? 50);
+              return (
+                <Card key={game.slug} className="flex flex-col overflow-hidden">
+                  <div className="p-3.5 pb-0">
+                    <GameArtwork slug={game.slug} compact />
                   </div>
-                  <p className="mt-1 line-clamp-2 text-[11.5px] leading-relaxed text-muted">{game.description}</p>
-                  <dl className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-                    <div>
-                      <dt className="text-faint">Min wager</dt>
-                      <dd className="mt-0.5 font-medium text-ink tnum">{money(game.minBet)}</dd>
+                  <div className="flex flex-1 flex-col p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-display text-[15px] font-semibold text-ink">{game.name}</h3>
+                      {game.enabled ? <Badge tone="success" dot>Live</Badge> : <Badge tone="warning" dot>Offline</Badge>}
                     </div>
-                    <div>
-                      <dt className="text-faint">Max wager</dt>
-                      <dd className="mt-0.5 font-medium text-ink tnum">{money(game.maxBet)}</dd>
+                    <p className="mt-1 line-clamp-2 text-[11.5px] leading-relaxed text-muted">{game.description}</p>
+
+                    <div className="mt-3 rounded-xl border border-line/80 bg-surface-2/50 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-faint">Configured win chance</p>
+                          <p className="mt-1 font-display text-[26px] font-semibold leading-none tnum text-ink">
+                            {chance}%
+                          </p>
+                        </div>
+                        <Badge tone={info?.mode === 'outcome' ? 'success' : 'info'}>{info?.label ?? 'Monitoring target'}</Badge>
+                      </div>
+                      <Progress value={chance} max={100} tone={info?.mode === 'outcome' ? 'gold' : 'info'} className="mt-3" />
+                      <p className="mt-2 text-[10px] leading-relaxed text-faint">
+                        {info?.mode === 'outcome'
+                          ? 'Used when a new round starts.'
+                          : 'Monitoring baseline; game rules decide outcomes.'}
+                      </p>
                     </div>
-                  </dl>
-                  <div className="mt-3 flex flex-wrap gap-1">
-                    {Object.entries(game.config)
-                      .filter(([key]) => key !== 'tables' && key !== 'gridSize' && key !== 'tilesPerLevel' && key !== 'rows' && key !== 'redNumbers')
-                      .slice(0, 4)
-                      .map(([key, value]) => (
-                        <span key={key} className="rounded-md border border-line bg-surface-2 px-1.5 py-0.5 text-[9.5px] text-faint">
-                          {key}: {Array.isArray(value) ? value.join('/') : String(value)}
-                        </span>
-                      ))}
+
+                    <dl className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                      <div>
+                        <dt className="text-faint">Min wager</dt>
+                        <dd className="mt-0.5 font-medium text-ink tnum">{money(game.minBet)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-faint">Max wager</dt>
+                        <dd className="mt-0.5 font-medium text-ink tnum">{money(game.maxBet)}</dd>
+                      </div>
+                    </dl>
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {Object.entries(game.config)
+                        .filter(([key]) => key !== 'winChance' && key !== 'tables' && key !== 'gridSize' && key !== 'tilesPerLevel' && key !== 'rows' && key !== 'redNumbers')
+                        .slice(0, 4)
+                        .map(([key, value]) => (
+                          <span key={key} className="rounded-md border border-line bg-surface-2 px-1.5 py-0.5 text-[9.5px] text-faint">
+                            {key}: {Array.isArray(value) ? value.join('/') : String(value)}
+                          </span>
+                        ))}
+                    </div>
+                    <div className="mt-4 flex items-center justify-between border-t border-line pt-3">
+                      <span className="text-[10px] text-faint">Updated {timeAgo(game.updatedAt)}</span>
+                      <Button size="sm" variant="secondary" onClick={() => openEdit(game)}>
+                        Configure
+                      </Button>
+                    </div>
                   </div>
-                  <div className="mt-4 flex items-center justify-between border-t border-line pt-3">
-                    <span className="text-[10px] text-faint">Updated {timeAgo(game.updatedAt)}</span>
-                    <Button size="sm" variant="secondary" onClick={() => openEdit(game)}>
-                      Configure
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
       </div>
 
       <p className="mt-4 flex items-start gap-1.5 text-[10.5px] leading-relaxed text-faint">
         <ShieldCheck className="mt-0.5 h-3 w-3 shrink-0" />
-        Configuration is validated server-side. Invalid payouts, negative limits, malformed rule sets, and disabled risk
-        tables are rejected. The platform-wide payout cap applies on top of per-game limits.
+        Win chances are validated server-side and apply to new rounds only. Existing bets keep the configuration they
+        started with. Games with fixed mechanics use their chance as a monitoring target rather than manipulating
+        outcomes. The platform-wide payout cap applies on top of per-game limits.
       </p>
 
       <Modal
         open={Boolean(editing)}
         onClose={() => setEditing(null)}
         title={`Configure ${editing?.name ?? 'game'}`}
-        description="Changes affect new rounds only; active rounds keep the rules they started with."
+        description="Changes affect new rounds only; active rounds keep the configuration they started with."
         size="lg"
         footer={
           <>
@@ -203,6 +290,62 @@ export function AdminGamesPage() {
       >
         {error && <Alert tone="error" className="mb-4">{error}</Alert>}
         <div className="space-y-5">
+          <div className="rounded-xl border border-gold/20 bg-gold/[0.045] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-gold-dim">
+                  <Percent className="h-3 w-3" /> Configured win chance
+                </p>
+                <p className="mt-1.5 max-w-md text-[11.5px] leading-relaxed text-muted">{chanceInfo?.hint}</p>
+              </div>
+              <Badge tone={chanceInfo?.mode === 'outcome' ? 'success' : 'info'}>{chanceInfo?.label ?? 'Monitoring target'}</Badge>
+            </div>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <Field className="w-36" error={fields['config.winChance']}>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={99}
+                    step="0.1"
+                    value={winChance === '' ? '' : String(winChance)}
+                    onChange={(event) => {
+                      setWinChance(event.target.value === '' ? '' : Number(event.target.value));
+                      setFields((current) => {
+                        const next = { ...current };
+                        delete next['config.winChance'];
+                        return next;
+                      });
+                    }}
+                    className="pr-8 tnum"
+                    invalid={Boolean(fields['config.winChance'])}
+                    aria-label="Configured win chance"
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-semibold text-faint">%</span>
+                </div>
+              </Field>
+              <p className="pb-2 text-[10.5px] text-faint">1–99%, up to two decimal places</p>
+            </div>
+            {expectedReturn !== null && (
+              <div className="mt-3 rounded-lg border border-line/70 bg-surface-1/60 px-3 py-2">
+                <p className="text-[10.5px] leading-relaxed text-muted">
+                  At this chance and a{' '}
+                  <span className="font-semibold text-ink tnum">{multiplier?.toFixed(2)}×</span> payout, the configured
+                  coinflip return to players is{' '}
+                  <span className={cn('font-semibold tnum', expectedReturn > 100 ? 'text-danger' : expectedReturn < 85 ? 'text-warning' : 'text-success')}>
+                    {expectedReturn.toFixed(1)}%
+                  </span>
+                  .
+                </p>
+              </div>
+            )}
+            <Alert tone="info" className="mt-3">
+              {chanceInfo?.mode === 'outcome'
+                ? 'This game applies the configured chance to each new round. Existing rounds retain their original chance.'
+                : 'This game keeps its native rules and payout table. The configured chance is a monitoring target used to detect significant drift.'}
+            </Alert>
+          </div>
+
           <div className="flex items-center justify-between rounded-xl border border-line bg-surface-2/60 p-3.5">
             <div>
               <p className="text-[12.5px] font-medium text-ink">Game available</p>
@@ -271,9 +414,50 @@ export function AdminGamesPage() {
               );
             })}
           </div>
+
+          <div className="space-y-2 border-t border-line/80 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-faint">
+                <History className="h-3 w-3" /> Recent configuration changes
+              </p>
+              <span className="text-[10px] text-faint">Last 10</span>
+            </div>
+            {historyLoading ? (
+              <p className="py-3 text-[11.5px] text-faint">Loading change history…</p>
+            ) : historyError ? (
+              <p className="py-3 text-[11.5px] text-danger">{historyError}</p>
+            ) : history.length === 0 ? (
+              <p className="rounded-lg border border-line/70 bg-surface-2/40 px-3 py-3 text-[11.5px] text-faint">
+                No configuration changes recorded yet. The next save will appear here with the administrator and previous/new values.
+              </p>
+            ) : (
+              <div className="divide-y divide-line/60 rounded-lg border border-line/70 bg-surface-2/30">
+                {history.map((entry) => {
+                  const otherKeys = entry.changedKeys.filter((key) => key !== 'winChance');
+                  return (
+                    <div key={entry.id} className="px-3 py-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[11.5px] font-medium text-ink">{entry.actorName ?? 'Unknown administrator'}</p>
+                        <time className="text-[10px] text-faint">{dateTime(entry.createdAt)}</time>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                        <span className="tnum text-muted">{entry.previousWinChance === null ? '—' : `${entry.previousWinChance}%`}</span>
+                        <ArrowUpRight className="h-3 w-3 text-faint" />
+                        <span className="tnum font-semibold text-gold-bright">{entry.newWinChance === null ? '—' : `${entry.newWinChance}%`}</span>
+                        {otherKeys.length > 0 && (
+                          <span className="text-faint">· also changed {otherKeys.map((key) => titleCase(key)).join(', ')}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <Alert tone="info">
             Payout tables for Plinko are fixed server-side to keep edge values within a safe DonutSMP money range; the
-            risk toggle controls which levels players can choose.
+            risk toggle controls which levels players can choose. Changes never alter an existing bet.
           </Alert>
         </div>
       </Modal>

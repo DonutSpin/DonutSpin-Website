@@ -114,6 +114,7 @@ export const mines: GameModule = {
       state,
       requestId: ctx.requestId,
       wagerLedgerId,
+      gameConfig: ctx.gameConfig,
     });
     const row = getSessionRow(ctx.db, sessionId);
     if (!row) throw new Error('Session missing');
@@ -280,6 +281,7 @@ export const towers: GameModule = {
       state,
       requestId: ctx.requestId,
       wagerLedgerId,
+      gameConfig: ctx.gameConfig,
     });
     const row = getSessionRow(ctx.db, sessionId);
     if (!row) throw new Error('Session missing');

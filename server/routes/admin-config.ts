@@ -9,7 +9,8 @@ import { requirePermission } from '../lib/permissions.ts';
 import { recordAudit, listAuditRows } from '../lib/audit.ts';
 import { notify } from '../lib/notifications.ts';
 import { loadSupportCategories } from '../lib/tickets.ts';
-import { validateGameConfig } from '../games/config.ts';
+import { configuredChanceSchema, validateGameConfig } from '../games/config.ts';
+import { listGameConfigHistory, recordGameConfigChange } from '../lib/game-stats.ts';
 import { publicGameConfig } from '../games/index.ts';
 import { enqueueEmail } from '../lib/email.ts';
 
@@ -47,6 +48,16 @@ const gamePatchSchema = z.object({
   minBet: amountSchema({ max: 1_000_000_000_000, label: 'minimum wager' }),
   maxBet: amountSchema({ max: 1_000_000_000_000, label: 'maximum wager' }),
   config: z.record(z.string(), z.unknown()),
+  reason: z.string().trim().max(300).optional(),
+});
+
+const gameWinChanceSchema = z.object({
+  winChance: configuredChanceSchema,
+  reason: z.string().trim().max(300).optional(),
+});
+
+const gameHistoryQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(25),
 });
 
 const announcementSchema = z.object({
@@ -140,6 +151,57 @@ export function createAdminConfigRouter(db: DB): Router {
     res.json({ games: gameList(db, false) });
   });
 
+  router.get('/games/:slug/history', (req, res) => {
+    requirePermission(req, 'games.manage');
+    const slug = req.params.slug ?? '';
+    const game = db.prepare('SELECT id FROM games WHERE id = ?').get(slug);
+    if (!game) throw notFound('Game not found.');
+    const query = parse(gameHistoryQuerySchema, req.query);
+    res.json({ history: listGameConfigHistory(db, slug, query.limit) });
+  });
+
+  router.patch('/games/:slug/win-chance', (req, res) => {
+    const admin = requirePermission(req, 'games.manage');
+    const slug = req.params.slug ?? '';
+    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(slug) as
+      | { id: string; name: string; config: string }
+      | undefined;
+    if (!game) throw notFound('Game not found.');
+    const body = parse(gameWinChanceSchema, req.body);
+    const previous = parseJson<Record<string, unknown>>(game.config, {});
+    const next = validateGameConfig(slug, { ...previous, winChance: body.winChance });
+
+    inTransaction(db, () => {
+      db.prepare('UPDATE games SET config = ?, updated_at = ?, updated_by = ? WHERE id = ?').run(
+        JSON.stringify(next),
+        nowIso(),
+        admin.id,
+        slug,
+      );
+      recordGameConfigChange(db, { gameId: slug, actorId: admin.id, previous, next });
+      recordAudit(db, {
+        actorId: admin.id,
+        action: 'game.win_chance.update',
+        targetType: 'game',
+        targetId: slug,
+        targetLabel: game.name,
+        reason: body.reason,
+        metadata: {
+          previousWinChance: previous.winChance ?? null,
+          newWinChance: next.winChance ?? null,
+          previousConfig: previous,
+          newConfig: next,
+        },
+        ip: clientIp(req),
+      });
+    });
+
+    res.json({
+      game: gameList(db, false).find((entry) => entry.slug === slug),
+      history: listGameConfigHistory(db, slug, 5),
+    });
+  });
+
   router.patch('/games/:slug', (req, res) => {
     const admin = requirePermission(req, 'games.manage');
     const slug = req.params.slug ?? '';
@@ -153,27 +215,34 @@ export function createAdminConfigRouter(db: DB): Router {
         fields: { maxBet: 'Must be at least the minimum wager.' },
       });
     }
-    const config = validateGameConfig(slug, body.config);
-    db.prepare('UPDATE games SET enabled = ?, min_bet = ?, max_bet = ?, config = ?, updated_at = ?, updated_by = ? WHERE id = ?').run(
-      body.enabled ? 1 : 0,
-      body.minBet,
-      body.maxBet,
-      JSON.stringify(config),
-      nowIso(),
-      admin.id,
-      slug,
-    );
-    recordAudit(db, {
-      actorId: admin.id,
-      action: 'game.update',
-      targetType: 'game',
-      targetId: slug,
-      targetLabel: game.name,
-      metadata: {
-        before: { enabled: Boolean(game.enabled), minBet: game.min_bet, maxBet: game.max_bet, config: parseJson(game.config, {}) },
-        after: { enabled: body.enabled, minBet: body.minBet, maxBet: body.maxBet, config },
-      },
-      ip: clientIp(req),
+    const previous = parseJson<Record<string, unknown>>(game.config, {});
+    // Merge so an older client that does not yet send winChance cannot reset it
+    // to the default while editing limits or other rules.
+    const config = validateGameConfig(slug, { ...previous, ...body.config });
+    inTransaction(db, () => {
+      db.prepare('UPDATE games SET enabled = ?, min_bet = ?, max_bet = ?, config = ?, updated_at = ?, updated_by = ? WHERE id = ?').run(
+        body.enabled ? 1 : 0,
+        body.minBet,
+        body.maxBet,
+        JSON.stringify(config),
+        nowIso(),
+        admin.id,
+        slug,
+      );
+      recordGameConfigChange(db, { gameId: slug, actorId: admin.id, previous, next: config });
+      recordAudit(db, {
+        actorId: admin.id,
+        action: 'game.update',
+        targetType: 'game',
+        targetId: slug,
+        targetLabel: game.name,
+        reason: body.reason,
+        metadata: {
+          before: { enabled: Boolean(game.enabled), minBet: game.min_bet, maxBet: game.max_bet, config: previous },
+          after: { enabled: body.enabled, minBet: body.minBet, maxBet: body.maxBet, config },
+        },
+        ip: clientIp(req),
+      });
     });
     res.json({ game: gameList(db, false).find((entry) => entry.slug === slug) });
   });

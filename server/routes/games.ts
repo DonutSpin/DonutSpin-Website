@@ -4,8 +4,9 @@ import type { DB } from '../db/index.ts';
 import type { GameConfig, GameSessionSummary } from '../../shared/types.ts';
 import { getSetting } from '../db/index.ts';
 import { config as appConfig } from '../config.ts';
-import { ApiError, badRequest, inTransaction, notFound, pagination } from '../lib/core.ts';
+import { ApiError, badRequest, inTransaction, notFound, nowIso, pagination } from '../lib/core.ts';
 import { amountSchema } from '../lib/amount.ts';
+import { compactAmount } from '../../shared/amount.ts';
 import {
   adoptLegacyActiveRound,
   assertNoActiveRound,
@@ -45,6 +46,19 @@ const actionSchema = z.object({
   requestId: requestIdSchema,
 });
 
+const rouletteChipValueSchema = z.object({
+  chipValue: z.number().int().min(1).max(1_000_000_000_000),
+});
+
+const DEFAULT_ROULETTE_CHIP_VALUE = 10;
+
+function loadRouletteChipValue(db: DB, userId: string): number {
+  const row = db
+    .prepare('SELECT roulette_chip_value FROM game_preferences WHERE user_id = ?')
+    .get(userId) as { roulette_chip_value: number } | undefined;
+  return row?.roulette_chip_value ?? DEFAULT_ROULETTE_CHIP_VALUE;
+}
+
 function sessionSummary(row: GameSessionRow): GameSessionSummary {
   return {
     id: row.id,
@@ -82,6 +96,33 @@ export function createGamesRouter(db: DB): Router {
       maintenance: isMaintenanceMode(db),
       startingCredits: getSetting(db, 'economy.starting_credits', appConfig.startingCredits),
     });
+  });
+
+  router.get('/roulette/preferences', (req, res) => {
+    const user = requireAuth(req);
+    res.set('Cache-Control', 'no-store');
+    res.json({ chipValue: loadRouletteChipValue(db, user.id) });
+  });
+
+  router.put('/roulette/preferences', (req, res) => {
+    const user = requireAuth(req);
+    const body = parse(rouletteChipValueSchema, req.body);
+    const game = loadGame(db, 'roulette');
+    if (body.chipValue > game.max_bet) {
+      throw badRequest(
+        `A roulette chip cannot be worth more than the table maximum of ${compactAmount(game.max_bet)} money.`,
+        'CHIP_VALUE_TOO_HIGH',
+        { fields: { chipValue: `Use ${compactAmount(game.max_bet)} or less.` } },
+      );
+    }
+    db.prepare(
+      `INSERT INTO game_preferences (user_id, roulette_chip_value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         roulette_chip_value = excluded.roulette_chip_value,
+         updated_at = excluded.updated_at`,
+    ).run(user.id, body.chipValue, nowIso());
+    res.json({ chipValue: body.chipValue });
   });
 
   router.get('/active', (req, res) => {

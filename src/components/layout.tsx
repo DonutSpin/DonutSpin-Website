@@ -5,6 +5,7 @@ import {
   Archive,
   ArrowLeftRight,
   Bell,
+  ChartNoAxesCombined,
   ChevronDown,
   ChevronRight,
   ClipboardList,
@@ -187,7 +188,10 @@ function staffNav(role: Role): NavGroup[] {
     },
     {
       title: 'Insights',
-      items: [{ label: 'My activity', to: '/staff/activity', icon: Activity }],
+      items: [
+        { label: 'Game statistics', to: '/staff/games', icon: ChartNoAxesCombined },
+        { label: 'My activity', to: '/staff/activity', icon: Activity },
+      ],
     },
     {
       title: 'Switch workspace',
@@ -224,7 +228,8 @@ function adminNav(role: Role): NavGroup[] {
     {
       title: 'Platform',
       items: [
-        { label: 'Games', to: '/admin/games', icon: Gamepad2, permission: 'games.manage' },
+        { label: 'Game configuration', to: '/admin/games', icon: Gamepad2, permission: 'games.manage' },
+        { label: 'Game statistics', to: '/admin/game-stats', icon: ChartNoAxesCombined, permission: 'staff.access' },
         { label: 'Rewards', to: '/admin/rewards', icon: Gift, permission: 'settings.manage' },
         { label: 'Email', to: '/admin/email', icon: Mail, permission: 'settings.manage' },
         { label: 'Announcements', to: '/admin/announcements', icon: Megaphone, permission: 'notifications.broadcast' },

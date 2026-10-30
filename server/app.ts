@@ -18,6 +18,7 @@ import { createGamesRouter } from './routes/games.ts';
 import { createTicketsRouter } from './routes/tickets.ts';
 import { createCashierRouter, createAdminCashierRouter } from './routes/cashier.ts';
 import { createStaffRouter } from './routes/staff.ts';
+import { createGameStatsRouter } from './routes/game-stats.ts';
 import { createAccountReviewRouter } from './routes/account-reviews.ts';
 import { createAdminRouter } from './routes/admin.ts';
 import { createAdminConfigRouter } from './routes/admin-config.ts';
@@ -169,6 +170,7 @@ export function createApp(db: DB, options: { turnstile?: TurnstileVerifier } = {
   app.use('/api/tickets', createTicketsRouter(db));
   app.use('/api/cashier', createCashierRouter(db));
   app.use('/api/staff/account-reviews', createAccountReviewRouter(db));
+  app.use('/api/staff/game-stats', createGameStatsRouter(db));
   app.use('/api/staff', createStaffRouter(db));
   app.use('/api/admin', createAdminRouter(db));
   app.use('/api/admin', createAdminConfigRouter(db));

@@ -240,6 +240,181 @@ export interface GameConfig {
   updatedAt: string;
 }
 
+/* ---------------------------- game statistics ---------------------------- */
+
+/**
+ * `outcome` games use the configured chance when a new round is created.
+ * `target` games keep their native rules and use the chance as a monitoring
+ * baseline, because a single win percentage would misrepresent their mechanics.
+ */
+export type GameWinChanceMode = 'outcome' | 'target';
+
+export interface GameWinChanceInfo {
+  mode: GameWinChanceMode;
+  label: string;
+  hint: string;
+  defaultChance: number;
+}
+
+export const GAME_WIN_CHANCE_INFO: Record<string, GameWinChanceInfo> = {
+  coinflip: {
+    mode: 'outcome',
+    label: 'Outcome control',
+    hint: 'Sets the chance the coin matches the player pick when a round starts. Existing rounds keep their original chance.',
+    defaultChance: 50,
+  },
+  roulette: {
+    mode: 'target',
+    label: 'Monitoring target',
+    hint: 'The single-zero wheel and its payout table stay fixed. This is the target net-win rate used for monitoring.',
+    defaultChance: 48.6,
+  },
+  plinko: {
+    mode: 'target',
+    label: 'Monitoring target',
+    hint: 'The peg table and payout curve stay fixed. This target is compared with observed profitable drops.',
+    defaultChance: 39,
+  },
+  mines: {
+    mode: 'target',
+    label: 'Monitoring target',
+    hint: 'Mine layout, cash-out choices and the house edge decide outcomes. This target is used for monitoring.',
+    defaultChance: 40,
+  },
+  towers: {
+    mode: 'target',
+    label: 'Monitoring target',
+    hint: 'Trap placement, floors climbed and the house edge decide outcomes. This target is used for monitoring.',
+    defaultChance: 40,
+  },
+  blackjack: {
+    mode: 'target',
+    label: 'Monitoring target',
+    hint: 'Cards, dealer rules and player decisions decide outcomes. This target is used for monitoring.',
+    defaultChance: 42,
+  },
+};
+
+export type GameStatsRange = '24h' | '7d' | '30d' | '90d' | 'all';
+
+export const GAME_STATS_RANGES: { value: GameStatsRange; label: string }[] = [
+  { value: '24h', label: '24h' },
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
+  { value: '90d', label: '90d' },
+  { value: 'all', label: 'All time' },
+];
+
+export type GameStatsSort =
+  | 'name'
+  | 'bets'
+  | 'winRate'
+  | 'wagered'
+  | 'houseProfit'
+  | 'configuredWinChance';
+
+export interface GameStatsDeviation {
+  level: 'normal' | 'warning' | 'insufficient';
+  sampleSize: number;
+  minimumSample: number;
+  /** Average configured chance over the rounds included in the comparison. */
+  configuredWinChance: number | null;
+  observedWinRate: number | null;
+  /** Wilson 95% interval for the observed rate. */
+  confidenceLow: number | null;
+  confidenceHigh: number | null;
+  zScore: number | null;
+  deltaPercentagePoints: number | null;
+  message: string | null;
+}
+
+export interface GameStatsRow {
+  slug: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  mode: GameWinChanceMode;
+  modeLabel: string;
+  configuredWinChance: number;
+  bets: number;
+  openRounds: number;
+  wins: number;
+  losses: number;
+  pushes: number;
+  actualWinRate: number | null;
+  /** Settled non-push rounds that carry a configuration snapshot. */
+  comparisonSample: number;
+  comparisonWinRate: number | null;
+  averageConfiguredWinChance: number | null;
+  wagered: number;
+  payouts: number;
+  houseProfit: number;
+  rtp: number | null;
+  lastSettledAt: string | null;
+  deviation: GameStatsDeviation;
+}
+
+export interface GameStatsTotals {
+  bets: number;
+  wins: number;
+  losses: number;
+  pushes: number;
+  wagered: number;
+  payouts: number;
+  houseProfit: number;
+  actualWinRate: number | null;
+  warningCount: number;
+  comparisonSample: number;
+}
+
+export interface GameStatsResponse {
+  range: GameStatsRange;
+  from: string | null;
+  to: string;
+  generatedAt: string;
+  minimumSample: number;
+  warningCount: number;
+  games: GameStatsRow[];
+  totals: GameStatsTotals;
+}
+
+export interface GameStatsTrendPoint {
+  bucket: string;
+  label: string;
+  bets: number;
+  wins: number;
+  losses: number;
+  pushes: number;
+  wagered: number;
+  payouts: number;
+  houseProfit: number;
+  rtp: number | null;
+  actualWinRate: number | null;
+  averageConfiguredWinChance: number | null;
+}
+
+export interface GameConfigHistoryEntry {
+  id: string;
+  actorName: string | null;
+  createdAt: string;
+  previousWinChance: number | null;
+  newWinChance: number | null;
+  changedKeys: string[];
+  previousConfig: Record<string, unknown>;
+  newConfig: Record<string, unknown>;
+}
+
+export interface GameStatsDetailResponse {
+  range: GameStatsRange;
+  from: string | null;
+  to: string;
+  generatedAt: string;
+  minimumSample: number;
+  game: GameStatsRow;
+  trend: GameStatsTrendPoint[];
+  history: GameConfigHistoryEntry[];
+}
+
 export type LedgerType =
   | 'initial_grant'
   | 'admin_adjustment'
@@ -608,6 +783,9 @@ export type RouletteBetType =
 export interface RouletteBet {
   type: RouletteBetType | 'straight';
   number?: number;
+  /** Number of chips stacked on this position. */
+  chips: number;
+  /** Actual money value of those chips at the round's chip value. */
   amount: number;
 }
 
@@ -616,6 +794,8 @@ export interface RouletteView extends BaseGameView {
   winningNumber: number;
   color: 'red' | 'black' | 'green';
   totalPayout: number;
+  /** Money value of one chip for this spin. */
+  chipValue: number;
   won: boolean;
 }
 

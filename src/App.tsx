@@ -23,6 +23,7 @@ import { NewTicketPage, TicketDetailPage, TicketsPage } from './pages/tickets';
 import { NotificationsPage } from './pages/notifications';
 import { SettingsPage } from './pages/settings';
 import { StaffActivityPage, StaffInboxPage, StaffOverviewPage } from './pages/staff';
+import { GameStatsDetailPage, GameStatsPage } from './pages/game-stats';
 import { AccountReviewsPage } from './pages/reviews';
 import { AdminOverviewPage } from './pages/admin/overview';
 import { AdminUserDetailPage, AdminUsersPage } from './pages/admin/users';
@@ -184,6 +185,22 @@ function App() {
             }
           />
           <Route
+            path="staff/games"
+            element={
+              <RequirePermission permission="staff.access">
+                <GameStatsPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="staff/games/:slug"
+            element={
+              <RequirePermission permission="staff.access">
+                <GameStatsDetailPage />
+              </RequirePermission>
+            }
+          />
+          <Route
             path="staff/activity"
             element={
               <RequirePermission permission="staff.access">
@@ -293,6 +310,22 @@ function App() {
             element={
               <RequirePermission permission="games.manage">
                 <AdminGamesPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="admin/game-stats"
+            element={
+              <RequirePermission permission="staff.access">
+                <GameStatsPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="admin/game-stats/:slug"
+            element={
+              <RequirePermission permission="staff.access">
+                <GameStatsDetailPage />
               </RequirePermission>
             }
           />

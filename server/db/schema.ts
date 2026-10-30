@@ -566,6 +566,56 @@ CREATE TABLE account_deletion_requests (
 CREATE INDEX account_deletion_requests_user_idx ON account_deletion_requests(user_id, created_at DESC);
 `,
   },
+  {
+    version: 14,
+    name: 'game_statistics_and_win_chance',
+    // A round records the exact configuration it started with. Existing rounds
+    // are deliberately left NULL: we cannot know which historical chance they
+    // used, and inventing one would make deviation warnings lie.
+    sql: `
+ALTER TABLE game_sessions ADD COLUMN config_snapshot TEXT;
+ALTER TABLE game_sessions ADD COLUMN configured_win_chance REAL;
+CREATE INDEX game_sessions_stats_idx ON game_sessions(status, ended_at);
+CREATE INDEX game_sessions_game_settled_idx ON game_sessions(game_id, ended_at DESC);
+
+CREATE TABLE game_config_history (
+  id TEXT PRIMARY KEY,
+  game_id TEXT NOT NULL REFERENCES games(id) ON DELETE RESTRICT,
+  actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  previous_config TEXT NOT NULL,
+  new_config TEXT NOT NULL,
+  previous_win_chance REAL,
+  new_win_chance REAL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX game_config_history_game_idx ON game_config_history(game_id, created_at DESC);
+CREATE INDEX game_config_history_actor_idx ON game_config_history(actor_id, created_at DESC);
+
+UPDATE games SET config = json_set(config, '$.winChance', 50)
+ WHERE id = 'coinflip' AND json_valid(config) AND json_extract(config, '$.winChance') IS NULL;
+UPDATE games SET config = json_set(config, '$.winChance', 40)
+ WHERE id = 'mines' AND json_valid(config) AND json_extract(config, '$.winChance') IS NULL;
+UPDATE games SET config = json_set(config, '$.winChance', 42)
+ WHERE id = 'blackjack' AND json_valid(config) AND json_extract(config, '$.winChance') IS NULL;
+UPDATE games SET config = json_set(config, '$.winChance', 48.6)
+ WHERE id = 'roulette' AND json_valid(config) AND json_extract(config, '$.winChance') IS NULL;
+UPDATE games SET config = json_set(config, '$.winChance', 40)
+ WHERE id = 'towers' AND json_valid(config) AND json_extract(config, '$.winChance') IS NULL;
+UPDATE games SET config = json_set(config, '$.winChance', 39)
+ WHERE id = 'plinko' AND json_valid(config) AND json_extract(config, '$.winChance') IS NULL;
+`,
+  },
+  {
+    version: 15,
+    name: 'roulette_chip_preferences',
+    sql: `
+CREATE TABLE game_preferences (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  roulette_chip_value INTEGER NOT NULL DEFAULT 10 CHECK (roulette_chip_value BETWEEN 1 AND 1000000000000),
+  updated_at TEXT NOT NULL
+);
+`,
+  },
 ];
 
 export function pendingMigrations(db: Database): { version: number; name: string }[] {
@@ -604,37 +654,37 @@ const GAMES = [
     id: 'coinflip',
     name: 'Coinflip',
     description: 'Call heads or tails and watch the coin decide.',
-    config: { winMultiplier: 1.96 },
+    config: { winMultiplier: 1.96, winChance: 50 },
   },
   {
     id: 'mines',
     name: 'Mines',
     description: 'Reveal safe tiles, grow the multiplier, cash out before you hit a mine.',
-    config: { maxMines: 20, houseEdge: 0.03 },
+    config: { maxMines: 20, houseEdge: 0.03, winChance: 40 },
   },
   {
     id: 'blackjack',
     name: 'Blackjack',
     description: 'Beat the dealer to 21. Six-deck shoe, dealer stands on 17.',
-    config: { decks: 6, dealerStandsSoft17: true, blackjackPays: 1.5, allowDouble: true },
+    config: { decks: 6, dealerStandsSoft17: true, blackjackPays: 1.5, allowDouble: true, winChance: 42 },
   },
   {
     id: 'roulette',
     name: 'Roulette',
     description: 'European single-zero wheel with inside and outside bets.',
-    config: { maxBetsPerSpin: 10 },
+    config: { maxBetsPerSpin: 10, winChance: 48.6 },
   },
   {
     id: 'towers',
     name: 'Towers',
     description: 'Climb nine floors. One trap per floor. Cash out any time.',
-    config: { levels: 9, houseEdge: 0.03 },
+    config: { levels: 9, houseEdge: 0.03, winChance: 40 },
   },
   {
     id: 'plinko',
     name: 'Plinko',
     description: 'Drop the ball and let the pegs decide your multiplier.',
-    config: { enabledRisks: ['low', 'medium', 'high'] },
+    config: { enabledRisks: ['low', 'medium', 'high'], winChance: 39 },
   },
 ];
 

@@ -141,7 +141,7 @@ describe('seed and migrations preserve production values', () => {
     const db = createDatabase(':memory:');
     try {
       db.prepare("UPDATE games SET config = ?, min_bet = ?, max_bet = ? WHERE id = 'coinflip'").run(
-        JSON.stringify({ winMultiplier: 1.77 }),
+        JSON.stringify({ winMultiplier: 1.77, winChance: 37.5 }),
         25,
         777,
       );
@@ -164,7 +164,7 @@ describe('seed and migrations preserve production values', () => {
         min_bet: number;
         max_bet: number;
       };
-      expect(JSON.parse(coinflip.config)).toEqual({ winMultiplier: 1.77 });
+      expect(JSON.parse(coinflip.config)).toEqual({ winMultiplier: 1.77, winChance: 37.5 });
       expect(coinflip.min_bet).toBe(25);
       expect(coinflip.max_bet).toBe(777);
 
@@ -193,7 +193,7 @@ describe('seed and migrations preserve production values', () => {
 
     const first = createDatabase(file);
     first.prepare("UPDATE games SET config = ? WHERE id = 'mines'").run(
-      JSON.stringify({ maxMines: 7, houseEdge: 0.07 }),
+      JSON.stringify({ maxMines: 7, houseEdge: 0.07, winChance: 32 }),
     );
     setSetting(first, 'economy.max_payout', 9_999_999, null);
     first.close();
@@ -201,7 +201,7 @@ describe('seed and migrations preserve production values', () => {
     const second = createDatabase(file);
     try {
       const mines = second.prepare("SELECT config FROM games WHERE id = 'mines'").get() as { config: string };
-      expect(JSON.parse(mines.config)).toEqual({ maxMines: 7, houseEdge: 0.07 });
+      expect(JSON.parse(mines.config)).toEqual({ maxMines: 7, houseEdge: 0.07, winChance: 32 });
       const maxPayout = second
         .prepare("SELECT value FROM settings WHERE key = 'economy.max_payout'")
         .get() as { value: string };
