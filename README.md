@@ -147,6 +147,7 @@ The Cashier is deliberately separate from support tickets. It is for one thing o
 - Approval writes an append-only ledger entry and changes the wallet immediately. Rejection requires a short reason.
 - Deposits use the `credit_request` ledger type; withdrawals use `admin_adjustment`. Both carry the cashier reference and request metadata.
 - Players and administrators can exchange public messages inside a request. Players may cancel a request while it is pending.
+- An open player session automatically refreshes its authenticated balance after a deposit or withdrawal is approved; the header, cashier summary, and wallet balance update without a page reload. Approval remains idempotent, so a repeated decision cannot credit or debit twice.
 - Only `owner` and `admin` roles hold `credits.adjust`, the permission required to decide a cashier request. Support staff cannot approve these requests.
 - Creating a cashier request is blocked during maintenance, while administrators can still review existing requests.
 
@@ -161,6 +162,7 @@ Deposits and withdrawals are settled in DonutSMP money only. Every approval writ
 - Every wager is settled by the server before the client animates it, so a wheel, ball, or coin can never disagree with the payout.
 - A player can hold only **one active bet** across all games. Starting a second round returns `ACTIVE_ROUND` (“Finish your current game first.”) until the current round is finished or its result is cleared.
 - Coinflip, roulette, and plinko are settled immediately. If the player reloads or navigates away before the animation ends, the result is restored from the server. The slot opens when they acknowledge it, or after five minutes so a closed tab cannot lock them out.
+- Coinflip keeps the displayed balance unchanged until the coin has fully landed. Background balance synchronization is paused during the toss, so a wallet change elsewhere cannot reveal the result early.
 - Mines, towers, and blackjack resume the exact active round, including hidden state, instead of losing or duplicating the wager.
 - Acknowledging an unfinished round is rejected; only a settled result can release the slot early.
 - Unfinished sessions from databases created before the lock existed are adopted on the next active-round load or wager attempt, so legacy rounds cannot be bypassed.

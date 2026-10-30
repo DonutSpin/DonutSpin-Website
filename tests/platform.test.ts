@@ -1535,6 +1535,23 @@ describe('cashier deposit and withdrawal requests', () => {
     expect(walletBalance(playerId)).toBe(before + 400);
     assertLedgerMatchesWallet(playerId);
 
+    // The open player session polls this endpoint for balance changes. It must
+    // return the settled balance immediately, without a re-login or refresh.
+    const refreshedProfile = await playerAgent.get('/api/auth/me');
+    expectStatus(refreshedProfile, 200);
+    expect(refreshedProfile.body.user.balance).toBe(before + 400);
+
+    const duplicateApproval = await ownerAgent
+      .post(`/api/admin/cashier/${depositReference}/decision`)
+      .set(CSRF)
+      .send({ decision: 'approve', reason: 'This must not settle twice.' });
+    expectStatus(duplicateApproval, 409);
+    expect(duplicateApproval.body.error.code).toBe('ALREADY_DECIDED');
+    expect(walletBalance(playerId)).toBe(before + 400);
+    const afterDuplicate = await playerAgent.get('/api/auth/me');
+    expect(afterDuplicate.body.user.balance).toBe(before + 400);
+    assertLedgerMatchesWallet(playerId);
+
     const playerDetail = await playerAgent.get(`/api/cashier/${depositReference}`);
     expectStatus(playerDetail, 200);
     expect(playerDetail.body.request.status).toBe('approved');
@@ -1561,6 +1578,19 @@ describe('cashier deposit and withdrawal requests', () => {
       .send({ decision: 'approve' });
     expectStatus(approved, 200);
     expect(approved.body.request.status).toBe('approved');
+    expect(walletBalance(playerId)).toBe(before - 125);
+    assertLedgerMatchesWallet(playerId);
+
+    const refreshedProfile = await playerAgent.get('/api/auth/me');
+    expectStatus(refreshedProfile, 200);
+    expect(refreshedProfile.body.user.balance).toBe(before - 125);
+
+    const duplicateApproval = await adminAgent
+      .post(`/api/admin/cashier/${withdrawalReference}/decision`)
+      .set(CSRF)
+      .send({ decision: 'approve' });
+    expectStatus(duplicateApproval, 409);
+    expect(duplicateApproval.body.error.code).toBe('ALREADY_DECIDED');
     expect(walletBalance(playerId)).toBe(before - 125);
     assertLedgerMatchesWallet(playerId);
 

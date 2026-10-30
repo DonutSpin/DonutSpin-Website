@@ -192,6 +192,9 @@ export function WalletPage() {
 
   const wallet = walletQuery.data;
   const cashierRequests = cashierQuery.data?.items ?? [];
+  // AuthContext refreshes after cashier decisions; do not mask that value with
+  // the older snapshot captured by the page's initial wallet request.
+  const availableBalance = user?.balance ?? wallet?.balance;
 
   return (
     <div>
@@ -232,7 +235,7 @@ export function WalletPage() {
               <Badge tone="gold">DonutSMP money</Badge>
             </div>
             <p className="mt-4 font-display text-[46px] font-semibold leading-none tracking-tight text-gold-bright tnum">
-              {wallet ? money(wallet.balance) : '—'}
+              {availableBalance === undefined ? '—' : money(availableBalance)}
             </p>
             <p className="mt-2 max-w-md text-[11.5px] leading-relaxed text-muted">
               Your DonutSMP money is held in your wallet and reconciled against every game round and cashier decision
@@ -425,7 +428,7 @@ export function TransactionsPage() {
           <div className="flex items-center gap-2 rounded-lg border border-gold/20 bg-gold/8 px-3 py-2">
             <Coins className="h-4 w-4 text-gold" />
             <span className="font-display text-[13px] font-semibold text-gold-bright tnum">
-              {money(query.data?.balance ?? user?.balance ?? 0)}
+              {money(user?.balance ?? query.data?.balance ?? 0)}
             </span>
             <span className="text-[9px] uppercase tracking-wider text-gold-dim">money</span>
           </div>

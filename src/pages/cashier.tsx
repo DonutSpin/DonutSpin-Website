@@ -87,7 +87,9 @@ export function CashierPage() {
 
   const data = query.data;
   const limit = data?.requestLimit ?? 50_000;
-  const balance = data?.balance ?? user?.balance ?? 0;
+  // The shared auth balance is kept current in the background, so prefer it
+  // over the snapshot returned with the request list.
+  const balance = user?.balance ?? data?.balance ?? 0;
 
   return (
     <div>

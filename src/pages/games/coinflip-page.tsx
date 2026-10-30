@@ -231,7 +231,7 @@ function SideGlyph({ side }: { side: 'heads' | 'tails' }) {
 
 export function CoinflipPage() {
   const { game, loading, error, refetch, maintenance, maxPayout } = useGameConfig('coinflip');
-  const { user, updateBalance } = useAuth();
+  const { user, updateBalance, setBalanceSyncPaused } = useAuth();
   const { error: toastError } = useToast();
   const sound = useCoinSound();
   const [pick, setPick] = useState<'heads' | 'tails'>('heads');
@@ -259,8 +259,10 @@ export function CoinflipPage() {
     return () => {
       if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
       if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+      // Never leave background balance sync paused after this page unmounts.
+      setBalanceSyncPaused(false);
     };
-  }, []);
+  }, [setBalanceSyncPaused]);
 
   /**
    * Reveals a settled round. The final coin angle is derived from the server
@@ -277,7 +279,10 @@ export function CoinflipPage() {
         setCoin({ angle: resting, animated: false });
         setAnimating(false);
         setBusy(false);
+        setView(result);
         setRevealed(true);
+        updateBalance(result.balance);
+        setBalanceSyncPaused(false);
         sound.playLanding(result.won);
         void acknowledgeRound(result.session.id);
       };
@@ -288,7 +293,10 @@ export function CoinflipPage() {
         setCoin({ angle: resting, animated: false });
         setAnimating(false);
         setBusy(false);
+        setView(result);
         setRevealed(true);
+        updateBalance(result.balance);
+        setBalanceSyncPaused(false);
         sound.playLanding(result.won);
         void acknowledgeRound(result.session.id);
         return;
@@ -296,6 +304,8 @@ export function CoinflipPage() {
 
       // Park the coin on its current face with transitions off, then start the
       // flip on the next painted frame so the change is actually animated.
+      // Nothing about the outcome is published until the coin has landed.
+      setView(null);
       setRevealed(false);
       setCoin({ angle: restAngleRef.current, animated: false });
       setAnimating(true);
@@ -308,7 +318,7 @@ export function CoinflipPage() {
       });
       timeoutRef.current = window.setTimeout(finish, TOSS_MS + 120);
     },
-    [reduced, sound],
+    [reduced, setBalanceSyncPaused, sound, updateBalance],
   );
 
   // A result can be settled before its animation finishes. Restore it after a
@@ -317,10 +327,9 @@ export function CoinflipPage() {
     const restored = round.view as CoinflipViewType;
     setBet(restored.session.bet);
     setPick(restored.pick);
-    setView(restored);
-    updateBalance(restored.balance);
     // Already settled: show the true face immediately instead of replaying a
-    // spin that could appear to decide a new result.
+    // spin that could appear to decide a new result. showSettled publishes the
+    // view and balance at the same time it reveals the result.
     showSettled(restored, true);
   });
 
@@ -338,6 +347,10 @@ export function CoinflipPage() {
     setActionError(null);
     setBusy(true);
     setAnimating(false);
+    // The server settles immediately, but the balance must stay visually frozen
+    // until the coin has finished landing. Pausing the background sync also
+    // prevents a cashier refresh from leaking the result mid-animation.
+    setBalanceSyncPaused(true);
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
     try {
       const response = await playGame<CoinflipView>(game.slug, {
@@ -345,19 +358,18 @@ export function CoinflipPage() {
         bet,
         pick,
       });
-      setView(response);
-      updateBalance(response.balance);
       showSettled(response, false);
     } catch (err) {
       setBusy(false);
       setAnimating(false);
+      setBalanceSyncPaused(false);
       setActionError(errorMessage(err));
       toastError('The coin could not be flipped', errorMessage(err));
     }
   };
 
   const outcome = view?.outcome ?? null;
-  const tossing = Boolean(view && animating);
+  const tossing = animating;
   const showResult = Boolean(view && revealed);
   const sideLabel = outcome ? outcome.charAt(0).toUpperCase() + outcome.slice(1) : null;
 

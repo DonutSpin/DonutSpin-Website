@@ -21,6 +21,11 @@ interface AuthContextValue {
   refresh: () => Promise<void>;
   refreshConfig: () => Promise<void>;
   updateBalance: (balance: number) => void;
+  /**
+   * Temporarily stops background balance synchronization. Games use this while
+   * an outcome is still animating so a refresh cannot reveal the result early.
+   */
+  setBalanceSyncPaused: (paused: boolean) => void;
   setUser: (user: SessionUser | null) => void;
 }
 
@@ -33,6 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [bootError, setBootError] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
   const booted = useRef(false);
+  const balanceSyncPaused = useRef(false);
+  const syncBalanceNow = useRef<() => void>(() => undefined);
 
   const refresh = useCallback(async () => {
     setBootError(null);
@@ -134,8 +141,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshConfig]);
 
   const updateBalance = useCallback((balance: number) => {
-    setUser((current) => (current ? { ...current, balance } : current));
+    setUser((current) => (current && current.balance !== balance ? { ...current, balance } : current));
   }, []);
+
+  const setBalanceSyncPaused = useCallback((paused: boolean) => {
+    const wasPaused = balanceSyncPaused.current;
+    balanceSyncPaused.current = paused;
+    // Catch up immediately after an animation or page handoff releases the
+    // pause, instead of waiting for the next scheduled tick.
+    if (wasPaused && !paused) window.setTimeout(() => syncBalanceNow.current(), 0);
+  }, []);
+
+  // Cashier decisions happen in another session, so the player's open page
+  // learns about them through a cheap authenticated balance check. The timer
+  // stops while hidden and is paused by animated games, which must not have
+  // their outcome revealed before the animation ends.
+  useEffect(() => {
+    if (!user?.id) return;
+    let active = true;
+    let timer: number | null = null;
+
+    const syncBalance = async () => {
+      if (!active || balanceSyncPaused.current || document.visibilityState !== 'visible') return;
+      try {
+        const result = await api.get<{ user: SessionUser | null }>('/auth/me');
+        if (active && result.user && !balanceSyncPaused.current) {
+          updateBalance(result.user.balance);
+        }
+      } catch {
+        /* Keep the last known balance; the next tick can recover. */
+      }
+    };
+
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        void syncBalance().finally(() => {
+          if (active) schedule();
+        });
+      }, 2000);
+    };
+
+    const syncNow = () => {
+      if (document.visibilityState === 'visible') void syncBalance();
+    };
+    syncBalanceNow.current = syncNow;
+
+    schedule();
+    document.addEventListener('visibilitychange', syncNow);
+    window.addEventListener('focus', syncNow);
+    return () => {
+      active = false;
+      if (timer !== null) window.clearTimeout(timer);
+      syncBalanceNow.current = () => undefined;
+      document.removeEventListener('visibilitychange', syncNow);
+      window.removeEventListener('focus', syncNow);
+    };
+  }, [user?.id, updateBalance]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -151,9 +212,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refresh,
       refreshConfig,
       updateBalance,
+      setBalanceSyncPaused,
       setUser,
     }),
-    [user, config, loading, bootError, unread, login, register, logout, refresh, refreshConfig, updateBalance],
+    [
+      user,
+      config,
+      loading,
+      bootError,
+      unread,
+      login,
+      register,
+      logout,
+      refresh,
+      refreshConfig,
+      updateBalance,
+      setBalanceSyncPaused,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
