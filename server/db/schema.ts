@@ -1,5 +1,17 @@
 import type { Database } from 'better-sqlite3';
 
+/**
+ * Production data rules for every migration:
+ *
+ * 1. Never rewrite an admin-configured value just because a default changed.
+ *    Only transform a value that is provably still the old untouched default.
+ * 2. Prefer additive changes (new tables, columns, indexes, missing settings).
+ * 3. The seed below is insert-only (`ON CONFLICT DO NOTHING`). Keep it that way
+ *    so a restart or code deploy can never reset balances, multipliers, reward
+ *    rules, economy limits, or platform settings.
+ * 4. A pending migration takes a verified snapshot first; startup aborts if the
+ *    snapshot cannot be created or passes `integrity_check`.
+ */
 const migrations: { version: number; name: string; sql: string }[] = [
   {
     version: 1,
@@ -446,6 +458,78 @@ CREATE INDEX legal_acceptances_version_idx ON legal_acceptances(terms_version, p
 `,
   },
   {
+    version: 12,
+    name: 'bet_streaks_and_account_reviews',
+    sql: `
+ALTER TABLE users ADD COLUMN registration_ip TEXT;
+ALTER TABLE users ADD COLUMN account_hold INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN account_hold_reason TEXT;
+ALTER TABLE users ADD COLUMN account_hold_at TEXT;
+CREATE INDEX users_registration_ip_idx ON users(registration_ip);
+
+-- Registration history for the visible IP review, backfilled from sessions when
+-- an older database still has a trustworthy address on record.
+UPDATE users
+   SET registration_ip = (
+     SELECT s.ip FROM sessions s
+      WHERE s.user_id = users.id AND s.ip IS NOT NULL
+      ORDER BY s.created_at ASC LIMIT 1
+   )
+ WHERE registration_ip IS NULL
+   AND EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = users.id AND s.ip IS NOT NULL);
+
+CREATE TABLE account_reviews (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','cleared','alt_confirmed','resolved')),
+  reason TEXT NOT NULL,
+  trigger_ip TEXT,
+  related_user_ids TEXT NOT NULL DEFAULT '[]',
+  related_count INTEGER NOT NULL DEFAULT 1,
+  flagged_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  reviewed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TEXT,
+  decision_reason TEXT,
+  hold_released_at TEXT
+);
+CREATE INDEX account_reviews_status_idx ON account_reviews(status, flagged_at DESC);
+CREATE INDEX account_reviews_user_idx ON account_reviews(user_id);
+
+CREATE TABLE account_review_events (
+  id TEXT PRIMARY KEY,
+  review_id TEXT NOT NULL REFERENCES account_reviews(id) ON DELETE CASCADE,
+  actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  from_status TEXT,
+  to_status TEXT,
+  reason TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX account_review_events_review_idx ON account_review_events(review_id, created_at);
+
+-- One accepted wager day keeps the daily reward streak honest: merely signing
+-- in or browsing never creates a row. The row is written in the same
+-- transaction as the wager debit, so rejected or rolled-back bets cannot count.
+CREATE TABLE bet_activity_days (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  activity_day TEXT NOT NULL,
+  first_bet_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, activity_day)
+);
+CREATE INDEX bet_activity_days_day_idx ON bet_activity_days(activity_day);
+INSERT OR IGNORE INTO bet_activity_days (user_id, activity_day, first_bet_at)
+SELECT user_id, substr(created_at, 1, 10), MIN(created_at)
+  FROM game_sessions
+ WHERE bet > 0 AND wager_ledger_id IS NOT NULL
+ GROUP BY user_id, substr(created_at, 1, 10);
+
+INSERT INTO settings (key, value, updated_at)
+SELECT 'security.accounts_per_ip', '3', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+ WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'security.accounts_per_ip');
+`,
+  },
+  {
     version: 6,
     name: 'backfill_active_rounds',
     // Existing databases may already have unfinished sessions. Give the newest
@@ -464,7 +548,36 @@ SELECT gs.user_id, gs.id, gs.game_id, 'playing', gs.created_at,
    AND NOT EXISTS (SELECT 1 FROM active_rounds ar WHERE ar.user_id = gs.user_id);
 `,
   },
+  {
+    version: 13,
+    name: 'self_service_account_deletion',
+    sql: `
+ALTER TABLE users ADD COLUMN deleted_at TEXT;
+
+CREATE TABLE account_deletion_requests (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+CREATE INDEX account_deletion_requests_user_idx ON account_deletion_requests(user_id, created_at DESC);
+`,
+  },
 ];
+
+export function pendingMigrations(db: Database): { version: number; name: string }[] {
+  const table = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'")
+    .get() as { name: string } | undefined;
+  if (!table) return migrations.map(({ version, name }) => ({ version, name }));
+  const applied = new Set(
+    (db.prepare('SELECT version FROM schema_migrations').all() as { version: number }[]).map((r) => r.version),
+  );
+  return migrations.filter((migration) => !applied.has(migration.version)).map(({ version, name }) => ({ version, name }));
+}
 
 export function migrate(db: Database): void {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -472,11 +585,9 @@ export function migrate(db: Database): void {
     name TEXT NOT NULL,
     applied_at TEXT NOT NULL
   )`);
-  const applied = new Set(
-    (db.prepare('SELECT version FROM schema_migrations').all() as { version: number }[]).map((r) => r.version),
-  );
+  const pending = pendingMigrations(db);
   for (const migration of migrations) {
-    if (applied.has(migration.version)) continue;
+    if (!pending.some((entry) => entry.version === migration.version)) continue;
     db.transaction(() => {
       db.exec(migration.sql);
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
@@ -569,6 +680,7 @@ export function seed(db: Database, options: { appName: string; startingCredits: 
       'economy.max_payout': 1_000_000_000_000,
       'economy.cashier_request_limit': 5_000_000_000,
       'security.session_days': options.sessionDays,
+      'security.accounts_per_ip': 3,
       'notifications.email_enabled': false,
       'rewards.enabled': true,
       'rewards.timezone': 'UTC',

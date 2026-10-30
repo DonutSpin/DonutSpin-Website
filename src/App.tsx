@@ -9,6 +9,7 @@ import { ForgotPasswordPage, LoginPage, RegisterPage, ResetPasswordPage } from '
 import { HomePage } from './pages/home';
 import { RewardsPage } from './pages/rewards';
 import { VerifyEmailPage } from './pages/verify-email';
+import { DeleteAccountPage } from './pages/delete-account';
 import { GamesPage } from './pages/games/games-page';
 import { CoinflipPage } from './pages/games/coinflip-page';
 import { MinesPage } from './pages/games/mines-page';
@@ -22,6 +23,7 @@ import { NewTicketPage, TicketDetailPage, TicketsPage } from './pages/tickets';
 import { NotificationsPage } from './pages/notifications';
 import { SettingsPage } from './pages/settings';
 import { StaffActivityPage, StaffInboxPage, StaffOverviewPage } from './pages/staff';
+import { AccountReviewsPage } from './pages/reviews';
 import { AdminOverviewPage } from './pages/admin/overview';
 import { AdminUserDetailPage, AdminUsersPage } from './pages/admin/users';
 import { AdminEconomyPage, AdminStaffPage, AdminTicketsPage, AdminTransactionsPage } from './pages/admin/operations';
@@ -88,6 +90,14 @@ function App() {
         <Route path="/forgot-password" element={<GuestOnly><ForgotPasswordPage /></GuestOnly>} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route
+          path="/delete-account"
+          element={
+            <RequireAuth>
+              <DeleteAccountPage />
+            </RequireAuth>
+          }
+        />
 
         <Route element={<RequireAuth><AppShell /></RequireAuth>}>
           <Route index element={<HomePage />} />
@@ -166,6 +176,14 @@ function App() {
             }
           />
           <Route
+            path="staff/reviews"
+            element={
+              <RequirePermission permission="accounts.review">
+                <AccountReviewsPage />
+              </RequirePermission>
+            }
+          />
+          <Route
             path="staff/activity"
             element={
               <RequirePermission permission="staff.access">
@@ -203,6 +221,14 @@ function App() {
             element={
               <RequirePermission permission="users.read">
                 <AdminUserDetailPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="admin/reviews"
+            element={
+              <RequirePermission permission="accounts.review">
+                <AccountReviewsPage />
               </RequirePermission>
             }
           />

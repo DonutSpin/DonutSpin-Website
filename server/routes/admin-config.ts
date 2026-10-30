@@ -23,6 +23,7 @@ const settingSchemas: Record<string, z.ZodType> = {
   'economy.max_payout': amountSchema({ min: 100, max: 1_000_000_000_000, label: 'maximum payout' }),
   'economy.cashier_request_limit': amountSchema({ min: 1, max: 1_000_000_000_000, label: 'cashier request limit' }),
   'notifications.email_enabled': z.boolean(),
+  'security.accounts_per_ip': z.number().int().min(1).max(100),
 };
 
 const categorySchema = z.object({

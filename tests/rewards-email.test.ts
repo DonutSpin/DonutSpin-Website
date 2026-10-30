@@ -62,6 +62,7 @@ beforeAll(async () => {
     });
   expectStatus(registration, 201);
   playerId = registration.body.user.id as string;
+  db.prepare('UPDATE users SET email_verified = 1 WHERE id = ?').run(playerId);
 });
 
 afterAll(() => {
@@ -73,8 +74,20 @@ describe('daily rewards', () => {
     const before = await playerAgent.get('/api/rewards');
     expectStatus(before, 200);
     expect(before.body.streak).toBe(0);
+    expect(before.body.betToday).toBe(false);
     expect(before.body.claimedToday).toBe(false);
     expect(before.body.nextReward.total).toBe(50_000);
+
+    const noBet = await playerAgent.post('/api/rewards/claim').set(CSRF).send({});
+    expectStatus(noBet, 403);
+    expect(noBet.body.error.code).toBe('BET_REQUIRED_TODAY');
+
+    const today = rewardDayKey(new Date(), 'UTC', 0);
+    db.prepare('INSERT INTO bet_activity_days (user_id, activity_day, first_bet_at) VALUES (?, ?, ?)').run(
+      playerId,
+      today,
+      new Date().toISOString(),
+    );
 
     const balanceBefore = (
       db.prepare('SELECT balance FROM wallets WHERE user_id = ?').get(playerId) as { balance: number }
@@ -100,11 +113,17 @@ describe('daily rewards', () => {
 
     const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
     db.prepare('UPDATE reward_claims SET claim_day = ? WHERE user_id = ?').run(yesterday, playerId);
+    db.prepare('INSERT INTO bet_activity_days (user_id, activity_day, first_bet_at) VALUES (?, ?, ?)').run(
+      playerId,
+      yesterday,
+      new Date(Date.now() - 86_400_000).toISOString(),
+    );
     setSetting(db, 'rewards.milestones', [{ day: 2, amount: 5_000, label: 'Day two' }], null);
 
     const next = await playerAgent.get('/api/rewards');
     expectStatus(next, 200);
-    expect(next.body.streak).toBe(1);
+    expect(next.body.streak).toBe(2);
+    expect(next.body.betToday).toBe(true);
     expect(next.body.nextReward).toMatchObject({ streakDay: 2, baseAmount: 60_000, milestoneAmount: 5_000, total: 65_000 });
 
     const second = await playerAgent.post('/api/rewards/claim').set(CSRF).send({});
@@ -115,28 +134,43 @@ describe('daily rewards', () => {
     expect(second.body.streak).toBe(2);
   });
 
-  it('respects timezone reset days and grace policies', async () => {
-    const graceId = directUser('rewardgrace', 'user');
-    const graceAgent = await signIn('rewardgrace');
+  it('builds the streak from accepted bet days, not old claims', async () => {
+    const streakId = directUser('rewardstreak', 'user');
+    const streakAgent = await signIn('rewardstreak');
     const today = rewardDayKey(new Date(), 'UTC', 0);
-    const old = new Date(`${today}T00:00:00.000Z`);
-    old.setUTCDate(old.getUTCDate() - 4);
-    const oldDay = old.toISOString().slice(0, 10);
+    const dayBefore = new Date(`${today}T00:00:00.000Z`);
+    dayBefore.setUTCDate(dayBefore.getUTCDate() - 4);
     db.prepare(
       `INSERT INTO reward_claims (id, user_id, claim_day, timezone, streak_day, base_amount, increment_amount, milestone_amount, amount, created_at)
        VALUES ('rwd_old', ?, ?, 'UTC', 5, 50000, 10000, 0, 50000, ?)`,
-    ).run(graceId, oldDay, new Date().toISOString());
+    ).run(streakId, dayBefore.toISOString().slice(0, 10), new Date().toISOString());
 
-    setSetting(db, 'rewards.missed_policy', 'reset', null);
-    const reset = await graceAgent.get('/api/rewards');
-    expectStatus(reset, 200);
-    expect(reset.body.streak).toBe(0);
+    const noBets = await streakAgent.get('/api/rewards');
+    expectStatus(noBets, 200);
+    expect(noBets.body.streak).toBe(0);
+    expect(noBets.body.betToday).toBe(false);
 
-    setSetting(db, 'rewards.missed_policy', 'grace', null);
-    setSetting(db, 'rewards.grace_days', 3, null);
-    const grace = await graceAgent.get('/api/rewards');
-    expectStatus(grace, 200);
-    expect(grace.body.streak).toBe(5);
+    for (const offset of [1, 2, 3]) {
+      const day = new Date(`${today}T00:00:00.000Z`);
+      day.setUTCDate(day.getUTCDate() - offset);
+      db.prepare('INSERT INTO bet_activity_days (user_id, activity_day, first_bet_at) VALUES (?, ?, ?)').run(
+        streakId,
+        day.toISOString().slice(0, 10),
+        day.toISOString(),
+      );
+    }
+    db.prepare('INSERT INTO bet_activity_days (user_id, activity_day, first_bet_at) VALUES (?, ?, ?)').run(
+      streakId,
+      today,
+      new Date().toISOString(),
+    );
+
+    const current = await streakAgent.get('/api/rewards');
+    expectStatus(current, 200);
+    expect(current.body.streak).toBe(4);
+    expect(current.body.bestStreak).toBe(4);
+    expect(current.body.betToday).toBe(true);
+    expect(current.body.calendar.filter((day: { betPlaced: boolean }) => day.betPlaced)).toHaveLength(4);
   });
 
   it('validates and audits admin reward settings', async () => {
@@ -269,9 +303,26 @@ describe('email settings and queue', () => {
 
     const verify = await agent.post('/api/auth/verify-email').set(CSRF).send({ token });
     expectStatus(verify, 200);
+
     const me = await agent.get('/api/auth/me');
     expectStatus(me, 200);
     expect(me.body.user.emailVerified).toBe(true);
+
+    const reused = await agent.post('/api/auth/verify-email').set(CSRF).send({ token });
+    expectStatus(reused, 400);
+    expect(reused.body.error.code).toBe('INVALID_VERIFICATION_TOKEN');
+
+    db.prepare('UPDATE users SET email_verified = 0 WHERE id = ?').run(userId);
+    const secondResend = await agent.post('/api/auth/resend-verification').set(CSRF).send({});
+    expectStatus(secondResend, 200);
+    const secondToken =
+      new URL(secondResend.body.verifyPath, 'http://local').searchParams.get('token') ?? '';
+    db.prepare(
+      "UPDATE email_verifications SET expires_at = '2000-01-01T00:00:00.000Z' WHERE user_id = ? AND used_at IS NULL",
+    ).run(userId);
+    const expired = await agent.post('/api/auth/verify-email').set(CSRF).send({ token: secondToken });
+    expectStatus(expired, 400);
+    expect(expired.body.error.code).toBe('INVALID_VERIFICATION_TOKEN');
 
     const change = await agent.patch('/api/me').set(CSRF).send({ email: `${suffix}-new@test.local` });
     expectStatus(change, 200);

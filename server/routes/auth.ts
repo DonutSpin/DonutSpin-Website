@@ -29,6 +29,7 @@ import {
   resetLimiter,
 } from '../lib/rate-limit.ts';
 import { createTurnstileVerifier, type TurnstileVerifier } from '../lib/turnstile.ts';
+import { flagSharedIpAccounts } from '../lib/account-review.ts';
 import { requireAuth } from '../lib/permissions.ts';
 import { assertNotInMaintenance } from '../lib/maintenance.ts';
 import { compactAmount } from '../../shared/amount.ts';
@@ -89,6 +90,7 @@ export function createAuthRouter(
     // Per-address registration limit when the real address is known; without
     // one, a platform-wide ceiling stops scripted sign-ups from running wild.
     const registerAddress = clientAddress(req);
+    const registrationIp = registerAddress;
     if (registerAddress) limiterGuard(registerLimiter.consume(`register:ip:${registerAddress}`));
     else limiterGuard(registerGlobalLimiter.consume('register:global'));
     if (!getSetting(db, 'platform.registration_open', true)) {
@@ -113,9 +115,9 @@ export function createAuthRouter(
     try {
       db.transaction(() => {
         db.prepare(
-          `INSERT INTO users (id, username, email, password_hash, role, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'user', 'active', ?, ?)`,
-        ).run(userId, body.username, body.email, hashPassword(body.password), now, now);
+          `INSERT INTO users (id, username, email, password_hash, role, status, registration_ip, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'user', 'active', ?, ?, ?)`,
+        ).run(userId, body.username, body.email, hashPassword(body.password), registrationIp, now, now);
         createWallet(db, userId, startingCredits, userId);
         recordLegalAcceptance(db, {
           userId,
@@ -131,12 +133,21 @@ export function createAuthRouter(
       throw error;
     }
 
+    // Detection is deliberately best-effort: an IP lookup or review write must
+    // never turn a successful registration into an error. The regular flow is
+    // protected server-side even if the background review cannot be recorded.
+    try {
+      flagSharedIpAccounts(db, userId, registrationIp);
+    } catch (error) {
+      console.warn('[account-review] registration check failed:', error instanceof Error ? error.message : error);
+    }
+
     notify(db, {
       userId,
       type: 'account',
       title: 'Welcome to Donutcash',
-      body: `${compactAmount(startingCredits)} DonutSMP money was added to your wallet. Good luck at the tables.`,
-      link: '/wallet',
+      body: `${compactAmount(startingCredits)} DonutSMP money was added to your wallet. Verify your email before your first bet.`,
+      link: '/settings#email',
     });
     const verification = createEmailVerification(db, userId, body.email);
     enqueueEmail(db, {
@@ -182,7 +193,7 @@ export function createAuthRouter(
 
     const row = db
       .prepare(
-        `SELECT id, username, email, role, status, password_hash, self_excluded_until FROM users
+        `SELECT id, username, email, role, status, password_hash, self_excluded_until, registration_ip FROM users
          WHERE email = ? COLLATE NOCASE OR username = ? COLLATE NOCASE`,
       )
       .get(body.identifier, body.identifier) as
@@ -194,6 +205,7 @@ export function createAuthRouter(
           status: string;
           password_hash: string;
           self_excluded_until: string | null;
+          registration_ip: string | null;
         }
       | undefined;
 
@@ -240,6 +252,13 @@ export function createAuthRouter(
     }
 
     loginLimiter.reset(ipKey);
+    if (!row.registration_ip && loginAddress) {
+      db.prepare('UPDATE users SET registration_ip = ?, updated_at = ? WHERE id = ?').run(
+        loginAddress,
+        nowIso(),
+        row.id,
+      );
+    }
     const previousSession = db
       .prepare('SELECT ip, user_agent FROM sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1')
       .get(row.id) as { ip: string | null; user_agent: string | null } | undefined;
@@ -367,6 +386,7 @@ export function createAuthRouter(
       );
       db.prepare('UPDATE password_resets SET used_at = ? WHERE id = ?').run(now, row.id);
       db.prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL').run(now, row.user_id);
+      db.prepare('DELETE FROM account_deletion_requests WHERE user_id = ? AND used_at IS NULL').run(row.user_id);
     })();
     revokeAllSessions(db, row.user_id);
     recordAudit(db, {
@@ -402,6 +422,7 @@ export function createAuthRouter(
       nowIso(),
       user.id,
     );
+    db.prepare('DELETE FROM account_deletion_requests WHERE user_id = ? AND used_at IS NULL').run(user.id);
     if (req.sessionId) revokeOtherSessions(db, user.id, req.sessionId);
     recordAudit(db, {
       actorId: user.id,

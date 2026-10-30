@@ -1,16 +1,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { config } from '../config.ts';
+import { assertProductionDatabaseAvailable, config } from '../config.ts';
 import { getDatabase } from '../db/index.ts';
 
 const dbPath = config.databasePath;
+assertProductionDatabaseAvailable({
+  isProduction: config.isProduction,
+  databaseExists: config.databaseExists,
+  allowNewDatabase: config.allowNewDatabase,
+  databasePath: config.databasePath,
+  candidates: config.databasePathCandidates,
+});
 if (dbPath === ':memory:') {
   console.error('In-memory databases cannot be backed up.');
   process.exit(1);
 }
 const dirArgIndex = process.argv.indexOf('--out');
-const outDir = dirArgIndex !== -1 ? (process.argv[dirArgIndex + 1] ?? 'data/backups') : 'data/backups';
+const outDir = dirArgIndex !== -1 ? (process.argv[dirArgIndex + 1] ?? config.backupDir) : config.backupDir;
 fs.mkdirSync(outDir, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const target = path.resolve(outDir, `donutcash-${stamp}.db`);
@@ -41,5 +48,5 @@ if (integrity !== 'ok') {
 }
 console.info(`Backup written to ${target}`);
 console.info(`  integrity_check: ok, users: ${users}, ledger entries: ${ledger}`);
-console.info('Restore: stop the server, keep a copy of the current database, replace data/aurum.db with this file,');
-console.info('remove stale aurum.db-wal / aurum.db-shm files, then start the server and run `npm run db:migrate`.');
+console.info(`Restore: stop the server, keep a copy of the current database, replace ${config.databasePath} with this file,`);
+console.info('remove stale -wal / -shm files beside it, then start the server and run `npm run db:migrate`.');

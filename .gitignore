@@ -1,14 +1,26 @@
 # Dependencies
 node_modules/
 
-# Runtime data: SQLite database, WAL sidecars, session secret, generated owner
-# credentials and backups. Never commit these; MonsterASP protects data/ too.
+# Live IIS configuration: MonsterASP generates it on every Build & publish.
+# Keep deploy/web.config.example tracked instead.
+web.config
+
+# Persistent runtime data. App_Data is the default data root and is preserved
+# by MonsterASP publishes; data/ remains supported for existing installations.
+# Never commit databases, WAL sidecars, secrets, generated credentials or
+# backups.
+App_Data/
+app_data/
 data/
 *.db
 *.db-wal
 *.db-shm
+*.db-journal
 *.sqlite
 *.sqlite3
+.session-secret
+owner-credentials.txt
+backups/
 
 # Secrets and local environment
 .env

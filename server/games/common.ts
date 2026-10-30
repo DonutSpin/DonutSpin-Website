@@ -5,6 +5,7 @@ import { badRequest, conflict, newId, nowIso, parseJson } from '../lib/core.ts';
 import { randomInt } from 'node:crypto';
 import { getSetting } from '../db/index.ts';
 import { compactAmount } from '../../shared/amount.ts';
+import { recordBetActivity } from '../lib/rewards.ts';
 
 export interface GameRow {
   id: string;
@@ -108,6 +109,9 @@ export function debitWager(db: DB, userId: string, sessionId: string, bet: numbe
     idempotencyKey: `game-wager:${sessionId}`,
     metadata: { game: gameId },
   });
+  // The activity row is in the same transaction as the debit. A failed game
+  // start rolls both back, so only successfully accepted wagers count.
+  recordBetActivity(db, userId);
   return entry.id;
 }
 

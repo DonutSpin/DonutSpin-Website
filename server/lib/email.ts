@@ -17,6 +17,7 @@ export type EmailTemplate =
   | 'reward-claimed'
   | 'announcement'
   | 'cashier-decision'
+  | 'account-deletion'
   | 'test';
 
 export interface EmailConfig {
@@ -519,6 +520,30 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
         ].join('\n'),
       };
     }
+    case 'account-deletion':
+      return {
+        subject: `Confirm deletion of your ${email.appName} account`,
+        html: layout(email, {
+          title: 'Delete your account?',
+          kicker: 'Account deletion requested',
+          preheader: 'This confirmation link expires in 30 minutes and can only be used once.',
+          content: [
+            paragraph(`We received a request to permanently delete the ${escapeHtml(email.appName)} account belonging to <strong style="color:#f6f4ef;">${escapeHtml(username)}</strong>.`),
+            paragraph('If you asked for this, confirm below. Your profile, email address, wallet access, sessions, rewards, support history, and other personal records will be erased. You will not be able to sign in again.'),
+            cta('Confirm account deletion', textValue(payload, 'deleteUrl', '/settings')),
+            callout('This link expires in 30 minutes and can only be used once. If you did not request this deletion, ignore this email and consider changing your password.', 'danger'),
+            paragraph('Financial ledger entries may be retained in pseudonymous form where accounting, anti-fraud, or legal obligations require it. They will no longer be linked to your name or email address.', 'muted'),
+          ].join(''),
+        }),
+        text: [
+          `A request was made to permanently delete the ${email.appName} account for ${username}.`,
+          `Confirm the deletion: ${safeUrl(email, textValue(payload, 'deleteUrl', '/settings'))}`,
+          'This link expires in 30 minutes and can only be used once.',
+          'If you did not request this, ignore this email and consider changing your password.',
+          'Financial ledger entries may be retained in pseudonymous form where accounting, anti-fraud, or legal obligations require it.',
+          footerText(email),
+        ].join('\n'),
+      };
     case 'test':
     default:
       return {

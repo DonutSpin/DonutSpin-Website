@@ -19,6 +19,7 @@ interface SessionJoinRow {
   status: AccountStatus;
   email_verified: number;
   email_notifications: number;
+  account_hold: number;
   created_at: string;
   last_login_at: string | null;
   self_excluded_until: string | null;
@@ -77,7 +78,7 @@ export function clearSessionCookie(res: Response, req?: Request): void {
 export function loadUser(db: DB, userId: string): SessionUser | null {
   const row = db
     .prepare(
-      `SELECT u.id, u.username, u.email, u.role, u.status, u.email_verified, u.email_notifications,
+      `SELECT u.id, u.username, u.email, u.role, u.status, u.email_verified, u.email_notifications, u.account_hold,
               u.created_at, u.last_login_at, u.self_excluded_until, w.balance
        FROM users u JOIN wallets w ON w.user_id = u.id WHERE u.id = ?`,
     )
@@ -90,6 +91,7 @@ export function loadUser(db: DB, userId: string): SessionUser | null {
         status: AccountStatus;
         email_verified: number;
         email_notifications: number;
+        account_hold: number;
         created_at: string;
         last_login_at: string | null;
         self_excluded_until: string | null;
@@ -106,6 +108,7 @@ export function loadUser(db: DB, userId: string): SessionUser | null {
     status: row.status,
     emailVerified: Boolean(row.email_verified),
     emailNotifications: Boolean(row.email_notifications),
+    accountHold: Boolean(row.account_hold),
     balance: row.balance,
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at,
@@ -123,7 +126,7 @@ export function authMiddleware(db: DB) {
     const row = db
       .prepare(
         `SELECT s.id AS session_id, s.user_id, s.expires_at, s.revoked_at, s.last_used_at,
-                u.username, u.email, u.role, u.status, u.email_verified, u.email_notifications,
+                u.username, u.email, u.role, u.status, u.email_verified, u.email_notifications, u.account_hold,
                 u.created_at, u.last_login_at, u.self_excluded_until, w.balance
          FROM sessions s
          JOIN users u ON u.id = s.user_id
@@ -154,6 +157,7 @@ export function authMiddleware(db: DB) {
       status: row.status,
       emailVerified: Boolean(row.email_verified),
       emailNotifications: Boolean(row.email_notifications),
+      accountHold: Boolean(row.account_hold),
       balance: row.balance,
       createdAt: row.created_at,
       lastLoginAt: row.last_login_at,

@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Smartphone,
+  Trash2,
   UserRound,
 } from 'lucide-react';
 import type { SessionUser } from '../../shared/types';
@@ -64,7 +65,8 @@ export function SettingsPage() {
   const { user, setUser, logout } = useAuth();
   const { success, error: toastError } = useToast();
   const [params] = useSearchParams();
-  const [tab, setTab] = useState(params.get('tab') === 'responsible' ? 'responsible' : 'profile');
+  const initialTab = params.get('tab');
+  const [tab, setTab] = useState(initialTab === 'responsible' || initialTab === 'security' ? initialTab : 'profile');
   const [username, setUsername] = useState(user?.username ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [emailNotifications, setEmailNotifications] = useState(user?.emailNotifications ?? true);
@@ -81,6 +83,13 @@ export function SettingsPage() {
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordFields, setPasswordFields] = useState<Record<string, string>>({});
+
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteAck, setDeleteAck] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
+  const [deleteDevPath, setDeleteDevPath] = useState<string | null>(null);
 
   const [exclusionDuration, setExclusionDuration] = useState<SelfExclusionDuration>('24h');
   const [exclusionReason, setExclusionReason] = useState('');
@@ -179,6 +188,33 @@ export function SettingsPage() {
       success('Other sessions signed out');
     } catch (err) {
       toastError('Could not revoke sessions', errorMessage(err));
+    }
+  };
+
+  const requestAccountDeletion = async (event: FormEvent) => {
+    event.preventDefault();
+    setDeleteError(null);
+    setDeleteNotice(null);
+    setDeleteDevPath(null);
+    if (!deleteAck) {
+      setDeleteError('Confirm that you understand this action cannot be undone.');
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      const result = await api.post<{ message: string; sent: boolean; deletePath?: string }>(
+        '/me/delete-account/request',
+        { password: deletePassword },
+      );
+      setDeleteNotice(result.message);
+      setDeleteDevPath(result.deletePath ?? null);
+      setDeletePassword('');
+      setDeleteAck(false);
+      success('Deletion email sent', result.message);
+    } catch (err) {
+      setDeleteError(errorMessage(err));
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -301,6 +337,7 @@ export function SettingsPage() {
           )}
 
           {tab === 'security' && (
+            <>
             <form onSubmit={(event) => void changePassword(event)} className="space-y-5 p-5">
               {passwordError && (
                 <Alert tone="error" title="Could not change password">
@@ -355,6 +392,94 @@ export function SettingsPage() {
                 </Button>
               </div>
             </form>
+
+            <section id="delete-account" className="scroll-mt-24 border-t border-danger/20 p-5">
+              <div className="flex items-start gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-danger/25 bg-danger/[0.07] text-danger">
+                  <Trash2 className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold text-ink">Delete account</p>
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-muted">
+                    Permanently erase your profile, email address, wallet access, sessions, rewards, support history, and
+                    other personal records. This cannot be undone. We will email a one-time confirmation link as a
+                    second check before anything is removed.
+                  </p>
+                  <p className="mt-2 text-[11px] leading-relaxed text-faint">
+                    Financial ledger entries may be retained in pseudonymous form where accounting, anti-fraud, or legal
+                    obligations require it. They will no longer be linked to your name or email address.
+                  </p>
+
+                  {deleteNotice ? (
+                    <div className="mt-4 space-y-3">
+                      <Alert tone="success" title="Check your inbox">
+                        {deleteNotice}
+                      </Alert>
+                      {deleteDevPath && (
+                        <Link to={deleteDevPath} className="inline-block text-[11.5px] font-medium text-gold underline">
+                          Open the local deletion link
+                        </Link>
+                      )}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <p className="text-[11px] text-faint">The link expires in 30 minutes. Check your spam folder if it does not arrive.</p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setDeleteNotice(null);
+                            setDeleteDevPath(null);
+                          }}
+                        >
+                          Request another link
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <form onSubmit={(event) => void requestAccountDeletion(event)} className="mt-4 space-y-3">
+                      {deleteError && (
+                        <Alert tone="error" title="Could not send the deletion link">
+                          {deleteError}
+                        </Alert>
+                      )}
+                      <Field
+                        label="Current password"
+                        htmlFor="delete-password"
+                        hint="We verify your password, then send a confirmation email to the address on this account."
+                      >
+                        <Input
+                          id="delete-password"
+                          type="password"
+                          autoComplete="current-password"
+                          value={deletePassword}
+                          onChange={(event) => setDeletePassword(event.target.value)}
+                        />
+                      </Field>
+                      <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-danger/20 bg-danger/[0.04] p-3 text-[11.5px] text-ink/90">
+                        <input
+                          type="checkbox"
+                          checked={deleteAck}
+                          onChange={(event) => setDeleteAck(event.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 rounded border-line-strong bg-surface-3 accent-[#f87b86]"
+                        />
+                        I understand that deleting my account is permanent and that I will lose access to my wallet and
+                        account history.
+                      </label>
+                      <Button
+                        type="submit"
+                        variant="danger"
+                        loading={deleteBusy}
+                        disabled={!deleteAck}
+                        leftIcon={<Trash2 className="h-4 w-4" />}
+                      >
+                        Email deletion link
+                      </Button>
+                    </form>
+                  )}
+                </div>
+              </div>
+            </section>
+            </>
           )}
 
           {tab === 'responsible' && (

@@ -57,15 +57,26 @@ function CalendarCell({ day }: { day: RewardCalendarDay }) {
       className={cn(
         'reward-calendar-day',
         day.claimed && 'is-claimed',
+        day.betPlaced && !day.claimed && 'is-active',
         day.isToday && 'is-today',
         day.isPast && !day.claimed && 'is-missed',
       )}
-      title={day.claimed ? `${money(day.reward ?? 0)} claimed on ${day.label}` : day.isToday ? 'Today' : day.label}
+      title={
+        day.claimed
+          ? `${money(day.reward ?? 0)} claimed on ${day.label}`
+          : day.betPlaced
+            ? `Bet placed on ${day.label}`
+            : day.isToday
+              ? 'Today'
+              : day.label
+      }
     >
       <span className="text-[8px] font-bold uppercase tracking-[0.12em] opacity-70">{day.weekday}</span>
       <span className="font-display text-[12px] font-semibold leading-none tnum">{Number(day.day.slice(-2))}</span>
       {day.claimed ? (
         <Check className="h-3 w-3" strokeWidth={3} />
+      ) : day.betPlaced ? (
+        <span className="h-1.5 w-1.5 rounded-full bg-success shadow-[0_0_6px_rgba(77,214,160,0.9)]" />
       ) : day.isToday ? (
         <span className="h-1.5 w-1.5 rounded-full bg-gold shadow-[0_0_6px_rgba(230,194,122,0.9)]" />
       ) : (
@@ -262,12 +273,14 @@ export function RewardsPage() {
                   </span>
                 </div>
                 <h2 className="mt-4 max-w-xl font-display text-[27px] font-semibold leading-[1.12] tracking-[-0.03em] text-ink sm:text-[34px]">
-                  {claimedToday ? 'Today’s drop is in the bank.' : 'Your next drop is ready.'}
+                  {claimedToday ? 'Today’s drop is in the bank.' : summary.betToday ? 'Your next drop is ready.' : 'Place a bet to unlock today’s drop.'}
                 </h2>
                 <p className="mt-2 max-w-xl text-[12.5px] leading-relaxed text-muted">
                   {claimedToday
-                    ? `You claimed ${money(claimedAmount)} money for day ${claimDay}. Come back after the reset to keep the streak alive.`
-                    : `Claim now for day ${nextReward?.streakDay ?? 1}. Keep the streak going to unlock a bigger daily reward${nextMilestone ? ` and the day ${nextMilestone.day} milestone` : ''}.`}
+                    ? `You claimed ${money(claimedAmount)} money for day ${claimDay}. Keep betting daily to extend the streak.`
+                    : summary.betToday
+                      ? `Claim now for day ${nextReward?.streakDay ?? 1}. Keep the streak going to unlock a bigger daily reward${nextMilestone ? ` and the day ${nextMilestone.day} milestone` : ''}.`
+                      : `Place at least one valid bet today to unlock the day ${nextReward?.streakDay ?? 1} drop. Logging in or browsing does not count towards a streak.`}
                 </p>
 
                 <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -298,7 +311,7 @@ export function RewardsPage() {
                       <Trophy className="h-4 w-4" />
                     </span>
                     <div>
-                      <p className="font-display text-[18px] font-semibold leading-none text-ink tnum">{summary.streak}</p>
+                      <p className="font-display text-[18px] font-semibold leading-none text-ink tnum">{summary.bestStreak}</p>
                       <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-faint">best streak</p>
                     </div>
                   </div>
@@ -311,14 +324,19 @@ export function RewardsPage() {
                     className="min-w-44"
                     loading={claiming}
                     onClick={() => void claim()}
-                    disabled={claimedToday}
+                    disabled={claimedToday || !summary.betToday}
                     leftIcon={claimedToday ? <Check className="h-4 w-4" /> : <Gift className="h-4 w-4" />}
                   >
-                    {claimedToday ? 'Claimed today' : `Claim ${money(nextReward?.total ?? 0)}`}
+                    {claimedToday ? 'Claimed today' : summary.betToday ? `Claim ${money(nextReward?.total ?? 0)}` : 'Bet today to claim'}
                   </Button>
                   {claimedToday && (
                     <div className="rounded-xl border border-line/80 bg-surface-2/60 px-3.5 py-2.5 text-[11px] text-muted">
                       Next drop in <span className="font-semibold text-ink tnum">{countdown.label}</span>
+                    </div>
+                  )}
+                  {!claimedToday && !summary.betToday && (
+                    <div className="rounded-xl border border-gold/25 bg-gold/[0.06] px-3.5 py-2.5 text-[11px] text-muted">
+                      A valid bet today is required before you can claim.
                     </div>
                   )}
                   {!claimedToday && nextReward && nextReward.milestoneAmount > 0 && (
@@ -374,6 +392,7 @@ export function RewardsPage() {
                 </div>
                 <div className="flex items-center gap-3 text-[9px] font-medium uppercase tracking-[0.1em] text-faint">
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-success/70" /> Claimed</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-success/35" /> Bet placed</span>
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-gold/80" /> Today</span>
                 </div>
               </div>
@@ -385,12 +404,8 @@ export function RewardsPage() {
                 </div>
                 <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/70 bg-surface-2/40 px-3.5 py-3">
                   <p className="text-[11px] text-muted">
-                    Missed days:{' '}
-                    <span className="font-medium text-ink">
-                      {summary.missedPolicy === 'grace'
-                        ? `${summary.graceDays} grace day${summary.graceDays === 1 ? '' : 's'} before reset`
-                        : 'streak resets'}
-                    </span>
+                    Streak rule:{' '}
+                    <span className="font-medium text-ink">at least one accepted bet each day</span>
                   </p>
                   <p className="text-[10.5px] text-faint">Streak {currentStreak} / {progressMax}</p>
                 </div>
@@ -472,9 +487,9 @@ export function RewardsPage() {
                 title="No claims yet"
                 description="Your first daily reward starts your streak. Claim it now and come back tomorrow."
                 action={
-                  <Button variant="primary" onClick={() => void claim()} disabled={claimedToday} loading={claiming}>
-                    Claim first reward
-                  </Button>
+                  <Link to="/games">
+                    <Button variant="primary">Place a bet to start your streak</Button>
+                  </Link>
                 }
               />
             ) : (

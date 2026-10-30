@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { DB } from '../db/index.ts';
 import { requireAuth } from '../lib/permissions.ts';
+import { assertNotOnHold } from '../lib/account-status.ts';
 import { claimReward, getRewardsConfig, rewardsSummary } from '../lib/rewards.ts';
 import { notify } from '../lib/notifications.ts';
 import { enqueueEmail, getEmailConfig } from '../lib/email.ts';
@@ -18,6 +19,7 @@ export function createRewardsRouter(db: DB): Router {
 
   router.post('/claim', (req, res) => {
     const user = requireAuth(req);
+    assertNotOnHold(user);
     const result = claimReward(db, user.id);
     const config = getRewardsConfig(db);
 

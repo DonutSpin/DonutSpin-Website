@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Info, Minus, Plus, ShieldCheck, Sparkles, Wallet } from 'lucide-react';
+import { ArrowLeft, BookOpen, Info, LifeBuoy, Mail, Minus, Plus, ShieldCheck, Sparkles, Wallet } from 'lucide-react';
 import type { Card as CardData, GameConfig } from '../../shared/types';
 import { useAuth } from '../context/AuthContext';
 import { money } from '../lib/format';
@@ -33,6 +33,8 @@ export function GameLayout({
   maxPayout?: number;
 }) {
   const [rulesOpen, setRulesOpen] = useState(false);
+  const { user } = useAuth();
+  const bettingBlocked = Boolean(user && (!user.emailVerified || user.accountHold));
   return (
     <>
       <PageHeader
@@ -60,10 +62,36 @@ export function GameLayout({
             : 'This game has been disabled by an administrator. Your balance is safe.'}
         </Alert>
       )}
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_358px]">
-        <div className="min-w-0">{board}</div>
-        <aside className="space-y-4">{aside}</aside>
-      </div>
+      {bettingBlocked ? (
+        <Card className="mx-auto max-w-2xl p-6 text-center">
+          <span className={`mx-auto grid h-12 w-12 place-items-center rounded-2xl border ${user?.accountHold ? 'border-warning/30 bg-warning/10 text-warning' : 'border-gold/30 bg-gold/10 text-gold'}`}>
+            {user?.accountHold ? <ShieldCheck className="h-6 w-6" /> : <Mail className="h-6 w-6" />}
+          </span>
+          <h2 className="mt-4 font-display text-xl font-semibold text-ink">
+            {user?.accountHold ? 'Your account is under review' : 'Verify your email to play'}
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-[12.5px] leading-relaxed text-muted">
+            {user?.accountHold
+              ? 'Betting, bonuses, and cashier requests are paused while support reviews this account. Open a support ticket if you need help.'
+              : 'A verified email is required before your first wager. We sent you a verification link; you can request a new one from Settings.'}
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Link to={user?.accountHold ? '/tickets/new' : '/settings#email'}>
+              <Button variant="primary" leftIcon={user?.accountHold ? <LifeBuoy className="h-4 w-4" /> : <Mail className="h-4 w-4" />}>
+                {user?.accountHold ? 'Contact support' : 'Open email settings'}
+              </Button>
+            </Link>
+            <Link to="/games">
+              <Button variant="secondary">Browse games</Button>
+            </Link>
+          </div>
+        </Card>
+      ) : (
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_358px]">
+          <div className="min-w-0">{board}</div>
+          <aside className="space-y-4">{aside}</aside>
+        </div>
+      )}
       <Modal
         open={rulesOpen}
         onClose={() => setRulesOpen(false)}

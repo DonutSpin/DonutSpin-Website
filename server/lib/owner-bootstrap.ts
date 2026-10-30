@@ -20,18 +20,15 @@ import { newId, nowIso } from './core.ts';
  *    account on later boots, and never logs the password.
  * 2. Nothing is configured and no owner exists yet. A strong password is
  *    generated, printed once to the process log (HttpPlatform log on IIS),
- *    and written to `data/owner-credentials.txt`, which web.config hides.
+ *    and written beside the persistent database, which web.config and the
+ *    SPA fallback hide from HTTP.
  */
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
 
-function credentialsPath(): string {
-  return path.join(config.root, 'data', 'owner-credentials.txt');
-}
-
 function writeCredentialsFile(lines: string[]): void {
   try {
-    const file = credentialsPath();
+    const file = config.ownerCredentialsPath;
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, `${lines.join('\n')}\n`, { mode: 0o600 });
   } catch (error) {

@@ -18,6 +18,7 @@ import { createGamesRouter } from './routes/games.ts';
 import { createTicketsRouter } from './routes/tickets.ts';
 import { createCashierRouter, createAdminCashierRouter } from './routes/cashier.ts';
 import { createStaffRouter } from './routes/staff.ts';
+import { createAccountReviewRouter } from './routes/account-reviews.ts';
 import { createAdminRouter } from './routes/admin.ts';
 import { createAdminConfigRouter } from './routes/admin-config.ts';
 import { createRewardsRouter } from './routes/rewards.ts';
@@ -42,7 +43,27 @@ function isSameOrigin(req: Request, origin: string): boolean {
 }
 
 /** Paths that must never be answered by the SPA fallback. */
-const PRIVATE_PREFIXES = ['/data', '/server', '/build', '/node_modules', '/shared', '/tests', '/src', '/.git', '/logs'];
+const PRIVATE_PREFIXES = [
+  '/app_data',
+  '/data',
+  '/backups',
+  '/deploy',
+  '/server',
+  '/build',
+  '/node_modules',
+  '/shared',
+  '/tests',
+  '/src',
+  '/.git',
+  '/logs',
+  '/web.config',
+  '/web.config.example',
+  '/.session-secret',
+  '/owner-credentials.txt',
+  '/app.db',
+  '/app.db-wal',
+  '/app.db-shm',
+];
 
 function isPrivatePath(urlPath: string): boolean {
   const segments = urlPath.toLowerCase().split('?')[0] ?? '';
@@ -126,8 +147,10 @@ export function createApp(db: DB, options: { turnstile?: TurnstileVerifier } = {
   app.use('/api', (req, _res, next) => {
     if (!req.user?.legalAcceptanceRequired) return next();
     if (req.path.startsWith('/auth') || req.path.startsWith('/legal') || req.path.startsWith('/public')) return next();
-    // Self-exclusion must stay reachable even when new terms are pending.
+    // Self-exclusion and account deletion must stay reachable even when new
+    // terms are pending: both are rights the account holder can exercise.
     if (req.method === 'POST' && req.path === '/me/self-exclusion') return next();
+    if (req.method === 'POST' && req.path.startsWith('/me/delete-account')) return next();
     return next(
       new ApiError(
         403,
@@ -145,6 +168,7 @@ export function createApp(db: DB, options: { turnstile?: TurnstileVerifier } = {
   app.use('/api/rewards', createRewardsRouter(db));
   app.use('/api/tickets', createTicketsRouter(db));
   app.use('/api/cashier', createCashierRouter(db));
+  app.use('/api/staff/account-reviews', createAccountReviewRouter(db));
   app.use('/api/staff', createStaffRouter(db));
   app.use('/api/admin', createAdminRouter(db));
   app.use('/api/admin', createAdminConfigRouter(db));

@@ -5,13 +5,21 @@ import { hashPassword, passwordIssues } from '../lib/crypto.ts';
 import { createWallet } from '../lib/wallet.ts';
 import { recordAudit } from '../lib/audit.ts';
 import { newId, nowIso } from '../lib/core.ts';
-import { config } from '../config.ts';
+import { assertProductionDatabaseAvailable, config } from '../config.ts';
 
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   if (index === -1) return undefined;
   return process.argv[index + 1];
 }
+
+assertProductionDatabaseAvailable({
+  isProduction: config.isProduction,
+  databaseExists: config.databaseExists,
+  allowNewDatabase: config.allowNewDatabase,
+  databasePath: config.databasePath,
+  candidates: config.databasePathCandidates,
+});
 
 const db = getDatabase();
 const username = (arg('username') ?? 'owner').trim();

@@ -17,6 +17,7 @@ import { parse, pageQuerySchema } from '../lib/validation.ts';
 import { amountSchema } from '../lib/amount.ts';
 import { compactAmount } from '../../shared/amount.ts';
 import { requireActive, requirePermission } from '../lib/permissions.ts';
+import { assertNotOnHold } from '../lib/account-status.ts';
 import { applyLedger, balanceOf } from '../lib/wallet.ts';
 import { recordAudit } from '../lib/audit.ts';
 import { notify } from '../lib/notifications.ts';
@@ -107,6 +108,7 @@ export function createCashierRouter(db: DB): Router {
   router.post('/', (req, res) => {
     const user = requireActive(req);
     requirePermission(req, 'cashier.request');
+    assertNotOnHold(user);
     const limiter = cashierRequestLimiter.consume(user.id);
     if (!limiter.allowed) {
       throw new ApiError(429, 'RATE_LIMITED', 'You have opened several cashier requests recently. Please wait before submitting another.');

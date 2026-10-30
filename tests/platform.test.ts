@@ -135,6 +135,9 @@ beforeAll(async () => {
   db.prepare("UPDATE users SET role = 'owner' WHERE id = ?").run(ownerId);
   db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(adminId);
   db.prepare("UPDATE users SET role = 'support' WHERE id = ?").run(supportId);
+  // Players must verify email before wagering. The shared player fixture is
+  // verified so game and wallet tests exercise the game rules themselves.
+  db.prepare('UPDATE users SET email_verified = 1 WHERE id = ?').run(playerId);
 
   otherId = createDirectUser('otherqa', 'user');
   otherAgent = await signIn('otherqa');
@@ -232,6 +235,32 @@ describe('authentication and account security', () => {
       .send({ identifier: 'suspendedqa', password: PASSWORD });
     expectStatus(res, 403);
     expect(res.body.error.code).toBe('ACCOUNT_SUSPENDED');
+  });
+
+  it('requires a verified email before the first wager', async () => {
+    const username = unique('unv');
+    const fresh = await registerAgent(username, `${username}@test.local`);
+    const blocked = await fresh.agent
+      .post('/api/games/coinflip/play')
+      .set(CSRF)
+      .send({ requestId: unique('unverified'), bet: 100, pick: 'heads' });
+    expectStatus(blocked, 403);
+    expect(blocked.body.error.code).toBe('EMAIL_VERIFICATION_REQUIRED');
+
+    db.prepare('UPDATE users SET email_verified = 1 WHERE id = ?').run(fresh.userId);
+    const accepted = await fresh.agent
+      .post('/api/games/coinflip/play')
+      .set(CSRF)
+      .send({ requestId: unique('verified'), bet: 100, pick: 'heads' });
+    expectStatus(accepted, 201);
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM bet_activity_days WHERE user_id = ?').get(fresh.userId),
+    ).toEqual({ count: 1 });
+    const ack = await fresh.agent
+      .post(`/api/games/sessions/${accepted.body.session.id}/acknowledge`)
+      .set(CSRF)
+      .send({});
+    expectStatus(ack, 200);
   });
 
   it('completes password reset, invalidates old sessions, and accepts the new password', async () => {
@@ -946,6 +975,9 @@ describe('server-authoritative games', () => {
 
   it('rejects invalid wagers before touching the wallet', async () => {
     const before = walletBalance(playerId);
+    const activityBefore = (
+      db.prepare('SELECT COUNT(*) AS count FROM bet_activity_days WHERE user_id = ?').get(playerId) as { count: number }
+    ).count;
     const zero = await playerAgent
       .post('/api/games/coinflip/play')
       .set(CSRF)
@@ -960,6 +992,9 @@ describe('server-authoritative games', () => {
     expect(tooHigh.body.error.code).toBe('WAGER_TOO_HIGH');
 
     expect(walletBalance(playerId)).toBe(before);
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM bet_activity_days WHERE user_id = ?').get(playerId),
+    ).toEqual({ count: activityBefore });
   });
 
   it('settles coinflip atomically and makes repeated request ids idempotent', async () => {

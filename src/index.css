@@ -820,6 +820,10 @@ dialog::backdrop {
   background: linear-gradient(160deg, rgba(77, 214, 160, 0.14), rgba(77, 214, 160, 0.04));
   color: #a9f5d5;
 }
+.reward-calendar-day.is-active {
+  border-color: rgba(77, 214, 160, 0.2);
+  background: linear-gradient(160deg, rgba(77, 214, 160, 0.08), rgba(77, 214, 160, 0.02));
+}
 .reward-calendar-day.is-today {
   border-color: rgba(230, 194, 122, 0.55);
   background: linear-gradient(160deg, rgba(230, 194, 122, 0.18), rgba(230, 194, 122, 0.04));

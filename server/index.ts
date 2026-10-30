@@ -1,12 +1,25 @@
 import { createApp } from './app.ts';
 import { getDatabase, closeDatabase } from './db/index.ts';
-import { config } from './config.ts';
+import { assertProductionDatabaseAvailable, config, ensureDataDir } from './config.ts';
 import { assertProductionSecrets } from './lib/crypto.ts';
 import { processEmailQueue } from './lib/email.ts';
 import { ensureBootstrapOwner } from './lib/owner-bootstrap.ts';
 import { isSharedRateLimitStoreEnabled } from './lib/rate-limit.ts';
 
+// A production process must never create a brand-new empty database: that is
+// how a changed path resets every account, balance, game multiplier and admin
+// setting at once. The check runs before getDatabase() touches the filesystem
+// and before the session secret is resolved, so a failed boot cannot rotate it.
+assertProductionDatabaseAvailable({
+  isProduction: config.isProduction,
+  databaseExists: config.databaseExists,
+  allowNewDatabase: config.allowNewDatabase,
+  databasePath: config.databasePath,
+  candidates: config.databasePathCandidates,
+});
 assertProductionSecrets();
+ensureDataDir(config.dataDir);
+ensureDataDir(config.databasePath);
 const db = getDatabase();
 
 // Hosted deployments have no shell to run `npm run owner`, so the owner is
@@ -48,7 +61,9 @@ const app = createApp(db);
 const server = app.listen(config.port, () => {
   console.info(`[donutcash] API listening on http://localhost:${config.port}`);
   console.info(`[donutcash] environment: ${config.isProduction ? 'production' : 'development'}`);
-  console.info(`[donutcash] database: ${config.databasePath}`);
+  console.info(`[donutcash] database: ${config.databasePath} (${config.databasePathSource})`);
+  console.info(`[donutcash] persistent data: ${config.dataDir}`);
+  console.info(`[donutcash] pre-migration backups: ${config.backupDir}`);
   console.info(`[donutcash] client build: ${config.clientDist}`);
   console.info(`[donutcash] public url: ${config.appUrl}${config.appUrlConfigured ? '' : ' (default; set APP_URL to override)'}`);
   console.info(

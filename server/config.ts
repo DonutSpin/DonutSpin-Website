@@ -48,6 +48,147 @@ export function isLoopbackHost(hostname: string): boolean {
   );
 }
 
+export type DatabasePathSource =
+  | 'env'
+  | 'data_dir_env'
+  | 'legacy_data'
+  | 'legacy_root'
+  | 'existing_app_data'
+  | 'default';
+
+export interface DatabasePathResolution {
+  databasePath: string;
+  dataDir: string;
+  source: DatabasePathSource;
+  exists: boolean;
+  candidates: { path: string; exists: boolean }[];
+}
+
+/**
+ * Runtime state that is not the database (backups, the generated session
+ * secret, generated owner credentials) lives in one directory. `App_Data` is
+ * the IIS convention: it sits beside the app but is preserved by publish
+ * operations and is not a source folder, so `git pull` can never touch it.
+ */
+export function resolveDataDir(env: NodeJS.ProcessEnv = process.env, appRoot = root): string {
+  const configured = (env.DONUTCASH_DATA_DIR ?? '').trim();
+  return path.resolve(appRoot, configured || 'App_Data');
+}
+
+/**
+ * Resolve the one persistent database location. Explicit configuration always
+ * wins. If it is absent, every known existing location is checked before a new
+ * file is created, so an upgrade can never silently point production at an
+ * empty database. New installations use App_Data/aurum.db.
+ *
+ * The order matters: root `app.db` is the long-standing production location,
+ * followed by the older `data/` locations, then `App_Data/`. This application
+ * never deletes or renames a database it finds; it only reports the choice.
+ */
+export function resolveDatabasePath(
+  env: NodeJS.ProcessEnv = process.env,
+  appRoot = root,
+  // A zero-byte file is not an existing database. Treating it as one would
+  // let a truncated/placeholder file win over a real database elsewhere.
+  exists: (candidate: string) => boolean = (candidate) => {
+    try {
+      return fs.statSync(candidate).size > 0;
+    } catch {
+      return false;
+    }
+  },
+): DatabasePathResolution {
+  const rootPath = path.resolve(appRoot);
+  const dataDir = resolveDataDir(env, rootPath);
+  const explicit = (env.DATABASE_PATH ?? '').trim();
+  if (explicit) {
+    if (explicit === ':memory:') {
+      return {
+        databasePath: ':memory:',
+        dataDir,
+        source: 'env',
+        exists: false,
+        candidates: [{ path: ':memory:', exists: false }],
+      };
+    }
+    const databasePath = path.resolve(rootPath, explicit);
+    return {
+      databasePath,
+      dataDir,
+      source: 'env',
+      exists: exists(databasePath),
+      candidates: [{ path: databasePath, exists: exists(databasePath) }],
+    };
+  }
+
+  const configuredDataDir = (env.DONUTCASH_DATA_DIR ?? '').trim();
+  const candidates: { path: string; source: DatabasePathSource }[] = [];
+  const addCandidate = (candidatePath: string, source: DatabasePathSource) => {
+    if (candidates.some((candidate) => candidate.path === candidatePath)) return;
+    candidates.push({ path: candidatePath, source });
+  };
+
+  // An explicitly configured data directory is the strongest hint after
+  // DATABASE_PATH itself, so check its known filenames first.
+  if (configuredDataDir) {
+    addCandidate(path.join(dataDir, 'app.db'), 'data_dir_env');
+    addCandidate(path.join(dataDir, 'aurum.db'), 'data_dir_env');
+  }
+  addCandidate(path.join(rootPath, 'app.db'), 'legacy_root');
+  addCandidate(path.join(rootPath, 'data', 'app.db'), 'legacy_data');
+  addCandidate(path.join(rootPath, 'data', 'aurum.db'), 'legacy_data');
+  addCandidate(path.join(rootPath, 'App_Data', 'app.db'), 'existing_app_data');
+  addCandidate(path.join(rootPath, 'App_Data', 'aurum.db'), 'existing_app_data');
+
+  const checked = candidates.map((candidate) => ({ ...candidate, exists: exists(candidate.path) }));
+  const selected = checked.find((candidate) => candidate.exists) ?? {
+    path: path.join(dataDir, 'aurum.db'),
+    source: configuredDataDir ? ('data_dir_env' as const) : ('default' as const),
+    exists: false,
+  };
+  return {
+    databasePath: selected.path,
+    dataDir,
+    source: selected.source,
+    exists: selected.exists,
+    candidates: checked.map(({ path: candidatePath, exists: candidateExists }) => ({
+      path: candidatePath,
+      exists: candidateExists,
+    })),
+  };
+}
+
+/**
+ * A production site must never boot on an empty database it just created. That
+ * is how a moved/mistyped path silently resets balances and game settings.
+ * Refuse to start unless the operator explicitly says this is a new install.
+ */
+export function assertProductionDatabaseAvailable(options: {
+  isProduction: boolean;
+  databaseExists: boolean;
+  allowNewDatabase: boolean;
+  databasePath: string;
+  candidates: { path: string; exists: boolean }[];
+}): void {
+  if (options.isProduction && options.databasePath === ':memory:') {
+    throw new Error(
+      'Refusing to start: DATABASE_PATH=:memory: in production. Every account, balance and setting would disappear on restart.',
+    );
+  }
+  if (!options.isProduction || options.databaseExists || options.allowNewDatabase) return;
+  const checked = options.candidates
+    .filter((candidate) => !candidate.exists)
+    .map((candidate) => candidate.path)
+    .join(', ');
+  throw new Error(
+    `Refusing to start: no existing database was found at ${options.databasePath} and ` +
+      `creating an empty one would hide all existing accounts and settings. ` +
+      `Checked: ${checked || options.databasePath}. ` +
+      'Restore the database file, set DATABASE_PATH to its real location, or set ' +
+      'ALLOW_NEW_DATABASE=true only for a genuinely new installation.',
+  );
+}
+
 /**
  * Resolve the public origin once at startup. Besides normalising the value,
  * production refuses loopback origins: a `.env` copied from development must
@@ -136,27 +277,64 @@ const cookieSecureOverride = process.env.COOKIE_SECURE;
 const cookieSecure =
   cookieSecureOverride === undefined ? isProduction && appUrl.startsWith('https://') : cookieSecureOverride === 'true';
 
-const databasePath = path.resolve(root, process.env.DATABASE_PATH || path.join('data', 'aurum.db'));
+const databaseResolution = resolveDatabasePath();
+const databasePath = databaseResolution.databasePath;
+const dataDir = databaseResolution.dataDir;
+const backupDir = path.join(dataDir, 'backups');
+const databaseExists = databaseResolution.exists;
+
+if (databaseResolution.candidates.filter((candidate) => candidate.exists).length > 1) {
+  console.warn(
+    `[config] multiple database files found; using ${databasePath}. ` +
+      `Set DATABASE_PATH explicitly to choose one. Candidates: ${databaseResolution.candidates
+        .filter((candidate) => candidate.exists)
+        .map((candidate) => candidate.path)
+        .join(', ')}`,
+  );
+}
 
 /**
- * `vite build` empties dist/, and a server build replaces build/. A database
- * placed in either folder would disappear on the next deploy, so refuse to
- * start instead of silently pointing a production site at disposable storage.
+ * `vite build` empties dist/, a server build replaces build/, and code folders
+ * are replaced by Git. A database inside any of them would disappear on the
+ * next deploy, so refuse to start instead of silently pointing production at
+ * disposable storage.
  */
 export function assertDatabasePathSafe(dbPath: string, appRoot = root): void {
-  for (const segment of ['dist', 'build']) {
+  if (dbPath === ':memory:') return;
+  const protectedSegments = ['dist', 'build', 'node_modules', 'src', 'server', 'shared', 'public', 'tests', 'logs', '.git'];
+  for (const segment of protectedSegments) {
     const directory = path.resolve(appRoot, segment);
     const relative = path.relative(directory, dbPath);
     if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
       throw new Error(
-        `DATABASE_PATH resolves inside ${segment}/ (${dbPath}); that directory is deleted by the build. ` +
-          'Use the default data/aurum.db or another persistent path outside dist/ and build/.',
+        `DATABASE_PATH resolves inside ${segment}/ (${dbPath}); that directory is replaced by Git or the build. ` +
+          'Use App_Data/, data/, app.db, or an absolute path outside code/build directories.',
+      );
+    }
+  }
+}
+
+/**
+ * The runtime directory must not sit inside a folder that Git replaces or a
+ * build empties. `App_Data`, `data/`, or an absolute path outside the project
+ * are valid; `src/`, `server/`, `dist/`, and `build/` are not.
+ */
+export function assertRuntimePathSafe(runtimePath: string, appRoot = root): void {
+  const protectedSegments = ['dist', 'build', 'node_modules', 'src', 'server', 'shared', 'public', 'tests', 'logs', '.git'];
+  for (const segment of protectedSegments) {
+    const directory = path.resolve(appRoot, segment);
+    const relative = path.relative(directory, runtimePath);
+    if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+      throw new Error(
+        `The persistent data directory resolves inside ${segment}/ (${runtimePath}); that directory is replaced by Git or the build. ` +
+          'Use App_Data/, data/, or an absolute path outside code/build directories.',
       );
     }
   }
 }
 
 assertDatabasePathSafe(databasePath);
+assertRuntimePathSafe(dataDir);
 
 /**
  * Turnstile's site key is public and safe to ship. The secret key is never
@@ -186,19 +364,31 @@ function resolveSessionSecret(): string {
   if (provided) return provided;
   if (!isProduction) return '';
 
-  const secretFile = path.join(root, 'data', '.session-secret');
-  try {
-    const existing = fs.readFileSync(secretFile, 'utf8').trim();
-    if (existing.length >= 32) return existing;
-  } catch {
-    /* first boot */
+  // Keep an existing legacy data/.session-secret valid when the database is
+  // moved to App_Data or kept at the site root. Generating a new secret would
+  // sign every existing user out after an otherwise safe storage migration.
+  const secretFiles = [
+    path.join(dataDir, '.session-secret'),
+    path.join(root, '.session-secret'),
+    path.join(root, 'data', '.session-secret'),
+    path.join(path.dirname(databasePath), '.session-secret'),
+  ].filter((file, index, files) => files.indexOf(file) === index);
+  for (const secretFile of secretFiles) {
+    try {
+      const existing = fs.readFileSync(secretFile, 'utf8').trim();
+      if (existing.length >= 32) return existing;
+    } catch {
+      /* try the next location */
+    }
   }
+
   const generated = randomBytes(48).toString('hex');
+  const secretFile = path.join(dataDir, '.session-secret');
   try {
     fs.mkdirSync(path.dirname(secretFile), { recursive: true });
     fs.writeFileSync(secretFile, generated, { mode: 0o600 });
     console.warn(
-      '[config] SESSION_SECRET was not set; generated a persistent secret at data/.session-secret. ' +
+      `[config] SESSION_SECRET was not set; generated a persistent secret at ${path.relative(root, secretFile)}. ` +
         'Set SESSION_SECRET in the environment to manage it yourself.',
     );
   } catch (error) {
@@ -209,6 +399,8 @@ function resolveSessionSecret(): string {
   }
   return generated;
 }
+
+let sessionSecretCache: string | null = null;
 
 export const config = {
   root,
@@ -221,6 +413,16 @@ export const config = {
   trustedProxies,
   cookieSecure,
   databasePath,
+  databasePathSource: databaseResolution.source,
+  databasePathCandidates: databaseResolution.candidates,
+  databaseExists,
+  allowNewDatabase: process.env.ALLOW_NEW_DATABASE === 'true',
+  dataDir,
+  backupDir,
+  sessionSecretPath: path.join(dataDir, '.session-secret'),
+  ownerCredentialsPath: path.join(dataDir, 'owner-credentials.txt'),
+  databaseBackupBeforeMigration: process.env.DB_BACKUP_BEFORE_MIGRATION !== 'false',
+  databaseBackupKeep: intEnv('DB_BACKUP_KEEP', 10, 1),
   turnstile: {
     enabled: turnstileEnabled,
     siteKey: turnstileSiteKey,
@@ -228,7 +430,14 @@ export const config = {
     expectedHostname: (process.env.TURNSTILE_EXPECTED_HOSTNAME || '').trim().toLowerCase(),
   },
   sessionDays: intEnv('SESSION_DAYS', 7),
-  sessionSecret: resolveSessionSecret(),
+  /**
+   * Resolved lazily so a production boot that aborts on a missing/wrong
+   * database cannot generate a new secret (and sign everyone out) first.
+   */
+  get sessionSecret(): string {
+    if (sessionSecretCache === null) sessionSecretCache = resolveSessionSecret();
+    return sessionSecretCache;
+  },
   startingCredits: intEnv('STARTING_CREDITS', 5_000_000),
   exposeResetToken: process.env.EXPOSE_RESET_TOKEN === 'true' || (!isProduction && process.env.EXPOSE_RESET_TOKEN !== 'false'),
   allowedOrigins: isProduction

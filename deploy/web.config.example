@@ -1,13 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  IIS configuration for hosts that run Node.js behind HttpPlatformHandler
-  (MonsterASP, Plesk on Windows, plain IIS).
+  TEMPLATE ONLY. Do not commit a file named web.config.
 
-  Without this file IIS only serves static files, so the SPA renders but every
-  /api request returns an IIS 404 and the UI shows "The server is not answering".
+  MonsterASP's "Node.js SSR app" deployment generates /wwwroot/web.config on
+  every Build & publish, using the Start command and panel environment
+  variables. A tracked web.config gets locally modified by that generator and
+  is the root cause of:
 
-  HTTP_PLATFORM_PORT is assigned by IIS; it is mapped to PORT here so the app
-  listens on the port IIS forwards to.
+    "Pull failed because local changes in the deployed files conflict with
+     the repository."
+
+  Copy this file to web.config only for a manual IIS/Plesk deployment where the
+  panel does not generate one. On MonsterASP, leave web.config alone and set
+  APP_URL, SESSION_SECRET, TURNSTILE_SECRET_KEY, and other values under
+  Websites -> Environment variables.
+
+  HTTP_PLATFORM_PORT is assigned by IIS. The app reads it directly, so the
+  mapping to PORT below is only a convenience for older builds.
 -->
 <configuration>
   <system.webServer>
@@ -33,7 +42,11 @@
       </environmentVariables>
     </httpPlatform>
 
-    <!-- Defence in depth: these folders are never meant to be downloadable. -->
+    <!--
+      Defence in depth for manual IIS deployments. MonsterASP's generated
+      configuration may not contain these entries, but every request still
+      reaches Express, whose SPA fallback refuses the same private paths.
+    -->
     <security>
       <requestFiltering>
         <hiddenSegments>
@@ -44,8 +57,15 @@
           <add segment="src" />
           <add segment="tests" />
           <add segment="data" />
+          <add segment="App_Data" />
           <add segment="logs" />
           <add segment=".git" />
+          <add segment="app.db" />
+          <add segment="app.db-wal" />
+          <add segment="app.db-shm" />
+          <add segment=".session-secret" />
+          <add segment="owner-credentials.txt" />
+          <add segment=".env" />
         </hiddenSegments>
       </requestFiltering>
     </security>

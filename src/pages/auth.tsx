@@ -192,6 +192,13 @@ export function LoginPage() {
           {config.maintenanceMessage} Staff can still sign in to manage support and settings.
         </Alert>
       )}
+
+      {new URLSearchParams(location.search).get('deleted') === '1' && (
+        <Alert tone="success" title="Account deleted" className="mb-5">
+          Your account and personal data have been removed. Financial ledger entries were retained without your
+          identity where the law requires it.
+        </Alert>
+      )}
       {error && (
         <Alert tone="error" className="mb-5">
           {error}

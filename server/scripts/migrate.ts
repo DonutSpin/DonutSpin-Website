@@ -1,5 +1,13 @@
 import { getDatabase } from '../db/index.ts';
-import { config } from '../config.ts';
+import { assertProductionDatabaseAvailable, config } from '../config.ts';
+
+assertProductionDatabaseAvailable({
+  isProduction: config.isProduction,
+  databaseExists: config.databaseExists,
+  allowNewDatabase: config.allowNewDatabase,
+  databasePath: config.databasePath,
+  candidates: config.databasePathCandidates,
+});
 
 const db = getDatabase();
 const migrations = db.prepare('SELECT version, name, applied_at FROM schema_migrations ORDER BY version').all() as {

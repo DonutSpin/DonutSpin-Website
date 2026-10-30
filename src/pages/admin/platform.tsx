@@ -602,6 +602,11 @@ const settingGroups: { title: string; description: string; keys: string[] }[] = 
     description: 'Grant sizes and safety limits for internal money.',
     keys: ['economy.starting_credits', 'economy.max_payout', 'economy.cashier_request_limit'],
   },
+  {
+    title: 'Account safety',
+    description: 'Shared-network review thresholds. Three accounts are allowed by default for households and shared connections.',
+    keys: ['security.accounts_per_ip'],
+  },
 ];
 
 export function AdminSettingsPage() {
@@ -883,6 +888,22 @@ export function AdminSettingsPage() {
                   wagers, registrations, and ticket creation are blocked immediately on the server; staff access
                   continues.
                 </Alert>
+              )}
+              {group.keys.includes('security.accounts_per_ip') && (
+                <Field
+                  label="Accounts allowed per public IP"
+                  hint="A fourth player account from the same network triggers a review hold. Support can release legitimate households."
+                  error={fields['security.accounts_per_ip']}
+                >
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={String(num('security.accounts_per_ip'))}
+                    onChange={(event) => setValue('security.accounts_per_ip', Math.max(1, Math.min(100, Number(event.target.value) || 1)))}
+                    invalid={Boolean(fields['security.accounts_per_ip'])}
+                  />
+                </Field>
               )}
               {group.keys.includes('economy.starting_credits') && (
                 <div className="grid gap-3 sm:grid-cols-2">

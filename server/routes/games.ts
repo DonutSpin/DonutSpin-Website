@@ -15,6 +15,7 @@ import {
   settleActiveRound,
 } from '../lib/active-round.ts';
 import { requireActive, requireAuth, requirePermission } from '../lib/permissions.ts';
+import { assertCanWager } from '../lib/account-status.ts';
 import { assertNotInMaintenance, isMaintenanceMode } from '../lib/maintenance.ts';
 import { parse, pageQuerySchema } from '../lib/validation.ts';
 import { balanceOf } from '../lib/wallet.ts';
@@ -119,6 +120,7 @@ export function createGamesRouter(db: DB): Router {
   router.post('/:slug/play', async (req, res) => {
     const user = requireActive(req);
     requirePermission(req, 'games.play');
+    assertCanWager(user);
     assertNotInMaintenance(db);
     const slug = req.params.slug ?? '';
     const module = getGameModule(slug);
@@ -171,6 +173,9 @@ export function createGamesRouter(db: DB): Router {
   router.post('/sessions/:id/action', async (req, res) => {
     const user = requireActive(req);
     requirePermission(req, 'games.play');
+    // Double-down adds real money to the existing wager, so it is a new bet and
+    // must satisfy the same verification and hold gates as a fresh round.
+    if ((req.body as { action?: unknown } | null)?.action === 'double') assertCanWager(user);
     assertNotInMaintenance(db);
     const sessionId = req.params.id ?? '';
     const session = getSessionRow(db, sessionId);

@@ -81,7 +81,8 @@ The default `.env.example` grants 5,000,000 DonutSMP money to each new account. 
 | `npm run build:server` | Rebuild only the production server bundle |
 | `npm start` | Start the production server (`node server.js`) |
 | `npm run db:migrate` | Create/migrate the database and print schema status |
-| `npm run db:backup -- --out data/backups` | Take an online SQLite backup and verify it |
+| `npm run db:backup -- --out App_Data/backups` | Take an online SQLite backup and verify it |
+| `npm run deploy:check` | Read-only check of the live database, persistent settings, game configs, and Git hygiene |
 | `npm run owner -- --email …` | Bootstrap an owner account |
 
 ## Configuration
@@ -93,8 +94,12 @@ Configuration lives in `.env`. The server loads it on startup, and environment v
 | `PORT` | `4000` | API/production server port. Falls back to `HTTP_PLATFORM_PORT`, which IIS assigns. |
 | `APP_NAME` | `Donutcash` | Initial platform name seed |
 | `APP_URL` | production: `https://donutcash.runasp.net`; development: `http://localhost:5173` | Public client origin used in every email link, reset URL, and session cookie decision. In production it is also the only allowed mutation origin. A missing, invalid, or loopback value falls back to the production default rather than sending localhost links. |
-| `DATABASE_PATH` | `data/aurum.db` | SQLite file. Parent directories are created automatically. |
-| `SESSION_SECRET` | generated | At least 32 characters. If unset in production, a random secret is generated once and persisted to `data/.session-secret`. |
+| `DATABASE_PATH` | first existing of `app.db`, `data/app.db`, `data/aurum.db`, `App_Data/app.db`, `App_Data/aurum.db`; new installs use `App_Data/aurum.db` | SQLite file. Parent directories are created automatically. Leave unset in production so an existing database is always found before a new one is created. |
+| `DONUTCASH_DATA_DIR` | `App_Data` | Persistent directory for backups, the generated session secret, and generated owner credentials. It must not be inside `src/`, `server/`, `dist/`, or `build/`. Set an absolute path outside `/wwwroot` if the host exposes one. |
+| `ALLOW_NEW_DATABASE` | `false` | Production refuses to boot when no existing database is found, because creating an empty one would hide all balances and settings. Set to `true` once only for a genuinely new installation, then remove it. |
+| `DB_BACKUP_BEFORE_MIGRATION` | `true` | Takes a verified `VACUUM INTO` snapshot before applying pending migrations and aborts startup if the snapshot fails. |
+| `DB_BACKUP_KEEP` | `10` | Number of automatic pre-migration snapshots kept in `App_Data/backups/`. |
+| `SESSION_SECRET` | generated | At least 32 characters. If unset in production, a random secret is generated once and persisted to the data directory (`App_Data/.session-secret` by default). Existing `data/.session-secret` files are reused so an upgrade does not sign everyone out. |
 | `SESSION_DAYS` | `7` | Session lifetime |
 | `STARTING_CREDITS` | `5000000` | Initial DonutSMP money grant |
 | `EXPOSE_RESET_TOKEN` | development only | Returns reset paths in the API response for local testing. Keep `false` in production. |
@@ -200,17 +205,18 @@ The database runs in WAL mode. Use the backup script rather than copying only th
 npm run db:backup -- --out /var/backups/donutcash
 ```
 
-On Windows, use a path such as `D:\donutcash-backups`. The default output is `data/backups`. The script uses SQLite's online backup API, runs `integrity_check` on the copy, removes empty sidecar files, and prints user and ledger counts. Schedule it with the operator's normal job runner and keep copies on a volume outside the application directory.
+On Windows, use a path such as `D:\donutcash-backups`. The default output is `App_Data/backups`. The script uses SQLite's online backup API, runs `integrity_check` on the copy, removes empty sidecar files, and prints user and ledger counts. Schedule it with the operator's normal job runner and keep copies on a volume outside the application directory.
 
 To restore:
 
 1. Stop the server.
-2. Keep a copy of the current `data/aurum.db`.
-3. Replace `data/aurum.db` with the chosen backup file.
-4. Remove stale `data/aurum.db-wal` and `data/aurum.db-shm` files.
-5. Start the server and run `npm run db:migrate` to confirm migrations and row counts.
+2. Run `npm run deploy:check` and note the exact database path it prints (for example `app.db`, `data/aurum.db`, or `App_Data/aurum.db`).
+3. Keep a copy of the current database file.
+4. Replace that database file with the chosen backup file.
+5. Remove the stale `-wal` and `-shm` files beside it.
+6. Start the server and run `npm run db:migrate` to confirm migrations and row counts.
 
-Back up `.env` separately because it holds the session secret. The server can start against an existing database without re-running seeds; seed inserts only fill missing rows.
+Back up `.env` or the host environment variables separately because they hold the session secret. The server can start against an existing database without re-running seeds; seed inserts only fill missing rows and never overwrites a setting that already exists.
 
 ## Production notes
 
@@ -229,40 +235,121 @@ npm start
 - `APP_URL` must exactly match the browser origin. Production mutation requests with an unexpected `Origin` header are rejected.
 - Session cookies are `httpOnly`, `SameSite=Lax`, and `Secure` whenever the resolved public origin is `https://` (`COOKIE_SECURE` overrides). In production the default origin is `https://donutcash.runasp.net`, so cookies are secure even when `APP_URL` is omitted.
 - Rate-limit windows live in the SQLite database whenever a file database is used, so two Node workers on the same host cannot each allow a full quota. SQLite still prefers a single writer; do not scale to multiple hosts.
-- Keep `data/`, `.env`, and backups out of version control, and never place the database in a folder served by `express.static` (`dist/`).
-- `SESSION_SECRET` is optional at runtime: when it is missing in production the server generates a random secret once and persists it to `data/.session-secret`. Set it explicitly to control rotation. A provided value shorter than 32 characters still fails closed.
+- Keep `App_Data/`, `data/`, `app.db`, `.env`, `web.config`, and backups out of version control, and never place the database in a folder served by `express.static` (`dist/`).
+- `SESSION_SECRET` is optional at runtime: when it is missing in production the server generates a random secret once and persists it to `App_Data/.session-secret` (or the configured data directory). Existing `data/.session-secret` and root `.session-secret` files are reused. Set it explicitly to control rotation. A provided value shorter than 32 characters still fails closed.
+- Production refuses to start when it would create a brand-new empty database. This prevents a mistyped `DATABASE_PATH` from presenting a blank casino and hiding every existing account and setting. Set `ALLOW_NEW_DATABASE=true` once only for a genuinely new installation.
 - `PORT` is read first, then `HTTP_PLATFORM_PORT` (the port IIS assigns). The app never hard-codes a listening port.
 - Production mutation requests must be same-origin or match the resolved public origin. A missing or loopback `APP_URL` resolves to `https://donutcash.runasp.net`, not localhost.
 
 ### Deploying to MonsterASP (Windows / IIS + HttpPlatformHandler)
 
-This is a **Node** app, not a static site. Publishing only the `dist` folder produces a site that renders and then says “The server is not answering”, because IIS serves the HTML but no process answers `/api`.
+This is a **Node** app, not a static site. Publishing only `dist/` produces a site that renders and then says “The server is not answering”, because IIS serves the HTML but no process answers `/api`. Use **Node.js SSR app**, not **Node.js SPA**.
 
-1. In **Websites → Git deploy**, pick **Node.js SSR app** (sometimes labelled “Node.js application”). Do **not** pick **Node.js SPA** with a build output folder of `dist`: that type only publishes the frontend build and never starts Node.
-2. Build command: `npm ci && npm run build` — this type-checks, writes the client to `dist/`, and compiles the server to `build/server/index.js`.
-3. Start command: **`server.js`** — the field wants a JavaScript file Node can run, not an npm script, so `npm start` fails with “Start command target not found in the build output”. `server.js` sits at the project root, loads the compiled server from `build/server/index.js`, and pins the working directory to the app root so `dist/`, `data/` and `.env` resolve correctly. `npm start` runs the same file locally.
-4. Set `APP_URL=https://donutcash.runasp.net`, a 32+ character `SESSION_SECRET`, and the server-only `TURNSTILE_SECRET_KEY` in the website environment variables. `APP_URL` pins mutation origins to your domain, makes session cookies `Secure`, and keeps every email link on the public origin. If it is missing or set to localhost in production, the server now uses `https://donutcash.runasp.net` instead. IIS's `HTTP_PLATFORM_PORT` also counts as production, and the `server.js` start target defaults `NODE_ENV` to `production`, so a generated `web.config` cannot silently leave the app in development mode. Turnstile stays disabled until the secret is present.
-5. This repository ships [`web.config`](web.config) for manual IIS deployments. MonsterASP's Node.js SSR type generates its own `web.config` from the start command, so set `APP_URL`, `SESSION_SECRET`, and `TURNSTILE_SECRET_KEY` in the panel rather than relying on the repository copy. The server also rejects `/data`, `/server`, `/src` and other private prefixes in the SPA fallback.
-6. If the site still fails, enable **Control Panel → Websites → Logs → HttpPlatform** and read the startup output. A crash on boot, a missing dependency, or a native module that cannot load all show up there.
+#### Why Git Pull used to fail
 
-The app writes the SQLite database to `data/` relative to the application root (`/wwwroot` on MonsterASP) and expects that directory to stay writable across deploys. Never point `DATABASE_PATH` at `dist/` or `build/`: `vite build` empties `dist/`, so a database placed there is deleted on the next build. A Git-deployed Node.js SSR app gets a generated `web.config`, so the hidden segments in this repository's copy are not guaranteed to be active. The server itself rejects `/data` in the SPA fallback; a live request for `/data/aurum.db` returns the app's 404 rather than the file.
+`web.config` was tracked in Git while MonsterASP's Node.js SSR deployment **generates `/wwwroot/web.config` on every Build & publish**. The generated file differs from the committed copy, so the next pull sees a locally modified tracked file and refuses to overwrite it. The host build also runs `npm install`, which can rewrite `package-lock.json` when the lockfile and `package.json` are out of sync.
 
-#### MonsterASP protected files
+The fix is architectural, not a workaround:
 
-Protection is a second line of defence. `data/` is already ignored by Git, so a pull or reset does not touch it, but a deploy that cleans `/wwwroot`, or a future accidental commit of a runtime file, could. Open **Websites → Git deploy → Protected files** and add one path per line, relative to `/wwwroot` (forward slashes, no leading `/`):
+- `web.config` is no longer tracked. It is generated by MonsterASP and ignored by Git. A tracked template remains at [`deploy/web.config.example`](deploy/web.config.example) for manual IIS/Plesk setups.
+- The database, WAL sidecars, automatic backups, generated session secret, generated owner credentials, and IIS logs are ignored and live outside the code paths that Git replaces.
+- Every startup seed uses `ON CONFLICT DO NOTHING`, so it only creates missing rows. It never updates an existing game multiplier, win chance, economy limit, reward rule, or admin setting.
+- Pending migrations take a verified snapshot first and abort if the snapshot fails. A production process refuses to boot if it would create a brand-new empty database.
+- `package-lock.json` stays committed and in sync with `package.json`. Run `npm install` locally after changing dependencies, commit the updated lockfile, then push.
 
-| Path | Why |
+#### MonsterASP configuration
+
+1. In **Websites → Git deploy**, choose **Node.js SSR app**.
+2. Build command: `npm ci && npm run build` if the panel exposes a command field; otherwise `npm run build` (MonsterASP installs dependencies first). `npm ci` installs exactly the committed lockfile and never rewrites it; `npm run build` type-checks, writes the client to `dist/`, and compiles the server to `build/server/index.js`.
+3. Start command: **`server.js`**. The field wants a JavaScript file Node can run, not an npm script. `server.js` loads `build/server/index.js` and pins the working directory to the app root.
+4. Set these under **Websites → Environment variables** (not in a committed file):
+
+| Variable | Value |
 | --- | --- |
-| `data/` | The whole runtime folder: `aurum.db`, `aurum.db-wal`, `aurum.db-shm`, `.session-secret`, `owner-credentials.txt`, and `backups/` |
-| `.env` | Only if the site uses a `.env`; it holds `SESSION_SECRET`, the SMTP fallback, and owner bootstrap values |
+| `APP_URL` | `https://donutcash.runasp.net` (the public origin used in email links and secure cookies) |
+| `SESSION_SECRET` | 64+ random characters. Generate with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret, if CAPTCHA is enabled |
+| `SMTP_PASS` | Optional fallback only; prefer saving the SMTP key in Admin → Email |
+| `OWNER_*` | Optional owner bootstrap/recovery values |
 
-If `DATABASE_PATH` in the website environment points somewhere else, protect that folder instead of (or in addition to) `data/`. This application has no upload feature, so there is no `uploads/` folder to protect.
+Leave `DATABASE_PATH` unset so the server finds the existing database automatically. Do **not** set `ALLOW_NEW_DATABASE` on this site.
 
-Do **not** protect `dist/`, `build/`, `node_modules/`, `src/`, `server/`, `shared/`, `public/`, `scripts/`, `tests/`, `package.json`, `package-lock.json`, `server.js`, `web.config`, `index.html`, `vite.config.ts`, `tsconfig.json`, or `.env.example`. Protecting build output keeps an old `assets/index-*.js` alive even after a successful deploy; protecting `node_modules/` freezes dependencies; protecting `web.config` blocks the generated IIS startup configuration from being refreshed. Set `APP_URL` and `SESSION_SECRET` under the website environment variables instead.
+5. Never edit or protect `web.config` on MonsterASP. The platform regenerates it. The server itself refuses `/App_Data`, `/data`, `/logs`, `/server`, `/src`, `/web.config`, and other private paths in the SPA fallback.
 
-`dist/` and `build/` are generated by `npm ci && npm run build` and are no longer tracked by Git. Never protect them; MonsterASP must rebuild them on every publish so the new bundle and server code are deployed.
+#### Activate this deployment once
 
-Protection prevents overwrites, but it is not a backup. Stop the app (or place `app_offline.htm` in `/wwwroot`), download the whole `data/` folder, and keep that copy off the host before risky changes. After a deploy, confirm the page references a new `assets/index-*.js` hash, `data/aurum.db` still exists, existing accounts and balances still load, and `/data/aurum.db` still returns 404.
+1. Commit and push these changes from development:
+
+   ```bash
+   git status
+   git add -A
+   git commit -m "Stop tracking generated web.config and isolate persistent data"
+   git push origin main
+   ```
+
+2. In **Websites → Git deploy → Protected files**, add one path per line, relative to `/wwwroot`:
+
+   ```text
+   app.db
+   app.db-wal
+   app.db-shm
+   data/
+   App_Data/
+   .env
+   ```
+
+   Include only the entries that exist. If the database is at `data/app.db` or `App_Data/aurum.db`, the folder entry covers it. Protection is a second line of defence; all of these paths are already ignored by Git. If `web.config` is currently in the list, remove it. Do **not** protect `web.config`, `dist/`, `build/`, `node_modules/`, `server.js`, `package.json`, or `package-lock.json`.
+
+3. Click **Pull latest**. If the old tracked `web.config` still blocks this one final pull, use **Danger zone → Reset (hard)** once, then **Pull latest** again. Reset (hard) resets only the staged Git checkout; per MonsterASP it does not touch `/wwwroot` or the live database. Do not disable and re-enable Git deploy.
+
+4. Click **Build & publish**. MonsterASP leaves untracked `App_Data/`, `data/`, and `app.db` in place.
+
+5. Verify the deployment:
+   - The site loads and sign-in still works.
+   - Existing balances, game limits, multipliers, rewards, and admin settings are unchanged.
+   - **Control Panel → Websites → Logs → HttpPlatform** shows `database: ... (source: ...)` and that the real database file was found.
+   - If the plan gives you a command console, run `npm run deploy:check`. It is read-only and prints the database path, schema version, row counts, persistent settings, game configs, and Git hygiene.
+   - Request `/App_Data/aurum.db` and `/data/aurum.db` in a browser; both must return 404, not a file.
+
+If the server refuses to start with “Refusing to start: no existing database was found”, the path is wrong or the file is missing. Restore the file or set `DATABASE_PATH` to its real location. Do not set `ALLOW_NEW_DATABASE=true` on a site that has data.
+
+#### Future updates
+
+```bash
+# development machine
+git status
+git add -A
+git commit -m "Describe the change"
+git push origin main
+```
+
+Then in the MonsterASP panel: **Pull latest → Build & publish**. No server-side file edits, no web.config changes, no database re-import, and no disable/enable cycle. If you change dependencies, run `npm install` locally first so `package-lock.json` is committed in sync.
+
+#### Persistent data layout
+
+| Path | Contents | Git | MonsterASP |
+| --- | --- | --- | --- |
+| `app.db` or `data/` or `App_Data/` | SQLite database and WAL sidecars | Ignored | Persisted; protect the exact path |
+| `App_Data/backups/` | Verified automatic pre-migration snapshots | Ignored | Persisted |
+| `App_Data/.session-secret` | Generated session secret when `SESSION_SECRET` is unset | Ignored | Persisted; legacy `data/.session-secret` and root `.session-secret` are reused |
+| `App_Data/owner-credentials.txt` | Generated first-owner password, printed once | Ignored | Delete after changing the password |
+| `logs/` | IIS/HttpPlatform stdout logs | Ignored | Managed by the host |
+| `web.config` | Generated IIS startup configuration | Ignored | Generated on every publish |
+| `src/`, `server/`, `shared/`, `scripts/`, `deploy/` | Application code | Tracked | Replaced by Git |
+
+The database resolver checks, in order: `DATABASE_PATH`, `DONUTCASH_DATA_DIR`, root `app.db`, `data/app.db`, `data/aurum.db`, `App_Data/app.db`, `App_Data/aurum.db`, then the new default `App_Data/aurum.db`. It never renames or deletes a database it finds. If more than one exists it logs every candidate and uses the first match; set `DATABASE_PATH` explicitly if that is not the one you want.
+
+#### Moving an existing app.db (optional)
+
+You do **not** need to move your current `app.db`; it is detected and protected where it is. If you later want it under `App_Data/`:
+
+1. Stop the app (or place `app_offline.htm` in `/wwwroot`).
+2. Take a verified backup: `npm run db:backup -- --out App_Data`.
+3. Rename the printed `App_Data/donutcash-<timestamp>.db` snapshot to `App_Data/aurum.db` while the app is stopped. Do not overwrite an existing `App_Data/aurum.db`; if one exists, confirm it is the same database or choose another path.
+4. Set `DATABASE_PATH=App_Data/aurum.db` in the panel environment variables and restart.
+5. Sign in and verify balances/settings, then keep the old `app.db` for at least one backup cycle. Never delete the old file until the new one is proven.
+
+The old database is copied, never overwritten or deleted by the application. If you cannot run npm scripts on the host, download the database plus its `-wal` and `-shm` files while the app is stopped and restore them together.
 
 #### Client IPs behind IIS
 
@@ -297,7 +384,7 @@ On startup the server creates the owner if no account uses `OWNER_EMAIL`, promot
 
 **Fallback: no configuration and no owner in the database**
 
-If `OWNER_EMAIL`/`OWNER_PASSWORD` are unset and the database has no owner at all, one is generated with a strong random password. The credentials are printed once to the process log (on IIS: the HttpPlatform log) and written to `data/owner-credentials.txt`, which `web.config` hides. Sign in, change the password, then delete that file.
+If `OWNER_EMAIL`/`OWNER_PASSWORD` are unset and the database has no owner at all, one is generated with a strong random password. The credentials are printed once to the process log (on IIS: the HttpPlatform log) and written to `App_Data/owner-credentials.txt`, which is ignored by Git and refused by the SPA fallback. Sign in, change the password, then delete that file.
 
 In both cases the new owner must accept the current Terms of Service and Privacy Policy on first sign-in before the admin panel unlocks. That gate is intentional and applies to every account.
 
@@ -319,7 +406,7 @@ npm test
 npm run build
 ```
 
-Tests use temporary SQLite databases and do not modify `data/aurum.db`.
+Tests use temporary SQLite databases and do not modify `app.db` or `data/aurum.db`. `npm run deploy:check` is read-only and is safe to run against production.
 
 ## Project layout
 
@@ -331,14 +418,17 @@ src/                 React client
   pages/cashier.tsx  Player deposit/withdrawal requests
   pages/games/       Six game screens
 server/              Express API
-  db/                SQLite connection, schema migrations, seeds
-  games/             Server-authoritative game modules
+  db/                SQLite connection, schema migrations, seeds, pre-migration safety
+  games/             Server-authoritative game modules and validated game configs
   lib/               Auth helpers, wallet ledger, tickets, cashier, rewards, email queue/templates, audit, maintenance guard, active-round lock
   routes/            Public, auth, player, game, ticket, cashier, rewards, staff, admin APIs
-  scripts/           Owner bootstrap, migration status, backups
+  scripts/           Owner bootstrap, migration status, backups, deployment verification
+deploy/              Tracked web.config.example for manual IIS (live web.config is generated)
 shared/              Shared TypeScript types, permissions, and K/M/B/T amount helpers
 tests/               Vitest + Supertest integration tests
-data/                Runtime SQLite database (ignored by Git)
+App_Data/            Persistent runtime data: database (new installs), backups, secret,
+                     generated owner credentials (ignored by Git)
+data/                Legacy runtime SQLite database (ignored by Git; still auto-detected)
 dist/                 Generated client build output (ignored by Git)
 build/                Generated server build output (ignored by Git)
 ```

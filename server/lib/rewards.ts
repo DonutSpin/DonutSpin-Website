@@ -177,31 +177,82 @@ function readEmailPreference(db: DB, userId: string): boolean {
   return Boolean(row?.email_notifications ?? 1);
 }
 
-function currentStreak(
-  db: DB,
-  userId: string,
-  config: RewardsConfig,
-  today: string,
-): { streak: number; claimedToday: boolean; lastClaim: RewardClaimRow | null } {
-  const lastClaim = db
-    .prepare('SELECT * FROM reward_claims WHERE user_id = ? ORDER BY claim_day DESC LIMIT 1')
-    .get(userId) as RewardClaimRow | undefined;
-
-  if (!lastClaim) return { streak: 0, claimedToday: false, lastClaim: null };
-  if (lastClaim.claim_day === today) {
-    return { streak: lastClaim.streak_day, claimedToday: true, lastClaim };
-  }
-  const gap = calendarGap(lastClaim.claim_day, today);
-  if (gap === 1) return { streak: lastClaim.streak_day, claimedToday: false, lastClaim };
-  if (gap <= 0) return { streak: 0, claimedToday: false, lastClaim };
-  const missedDays = gap - 1;
-  if (config.missedPolicy === 'grace' && missedDays <= config.graceDays) {
-    return { streak: lastClaim.streak_day, claimedToday: false, lastClaim };
-  }
-  return { streak: 0, claimedToday: false, lastClaim };
+interface BetState {
+  streak: number;
+  bestStreak: number;
+  betToday: boolean;
+  lastBetDay: string | null;
 }
 
-function buildCalendar(rows: RewardClaimRow[], today: string, days = 14): RewardCalendarDay[] {
+/**
+ * Records one qualifying day for an accepted wager. This is called inside the
+ * same transaction as the wager debit, so failed or rejected starts never
+ * create a streak day.
+ */
+export function recordBetActivity(db: DB, userId: string, now = new Date()): void {
+  const config = getRewardsConfig(db);
+  const day = rewardDayKey(now, config.timezone, config.resetHour);
+  db.prepare(
+    `INSERT INTO bet_activity_days (user_id, activity_day, first_bet_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(user_id, activity_day) DO NOTHING`,
+  ).run(userId, day, now.toISOString());
+}
+
+function previousDayKey(day: string): string {
+  const date = parseDayKey(day);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return dayKey(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
+/** Consecutive reward days with an accepted wager, including today when present. */
+function currentBetState(db: DB, userId: string, config: RewardsConfig, today: string): BetState {
+  const rows = db
+    .prepare(
+      `SELECT activity_day FROM bet_activity_days
+        WHERE user_id = ? AND activity_day <= ?
+        ORDER BY activity_day DESC LIMIT ?`,
+    )
+    .all(userId, today, Math.max(config.maxStreakDays + 2, 366)) as { activity_day: string }[];
+  if (rows.length === 0) return { streak: 0, bestStreak: 0, betToday: false, lastBetDay: null };
+
+  const latest = rows[0]!.activity_day;
+  const latestGap = calendarGap(latest, today);
+  let streak = 0;
+  if (latestGap === 0 || latestGap === 1) {
+    let expected = latestGap === 0 ? today : previousDayKey(today);
+    for (const row of rows) {
+      if (row.activity_day !== expected) break;
+      streak += 1;
+      expected = previousDayKey(expected);
+    }
+  }
+
+  // Best streak is calculated over the same bounded window so the overview can
+  // show a meaningful personal best without scanning the entire history.
+  let bestStreak = 0;
+  let run = 0;
+  let previous: string | null = null;
+  for (const row of [...rows].reverse()) {
+    run = previous && calendarGap(previous, row.activity_day) === 1 ? run + 1 : 1;
+    bestStreak = Math.max(bestStreak, run);
+    previous = row.activity_day;
+  }
+
+  return {
+    streak,
+    bestStreak: Math.max(bestStreak, streak),
+    betToday: latestGap === 0,
+    lastBetDay: latest,
+  };
+}
+
+function buildCalendar(
+  rows: RewardClaimRow[],
+  betDays: Set<string>,
+  today: string,
+  days = 14,
+): RewardCalendarDay[] {
   const claims = new Map(rows.map((row) => [row.claim_day, row]));
   const todayDate = parseDayKey(today);
   const result: RewardCalendarDay[] = [];
@@ -214,6 +265,7 @@ function buildCalendar(rows: RewardClaimRow[], today: string, days = 14): Reward
       label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
       weekday: date.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' }),
       claimed: Boolean(claim),
+      betPlaced: betDays.has(key),
       isToday: key === today,
       isPast: key < today,
       reward: claim?.amount ?? null,
@@ -225,21 +277,36 @@ function buildCalendar(rows: RewardClaimRow[], today: string, days = 14): Reward
 export function rewardsSummary(db: DB, userId: string, now = new Date()): RewardsSummary {
   const config = getRewardsConfig(db);
   const today = rewardDayKey(now, config.timezone, config.resetHour);
-  const { streak, claimedToday, lastClaim } = currentStreak(db, userId, config, today);
-  const nextStreakDay = Math.min(config.maxStreakDays, streak + 1);
+  const betState = currentBetState(db, userId, config, today);
+  const lastClaim = db
+    .prepare('SELECT * FROM reward_claims WHERE user_id = ? ORDER BY claim_day DESC LIMIT 1')
+    .get(userId) as RewardClaimRow | undefined;
+  const claimedToday = lastClaim?.claim_day === today;
+  const currentClaimDay = claimedToday ? lastClaim.streak_day : null;
+  const nextStreakDay = claimedToday
+    ? Math.min(config.maxStreakDays, (currentClaimDay ?? betState.streak) + 1)
+    : betState.betToday
+      ? Math.min(config.maxStreakDays, Math.max(1, betState.streak))
+      : Math.min(config.maxStreakDays, betState.streak + 1);
   const nextAmounts = rewardAmounts(config, nextStreakDay);
   const historyRows = db
     .prepare('SELECT * FROM reward_claims WHERE user_id = ? ORDER BY claim_day DESC LIMIT 20')
     .all(userId) as RewardClaimRow[];
-  const todayRow = claimedToday ? historyRows.find((row) => row.claim_day === today) ?? lastClaim : null;
+  const todayRow = claimedToday ? lastClaim : null;
   const todayDate = parseDayKey(today);
   const calendarStart = new Date(todayDate.getTime() - 13 * DAY_MS);
+  const calendarStartKey = dayKey(
+    calendarStart.getUTCFullYear(),
+    calendarStart.getUTCMonth() + 1,
+    calendarStart.getUTCDate(),
+  );
   const calendarRows = db
     .prepare('SELECT * FROM reward_claims WHERE user_id = ? AND claim_day >= ? ORDER BY claim_day')
-    .all(
-      userId,
-      dayKey(calendarStart.getUTCFullYear(), calendarStart.getUTCMonth() + 1, calendarStart.getUTCDate()),
-    ) as RewardClaimRow[];
+    .all(userId, calendarStartKey) as RewardClaimRow[];
+  const betRows = db
+    .prepare('SELECT activity_day FROM bet_activity_days WHERE user_id = ? AND activity_day >= ? ORDER BY activity_day')
+    .all(userId, calendarStartKey) as { activity_day: string }[];
+  const betDays = new Set(betRows.map((row) => row.activity_day));
 
   return {
     enabled: config.enabled,
@@ -252,7 +319,9 @@ export function rewardsSummary(db: DB, userId: string, now = new Date()): Reward
     missedPolicy: config.missedPolicy,
     graceDays: config.graceDays,
     milestones: config.milestones,
-    streak,
+    streak: betState.streak,
+    bestStreak: betState.bestStreak,
+    betToday: betState.betToday,
     claimedToday,
     todayClaim: todayRow
       ? mapClaim(todayRow, milestoneFor(config, todayRow.streak_day)?.label ?? null)
@@ -264,7 +333,7 @@ export function rewardsSummary(db: DB, userId: string, now = new Date()): Reward
       total: nextAmounts.total,
     },
     nextResetAt: nextResetIso(now, config.timezone, config.resetHour),
-    calendar: buildCalendar(calendarRows, today),
+    calendar: buildCalendar(calendarRows, betDays, today),
     history: historyRows.map((row) => mapClaim(row, milestoneFor(config, row.streak_day)?.label ?? null)),
     emailNotifications: readEmailPreference(db, userId),
   };
@@ -283,14 +352,25 @@ export function claimReward(db: DB, userId: string, now = new Date()): ClaimOutc
   }
   const today = rewardDayKey(now, config.timezone, config.resetHour);
   const outcome = inTransaction(db, () => {
-    const state = currentStreak(db, userId, config, today);
-    if (state.claimedToday) {
+    const existingClaim = db
+      .prepare('SELECT id FROM reward_claims WHERE user_id = ? AND claim_day = ?')
+      .get(userId, today) as { id: string } | undefined;
+    if (existingClaim) {
       throw new ApiError(409, 'ALREADY_CLAIMED', 'You already claimed today\'s reward.', {
         claimedToday: true,
         nextResetAt: nextResetIso(now, config.timezone, config.resetHour),
       });
     }
-    const streakDay = Math.min(config.maxStreakDays, state.streak + 1);
+    const betState = currentBetState(db, userId, config, today);
+    if (!betState.betToday) {
+      throw new ApiError(
+        403,
+        'BET_REQUIRED_TODAY',
+        'Place at least one valid bet today to claim your daily reward.',
+        { betToday: false },
+      );
+    }
+    const streakDay = Math.min(config.maxStreakDays, Math.max(1, betState.streak));
     const amounts = rewardAmounts(config, streakDay);
     const claimId = newId('rwd');
     const createdAt = nowIso();

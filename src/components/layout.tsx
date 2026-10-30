@@ -7,6 +7,7 @@ import {
   Bell,
   ChevronDown,
   ChevronRight,
+  ClipboardList,
   Coins,
   Gamepad2,
   Gauge,
@@ -179,6 +180,7 @@ function staffNav(role: Role): NavGroup[] {
         { label: 'Assigned to me', to: '/staff/assigned', icon: UserCheck },
         { label: 'Unassigned', to: '/staff/unassigned', icon: UserX },
         { label: 'On hold', to: '/staff/on-hold', icon: PauseCircle },
+        { label: 'Account reviews', to: '/staff/reviews', icon: ClipboardList, permission: 'accounts.review' },
         { label: 'Closed', to: '/staff/closed', icon: Archive },
         { label: 'Ticket search', to: '/staff/search', icon: Search },
       ],
@@ -213,6 +215,7 @@ function adminNav(role: Role): NavGroup[] {
       title: 'Support & economy',
       items: [
         { label: 'Support desk', to: '/admin/tickets', icon: LifeBuoy },
+        { label: 'Account reviews', to: '/admin/reviews', icon: ClipboardList, permission: 'accounts.review' },
         { label: 'Cashier requests', to: '/admin/cashier', icon: Landmark, permission: 'credits.adjust' },
         { label: 'Economy', to: '/admin/economy', icon: Coins, permission: 'economy.read' },
         { label: 'Ledger', to: '/admin/transactions', icon: ScrollText, permission: 'economy.read' },
@@ -476,8 +479,8 @@ function NotificationMenu() {
 }
 
 function EmailVerifyBanner() {
-  const { user, config } = useAuth();
-  if (!user || user.emailVerified || !config?.emailEnabled) return null;
+  const { user } = useAuth();
+  if (!user || user.emailVerified) return null;
   return (
     <div className="border-b border-gold/15 bg-gradient-to-r from-gold/[0.09] via-gold/[0.04] to-transparent">
       <div className="mx-auto flex max-w-[1460px] flex-wrap items-center gap-2 px-4 py-2.5 sm:px-6 lg:px-8">
@@ -485,13 +488,36 @@ function EmailVerifyBanner() {
           <Mail className="h-3.5 w-3.5" />
         </span>
         <p className="min-w-0 flex-1 text-[11.5px] text-muted">
-          Verify your email to secure your account and receive account alerts.
+          Verify your email before placing bets. Open Settings to resend the verification email.
         </p>
         <Link
           to="/settings#email"
           className="inline-flex items-center gap-1 rounded-lg border border-gold/30 bg-gold/10 px-2.5 py-1 text-[11px] font-semibold text-gold-bright transition-colors hover:bg-gold/15"
         >
           Verify email <ChevronRight className="h-3 w-3" />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function AccountHoldBanner() {
+  const { user } = useAuth();
+  if (!user?.accountHold) return null;
+  return (
+    <div className="border-b border-warning/20 bg-gradient-to-r from-warning/[0.1] via-warning/[0.04] to-transparent">
+      <div className="mx-auto flex max-w-[1460px] flex-wrap items-center gap-2 px-4 py-2.5 sm:px-6 lg:px-8">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-warning/30 bg-warning/10 text-warning">
+          <LifeBuoy className="h-3.5 w-3.5" />
+        </span>
+        <p className="min-w-0 flex-1 text-[11.5px] text-muted">
+          Your account is under review. Betting, bonuses, and cashier requests are paused until support resolves the hold.
+        </p>
+        <Link
+          to="/tickets/new"
+          className="inline-flex items-center gap-1 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-1 text-[11px] font-semibold text-warning transition-colors hover:bg-warning/15"
+        >
+          Contact support <ChevronRight className="h-3 w-3" />
         </Link>
       </div>
     </div>
@@ -759,6 +785,7 @@ export function AppShell() {
         </header>
 
         <MaintenanceBanner />
+        <AccountHoldBanner />
         <EmailVerifyBanner />
         <ActiveRoundNotice />
 

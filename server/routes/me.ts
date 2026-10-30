@@ -3,7 +3,10 @@ import { z } from 'zod';
 import type { DB } from '../db/index.ts';
 import type { LedgerType, NotificationItem, Paginated } from '../../shared/types.ts';
 import { getSetting } from '../db/index.ts';
-import { badRequest, clientIp, conflict, newId, notFound, nowIso, pagination as _pagination } from '../lib/core.ts';
+import { ApiError, badRequest, clientIp, conflict, newId, notFound, nowIso, pagination as _pagination } from '../lib/core.ts';
+import { verifyPassword } from '../lib/crypto.ts';
+import { resetLimiter } from '../lib/rate-limit.ts';
+import { deleteAccount, findAccountDeletionRequest, issueAccountDeletionRequest } from '../lib/account-deletion.ts';
 import { parse, pageQuerySchema, emailSchema, usernameSchema } from '../lib/validation.ts';
 import { requireAuth } from '../lib/permissions.ts';
 import { balanceOf, mapLedgerRow, type LedgerRow } from '../lib/wallet.ts';
@@ -27,6 +30,21 @@ const selfExclusionSchema = z.object({
   duration: z.enum(SELF_EXCLUSION_DURATIONS),
   reason: z.string().trim().max(500).optional(),
 });
+
+const deleteAccountRequestSchema = z.object({
+  password: z.string().min(1, 'Enter your current password.').max(200),
+});
+
+const deleteAccountConfirmSchema = z.object({
+  token: z.string().trim().min(20, 'This deletion link is invalid.').max(500),
+});
+
+function guardDeleteRate(limit: { allowed: boolean; retryAfterSeconds: number }): void {
+  if (limit.allowed) return;
+  throw new ApiError(429, 'RATE_LIMITED', 'Too many deletion attempts. Please try again later.', {
+    retryAfterSeconds: limit.retryAfterSeconds,
+  });
+}
 
 function selfExclusionUntil(duration: SelfExclusionDuration, now: number): string {
   if (duration === 'permanent') return '9999-12-31T23:59:59.999Z';
@@ -114,6 +132,9 @@ export function createMeRouter(db: DB): Router {
       ip: clientIp(req),
     });
     if (emailChanged) {
+      // A deletion link is tied to the email that received it. A changed
+      // address must not leave an old link able to erase the account.
+      db.prepare('DELETE FROM account_deletion_requests WHERE user_id = ? AND used_at IS NULL').run(user.id);
       const emailSettings = getEmailConfig(db);
       if (emailSettings.securityNotifications) {
         enqueueEmail(db, {
@@ -145,6 +166,95 @@ export function createMeRouter(db: DB): Router {
       });
     }
     res.json({ user: loadUser(db, user.id) });
+  });
+
+  router.post('/delete-account/request', (req, res) => {
+    const user = requireAuth(req);
+    const body = parse(deleteAccountRequestSchema, req.body);
+    guardDeleteRate(resetLimiter.consume(`delete-account:${user.id}`));
+
+    const row = db
+      .prepare('SELECT username, email, password_hash, deleted_at FROM users WHERE id = ?')
+      .get(user.id) as
+      | { username: string; email: string; password_hash: string; deleted_at: string | null }
+      | undefined;
+    if (!row || row.deleted_at) {
+      throw conflict('This account has already been deleted.', 'ACCOUNT_DELETED');
+    }
+    if (!verifyPassword(body.password, row.password_hash)) {
+      throw new ApiError(400, 'INVALID_PASSWORD', 'Your current password is incorrect.', {
+        fields: { password: 'Incorrect password.' },
+      });
+    }
+
+    const deletion = issueAccountDeletionRequest(db, user.id, row.email);
+    const queued = enqueueEmail(db, {
+      userId: user.id,
+      recipient: row.email,
+      template: 'account-deletion',
+      payload: { username: row.username, deleteUrl: deletion.path, expiresAt: deletion.expiresAt },
+      dedupeKey: `account-deletion:${user.id}:${deletion.expiresAt}`,
+    });
+
+    if (!queued && !config.exposeResetToken) {
+      db.prepare('DELETE FROM account_deletion_requests WHERE user_id = ? AND used_at IS NULL').run(user.id);
+      throw new ApiError(
+        503,
+        'EMAIL_UNAVAILABLE',
+        'Email delivery is not configured, so we cannot verify this deletion by email. Contact support for help deleting your account.',
+      );
+    }
+
+    recordAudit(db, {
+      actorId: user.id,
+      action: 'account.deletion_requested',
+      targetType: 'user',
+      targetId: user.id,
+      targetLabel: row.username,
+      ip: clientIp(req),
+    });
+
+    res.json({
+      ok: true,
+      sent: Boolean(queued),
+      expiresAt: deletion.expiresAt,
+      message: queued
+        ? 'A confirmation link is on its way to your email address. Open it to finish deleting your account.'
+        : 'Email delivery is unavailable in this environment. Use the local confirmation link below.',
+      ...(config.exposeResetToken ? { deletePath: deletion.path } : {}),
+    });
+  });
+
+  router.post('/delete-account/confirm', (req, res) => {
+    const user = requireAuth(req);
+    const body = parse(deleteAccountConfirmSchema, req.body);
+    guardDeleteRate(resetLimiter.consume(`delete-account-confirm:${user.id}`));
+
+    const request = findAccountDeletionRequest(db, body.token);
+    if (
+      !request ||
+      request.user_id !== user.id ||
+      request.used_at ||
+      new Date(request.expires_at).getTime() <= Date.now()
+    ) {
+      throw badRequest(
+        'This deletion link is invalid, has expired, or belongs to another account. Request a new link from your security settings.',
+        'INVALID_DELETION_TOKEN',
+      );
+    }
+    if (request.email.toLowerCase() !== user.email.toLowerCase()) {
+      throw badRequest(
+        'The email on this account changed after this link was issued. Request a new deletion link.',
+        'EMAIL_CHANGED',
+      );
+    }
+
+    deleteAccount(db, user.id, clientIp(req));
+    clearSessionCookie(res, req);
+    res.json({
+      ok: true,
+      message: 'Your account and personal data have been deleted. Financial ledger entries are retained without your identity where the law requires it.',
+    });
   });
 
   router.get('/wallet', (req, res) => {

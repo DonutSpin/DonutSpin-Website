@@ -107,6 +107,7 @@ export const PERMISSIONS = [
   'users.read',
   'users.manage',
   'users.restrict',
+  'accounts.review',
   'roles.manage',
   'staff.manage',
   'games.play',
@@ -131,6 +132,7 @@ const PLAYER_PERMISSIONS: Permission[] = [
 const SUPPORT_PERMISSIONS: Permission[] = [
   ...PLAYER_PERMISSIONS,
   'staff.access',
+  'accounts.review',
   'tickets.read_all',
   'tickets.reply',
   'tickets.note',
@@ -191,6 +193,8 @@ export interface SessionUser {
   status: AccountStatus;
   emailVerified: boolean;
   emailNotifications: boolean;
+  /** True while a multiple-account review holds the account. Never includes internal detection details. */
+  accountHold: boolean;
   balance: number;
   createdAt: string;
   lastLoginAt: string | null;
@@ -438,6 +442,7 @@ export interface RewardCalendarDay {
   label: string;
   weekday: string;
   claimed: boolean;
+  betPlaced: boolean;
   isToday: boolean;
   isPast: boolean;
   reward: number | null;
@@ -454,7 +459,11 @@ export interface RewardsSummary {
   missedPolicy: 'reset' | 'grace';
   graceDays: number;
   milestones: RewardMilestone[];
+  /** Consecutive reward days with at least one accepted wager. */
   streak: number;
+  bestStreak: number;
+  /** True when an accepted wager has already been recorded for today's reward day. */
+  betToday: boolean;
   claimedToday: boolean;
   todayClaim: RewardClaim | null;
   nextReward: { streakDay: number; baseAmount: number; milestoneAmount: number; total: number };
@@ -625,6 +634,99 @@ export interface PlinkoView extends BaseGameView {
   slot: number;
   multiplier: number;
   won: boolean;
+}
+
+/* ------------------------------ account reviews --------------------------- */
+
+export type AccountReviewStatus = 'open' | 'cleared' | 'alt_confirmed' | 'resolved';
+
+export const ACCOUNT_REVIEW_STATUS_LABELS: Record<AccountReviewStatus, string> = {
+  open: 'Open review',
+  cleared: 'Verified separate users',
+  alt_confirmed: 'Confirmed alt account',
+  resolved: 'Resolved',
+};
+
+export interface AccountReviewSummary {
+  id: string;
+  userId: string;
+  username: string;
+  email: string;
+  role: Role;
+  status: AccountReviewStatus;
+  reason: string;
+  triggerIp: string | null;
+  relatedCount: number;
+  accountHold: boolean;
+  flaggedAt: string;
+  updatedAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  decisionReason: string | null;
+}
+
+export interface AccountReviewCounts {
+  open: number;
+  onHold: number;
+  cleared: number;
+  altConfirmed: number;
+  resolved: number;
+  total: number;
+}
+
+export interface AccountReviewRelatedAccount {
+  id: string;
+  username: string;
+  email: string;
+  role: Role;
+  status: AccountStatus;
+  accountHold: boolean;
+  registrationIp: string | null;
+  createdAt: string;
+  lastLoginAt: string | null;
+  reviewStatus: AccountReviewStatus | null;
+  sharedIps: string[];
+}
+
+export interface AccountReviewIpHistory {
+  ip: string;
+  accounts: number;
+  registrations: number;
+  sessions: number;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface AccountReviewEvent {
+  id: string;
+  action: string;
+  actorName: string | null;
+  fromStatus: AccountReviewStatus | null;
+  toStatus: AccountReviewStatus | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface AccountReviewDetail extends AccountReviewSummary {
+  reviewNote: string;
+  user: {
+    id: string;
+    username: string;
+    email: string;
+    role: Role;
+    status: AccountStatus;
+    accountHold: boolean;
+    accountHoldReason: string | null;
+    accountHoldAt: string | null;
+    registrationIp: string | null;
+    emailVerified: boolean;
+    createdAt: string;
+    lastLoginAt: string | null;
+    balance: number;
+  };
+  relatedAccounts: AccountReviewRelatedAccount[];
+  ipHistory: AccountReviewIpHistory[];
+  events: AccountReviewEvent[];
 }
 
 export interface TicketCounts {
