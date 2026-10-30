@@ -4,6 +4,7 @@ import { Coins, Crown, Gem, RotateCcw, Sparkles, Volume2, VolumeX } from 'lucide
 import type { CoinflipView } from '../../../shared/types';
 import { useAuth } from '../../context/AuthContext';
 import { acknowledgeRound, playGame, type CoinflipView as CoinflipViewType } from '../../lib/games';
+import { faceDegrees, landingDegrees, normalizeDegrees, type CoinSide } from '../../lib/coin';
 import { useRestoreActiveRound } from '../../lib/useActiveRound';
 import { api, errorMessage, requestId } from '../../lib/api';
 import { money } from '../../lib/format';
@@ -23,36 +24,8 @@ import {
 import { Alert, Button, Card, Toggle, cn } from '../../components/ui';
 
 const TOSS_MS = 3100;
-/** Full turns added before landing, so the flip reads as a real toss. */
-const TURNS = 4;
 const COIN_EASING = 'cubic-bezier(0.16, 0.84, 0.18, 1)';
 const SOUND_KEY = 'donutcash:coin-sound';
-type CoinSide = 'heads' | 'tails';
-
-/** Heads is the un-rotated face; tails is the back of the coin. */
-function faceDegrees(side: CoinSide): number {
-  return side === 'tails' ? 180 : 0;
-}
-
-function normalizeDegrees(value: number): number {
-  return ((value % 360) + 360) % 360;
-}
-
-/**
- * Absolute rotation angle whose visible face is `outcome`.
- *
- * The visible face is decided purely by the angle modulo 360, so the ending
- * angle is derived from the server result and nothing else. The angle always
- * advances forwards, so the coin keeps spinning the same way instead of
- * snapping backwards to reach a face.
- */
-function landingDegrees(from: number, outcome: CoinSide): number {
-  const current = normalizeDegrees(from);
-  const raw = ((faceDegrees(outcome) - current) % 360 + 360) % 360;
-  // A remaining angle under 45° would look like an abrupt snap on landing.
-  const delta = raw < 45 ? raw + 360 : raw;
-  return current + TURNS * 360 + delta;
-}
 
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
