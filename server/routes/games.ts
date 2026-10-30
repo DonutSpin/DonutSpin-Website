@@ -27,6 +27,7 @@ import {
   type GameSessionRow,
 } from '../games/common.ts';
 import { getGameModule, publicGameConfig } from '../games/index.ts';
+import { capBelowWager } from '../../shared/payout.ts';
 
 const requestIdSchema = z
   .string()
@@ -76,7 +77,7 @@ export function createGamesRouter(db: DB): Router {
     });
     res.json({
       games,
-      maxPayout: getSetting(db, 'economy.max_payout', 1_000_000),
+      maxPayout: getSetting(db, 'economy.max_payout', 1_000_000_000_000),
       maintenance: isMaintenanceMode(db),
       startingCredits: getSetting(db, 'economy.starting_credits', appConfig.startingCredits),
     });
@@ -112,7 +113,7 @@ export function createGamesRouter(db: DB): Router {
     if (!row || row.user_id !== user.id) throw notFound('Game session not found.');
     const module = getGameModule(row.game_id);
     if (!module) throw notFound('Game not available.');
-    res.json(module.resume(row, balanceOf(db, user.id)));
+    res.json(module.resume(row, balanceOf(db, user.id), getSetting(db, 'economy.max_payout', 1_000_000_000_000)));
   });
 
   router.post('/:slug/play', async (req, res) => {
@@ -126,8 +127,10 @@ export function createGamesRouter(db: DB): Router {
     if (!game.enabled) throw badRequest(`${game.name} is currently unavailable.`, 'GAME_DISABLED');
     const parsed = parse(playSchema, req.body);
     assertWager(game, parsed.bet);
-    if (packetLimit(db) < parsed.bet) {
-      throw badRequest('That wager exceeds the platform limit.', 'WAGER_TOO_HIGH');
+    // A wager above the per-round payout ceiling could not even be returned by
+    // a 1x round, so it is refused instead of silently capped.
+    if (capBelowWager(parsed.bet, getSetting(db, 'economy.max_payout', 1_000_000_000_000))) {
+      throw badRequest('That wager is above the platform payout limit.', 'WAGER_ABOVE_PAYOUT_CAP');
     }
 
     const replay = findReplay(db, user.id, parsed.requestId);
@@ -206,6 +209,3 @@ export function createGamesRouter(db: DB): Router {
   return router;
 }
 
-function packetLimit(db: DB): number {
-  return getSetting(db, 'economy.max_payout', 1_000_000);
-}

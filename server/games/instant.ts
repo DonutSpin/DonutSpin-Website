@@ -10,6 +10,7 @@ import { parse } from '../lib/validation.ts';
 import { amountSchema } from '../lib/amount.ts';
 import { badRequest, parseJson } from '../lib/core.ts';
 import { balanceOf } from '../lib/wallet.ts';
+import { payoutFor } from '../../shared/payout.ts';
 import {
   baseView,
   creditPayout,
@@ -50,13 +51,12 @@ const coinflipSchema = z.object({ pick: z.enum(['heads', 'tails']) });
 export const coinflip: GameModule = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
     const { pick } = parse(coinflipSchema, ctx.body);
     const outcome = secureInt(2) === 0 ? 'heads' : 'tails';
     const multiplier = Math.min(2, Math.max(1.5, numberConfig(ctx.gameConfig, 'winMultiplier', 1.96)));
     const won = pick === outcome;
-    const rawPayout = won ? Math.floor(ctx.bet * multiplier) : 0;
-    const payout = Math.min(rawPayout, maxPayout(ctx.db));
+    const payout = won ? payoutFor(ctx.bet, multiplier, maxPayout(ctx.db)) : 0;
     const sessionId = newSessionId();
     const state: CoinflipState = { pick, outcome, multiplier };
     const wagerLedgerId = debitWager(ctx.db, ctx.user.id, sessionId, ctx.bet, ctx.game.id);
@@ -129,7 +129,7 @@ interface PlinkoState {
 export const plinko: GameModule = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
     const { risk } = parse(plinkoSchema, ctx.body);
     const enabledRisks = Array.isArray(ctx.gameConfig.enabledRisks)
       ? (ctx.gameConfig.enabledRisks as string[])
@@ -140,8 +140,7 @@ export const plinko: GameModule = {
     const path: ('left' | 'right')[] = Array.from({ length: PLINKO_ROWS }, () => (secureInt(2) === 0 ? 'left' : 'right'));
     const slot = path.filter((step) => step === 'right').length;
     const multiplier = PLINKO_TABLES[risk][slot] ?? 0;
-    const rawPayout = Math.floor(ctx.bet * multiplier);
-    const payout = Math.min(rawPayout, maxPayout(ctx.db));
+    const payout = payoutFor(ctx.bet, multiplier, maxPayout(ctx.db));
     const won = payout > 0;
     const sessionId = newSessionId();
     const state: PlinkoState = { risk, path, slot, multiplier };
@@ -272,7 +271,7 @@ interface RouletteState {
 export const roulette: GameModule = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
     const parsed = parse(rouletteSchema, ctx.body);
     const maxBets = Math.max(1, Math.floor(numberConfig(ctx.gameConfig, 'maxBetsPerSpin', 10)));
     if (parsed.bets.length > maxBets) {

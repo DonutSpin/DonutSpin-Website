@@ -20,7 +20,7 @@ import { recordAudit } from '../lib/audit.ts';
 import { notify } from '../lib/notifications.ts';
 import { enqueueEmail, getEmailConfig } from '../lib/email.ts';
 import { createEmailVerification, verifyEmailToken } from '../lib/email-verification.ts';
-import { loginLimiter, registerLimiter, resetLimiter, RateLimiter } from '../lib/rate-limit.ts';
+import { callerKey, loginLimiter, registerLimiter, resetLimiter, RateLimiter } from '../lib/rate-limit.ts';
 import { requireAuth } from '../lib/permissions.ts';
 import { assertNotInMaintenance } from '../lib/maintenance.ts';
 import { compactAmount } from '../../shared/amount.ts';
@@ -72,7 +72,7 @@ export function createAuthRouter(db: DB): Router {
 
   router.post('/register', async (req, res) => {
     const body = parse(registerSchema, req.body);
-    limiterGuard(registerLimiter.consume(req.ip ?? 'unknown'));
+    limiterGuard(registerLimiter.consume(callerKey(req, 'register')));
     if (!getSetting(db, 'platform.registration_open', true)) {
       throw new ApiError(403, 'REGISTRATION_CLOSED', 'Registration is currently closed.');
     }
@@ -152,9 +152,9 @@ export function createAuthRouter(db: DB): Router {
 
   router.post('/login', async (req, res) => {
     const body = parse(loginSchema, req.body);
-    const ipKey = `login:${req.ip ?? 'unknown'}:${body.identifier.toLowerCase()}`;
+    const ipKey = `${callerKey(req, 'login')}:${body.identifier.toLowerCase()}`;
     limiterGuard(loginLimiter.consume(ipKey));
-    limiterGuard(ipLimiter.consume(`login-ip:${req.ip ?? 'unknown'}`));
+    limiterGuard(ipLimiter.consume(callerKey(req, 'login-ip')));
 
     const row = db
       .prepare(
@@ -273,7 +273,7 @@ export function createAuthRouter(db: DB): Router {
 
   router.post('/forgot-password', async (req, res) => {
     const body = parse(forgotSchema, req.body);
-    limiterGuard(resetLimiter.consume(`forgot:${req.ip ?? 'unknown'}`));
+    limiterGuard(resetLimiter.consume(callerKey(req, 'forgot')));
     limiterGuard(resetLimiter.consume(`forgot-email:${body.email}`));
 
     const user = db
@@ -318,7 +318,7 @@ export function createAuthRouter(db: DB): Router {
 
   router.post('/reset-password', async (req, res) => {
     const body = parse(resetSchema, req.body);
-    limiterGuard(resetLimiter.consume(`reset:${req.ip ?? 'unknown'}`));
+    limiterGuard(resetLimiter.consume(callerKey(req, 'reset')));
     const row = db
       .prepare(
         `SELECT pr.id, pr.user_id, pr.expires_at, pr.used_at, u.username, u.email

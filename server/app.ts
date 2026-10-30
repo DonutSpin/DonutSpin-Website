@@ -8,7 +8,7 @@ import type { DB } from './db/index.ts';
 import { config } from './config.ts';
 import { ApiError } from './lib/core.ts';
 import { authMiddleware } from './auth.ts';
-import { mutationLimiter } from './lib/rate-limit.ts';
+import { callerKey, mutationLimiter } from './lib/rate-limit.ts';
 import { createPublicRouter } from './routes/public.ts';
 import { createAuthRouter } from './routes/auth.ts';
 import { createLegalRouter } from './routes/legal.ts';
@@ -87,7 +87,7 @@ export function createApp(db: DB): express.Express {
     if (origin && !config.allowedOrigins.includes(origin) && !isSameOrigin(req, origin)) {
       return next(new ApiError(403, 'ORIGIN_BLOCKED', 'This origin is not allowed to perform that action.'));
     }
-    if (config.isProduction && !mutationLimiter.consume(`mutate:${req.ip ?? 'unknown'}`).allowed) {
+    if (config.isProduction && !mutationLimiter.consume(callerKey(req, 'mutate')).allowed) {
       return next(new ApiError(429, 'RATE_LIMITED', 'Too many requests. Please slow down.'));
     }
     next();

@@ -3,6 +3,7 @@ import type { MinesView, TowersView } from '../../shared/types.ts';
 import { parse } from '../lib/validation.ts';
 import { badRequest, conflict, notFound, parseJson } from '../lib/core.ts';
 import { balanceOf } from '../lib/wallet.ts';
+import { payoutFor } from '../../shared/payout.ts';
 import {
   baseView,
   creditPayout,
@@ -56,7 +57,13 @@ const minesActionSchema = z.object({
   tile: z.number().int().min(0).max(GRID - 1).optional(),
 });
 
-function minesView(row: GameSessionRow, state: MinesState, balance: number, mineCount: number): MinesView {
+function minesView(
+  row: GameSessionRow,
+  state: MinesState,
+  balance: number,
+  mineCount: number,
+  cap: number,
+): MinesView {
   const active = row.status === 'active';
   const safeTiles = GRID - mineCount;
   return {
@@ -68,7 +75,8 @@ function minesView(row: GameSessionRow, state: MinesState, balance: number, mine
       active && state.revealed.length < safeTiles
         ? minesMultiplier(mineCount, state.revealed.length + 1, state.edge)
         : null,
-    potential: active && state.revealed.length > 0 ? Math.floor(row.bet * state.multiplier) : 0,
+    // The displayed potential is the settled payout, cap included.
+    potential: state.revealed.length > 0 ? payoutFor(row.bet, state.multiplier, cap) : 0,
     mineTiles: active ? null : state.mineTiles,
     hitTile: active ? null : (state.hitTile ?? null),
   };
@@ -77,7 +85,7 @@ function minesView(row: GameSessionRow, state: MinesState, balance: number, mine
 export const mines: GameModule = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
 
     const { mines: mineCount } = parse(minesStartSchema, ctx.body);
     const maxMines = Math.min(24, Math.max(1, Math.floor(numberConfig(ctx.gameConfig, 'maxMines', 20))));
@@ -109,7 +117,7 @@ export const mines: GameModule = {
     });
     const row = getSessionRow(ctx.db, sessionId);
     if (!row) throw new Error('Session missing');
-    return minesView(row, state, balanceOf(ctx.db, ctx.user.id), mineCount);
+    return minesView(row, state, balanceOf(ctx.db, ctx.user.id), mineCount, maxPayout(ctx.db));
   },
 
   action(ctx) {
@@ -120,7 +128,7 @@ export const mines: GameModule = {
     if (!state) throw new Error('Corrupt game state');
 
     if (state.lastActionId && state.lastActionId === ctx.requestId) {
-      return minesView(session, state, balanceOf(ctx.db, ctx.user.id), state.mineTiles.length);
+      return minesView(session, state, balanceOf(ctx.db, ctx.user.id), state.mineTiles.length, maxPayout(ctx.db));
     }
     if (session.status !== 'active') throw conflict('This round is already complete.', 'ROUND_COMPLETE');
 
@@ -133,7 +141,7 @@ export const mines: GameModule = {
       if (state.revealed.length === 0) {
         throw badRequest('Reveal at least one safe tile before cashing out.', 'NOTHING_TO_CASH_OUT');
       }
-      const payout = Math.min(Math.floor(session.bet * state.multiplier), maxPayout(ctx.db));
+      const payout = payoutFor(session.bet, state.multiplier, maxPayout(ctx.db));
       const ledgerId = creditPayout(
         ctx.db,
         { id: session.id, user_id: session.user_id, game_id: session.game_id },
@@ -164,7 +172,7 @@ export const mines: GameModule = {
         state.revealed.push(body.tile);
         state.multiplier = Math.min(minesMultiplier(mineCount, state.revealed.length, edge), 1_000_000);
         if (state.revealed.length === safeTiles) {
-          const payout = Math.min(Math.floor(session.bet * state.multiplier), maxPayout(ctx.db));
+          const payout = payoutFor(session.bet, state.multiplier, maxPayout(ctx.db));
           const ledgerId = creditPayout(
             ctx.db,
             { id: session.id, user_id: session.user_id, game_id: session.game_id },
@@ -187,13 +195,13 @@ export const mines: GameModule = {
     const updated = getSessionRow(ctx.db, session.id);
     if (!updated) throw new Error('Session missing');
     const finalState = parseJson<MinesState>(updated.state, state);
-    return minesView(updated, finalState, balanceOf(ctx.db, ctx.user.id), mineCount);
+    return minesView(updated, finalState, balanceOf(ctx.db, ctx.user.id), mineCount, maxPayout(ctx.db));
   },
 
-  resume(row, balance) {
+  resume(row, balance, cap = Number.MAX_SAFE_INTEGER) {
     const state = parseJson<MinesState | null>(row.state, null);
     if (!state) throw new Error('Corrupt game state');
-    return minesView(row, state, balance, state.mineTiles.length);
+    return minesView(row, state, balance, state.mineTiles.length, cap);
   },
 };
 
@@ -225,7 +233,13 @@ function towerMultiplier(level: number, edge: number): number {
   return round2((1 - edge) * 1.5 ** level);
 }
 
-function towersView(row: GameSessionRow, state: TowersState, balance: number, levels: number): TowersView {
+function towersView(
+  row: GameSessionRow,
+  state: TowersState,
+  balance: number,
+  levels: number,
+  cap: number,
+): TowersView {
   const active = row.status === 'active';
   const trapTile = state.failedLevel !== null ? (state.traps[state.failedLevel] ?? null) : null;
   return {
@@ -234,7 +248,7 @@ function towersView(row: GameSessionRow, state: TowersState, balance: number, le
     revealed: state.choices,
     multiplier: state.multiplier,
     nextMultiplier: active && state.level < levels ? towerMultiplier(state.level + 1, state.edge) : state.multiplier,
-    potential: active && state.level > 0 ? Math.floor(row.bet * state.multiplier) : 0,
+    potential: state.level > 0 ? payoutFor(row.bet, state.multiplier, cap) : 0,
     trapTile,
   };
 }
@@ -242,7 +256,7 @@ function towersView(row: GameSessionRow, state: TowersState, balance: number, le
 export const towers: GameModule = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
 
     const levels = towerLevels(ctx.gameConfig);
     const edge = Math.min(0.1, Math.max(0, numberConfig(ctx.gameConfig, 'houseEdge', 0.03)));
@@ -269,7 +283,7 @@ export const towers: GameModule = {
     });
     const row = getSessionRow(ctx.db, sessionId);
     if (!row) throw new Error('Session missing');
-    return towersView(row, state, balanceOf(ctx.db, ctx.user.id), levels);
+    return towersView(row, state, balanceOf(ctx.db, ctx.user.id), levels, maxPayout(ctx.db));
   },
 
   action(ctx) {
@@ -279,7 +293,7 @@ export const towers: GameModule = {
     const state = parseJson<TowersState | null>(session.state, null);
     if (!state) throw new Error('Corrupt game state');
     if (state.lastActionId && state.lastActionId === ctx.requestId) {
-      return towersView(session, state, balanceOf(ctx.db, ctx.user.id), state.traps.length);
+      return towersView(session, state, balanceOf(ctx.db, ctx.user.id), state.traps.length, maxPayout(ctx.db));
     }
     if (session.status !== 'active') throw conflict('This round is already complete.', 'ROUND_COMPLETE');
 
@@ -291,7 +305,7 @@ export const towers: GameModule = {
       if (state.level === 0) {
         throw badRequest('Reveal at least one safe floor before cashing out.', 'NOTHING_TO_CASH_OUT');
       }
-      const payout = Math.min(Math.floor(session.bet * state.multiplier), maxPayout(ctx.db));
+      const payout = payoutFor(session.bet, state.multiplier, maxPayout(ctx.db));
       const ledgerId = creditPayout(
         ctx.db,
         { id: session.id, user_id: session.user_id, game_id: session.game_id },
@@ -321,7 +335,7 @@ export const towers: GameModule = {
         state.level += 1;
         state.multiplier = Math.min(towerMultiplier(state.level, edge), 1_000_000);
         if (state.level === levels) {
-          const payout = Math.min(Math.floor(session.bet * state.multiplier), maxPayout(ctx.db));
+          const payout = payoutFor(session.bet, state.multiplier, maxPayout(ctx.db));
           const ledgerId = creditPayout(
             ctx.db,
             { id: session.id, user_id: session.user_id, game_id: session.game_id },
@@ -344,12 +358,12 @@ export const towers: GameModule = {
     const updated = getSessionRow(ctx.db, session.id);
     if (!updated) throw new Error('Session missing');
     const finalState = parseJson<TowersState>(updated.state, state);
-    return towersView(updated, finalState, balanceOf(ctx.db, ctx.user.id), levels);
+    return towersView(updated, finalState, balanceOf(ctx.db, ctx.user.id), levels, maxPayout(ctx.db));
   },
 
-  resume(row, balance) {
+  resume(row, balance, cap = Number.MAX_SAFE_INTEGER) {
     const state = parseJson<TowersState | null>(row.state, null);
     if (!state) throw new Error('Corrupt game state');
-    return towersView(row, state, balance, state.traps.length);
+    return towersView(row, state, balance, state.traps.length, cap);
   },
 };

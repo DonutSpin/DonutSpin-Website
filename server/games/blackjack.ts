@@ -3,6 +3,8 @@ import type { BlackjackView, Card } from '../../shared/types.ts';
 import { parse } from '../lib/validation.ts';
 import { badRequest, conflict, notFound, parseJson } from '../lib/core.ts';
 import { applyLedger, balanceOf } from '../lib/wallet.ts';
+import { payoutFor } from '../../shared/payout.ts';
+import { compactAmount } from '../../shared/amount.ts';
 import {
   baseView,
   creditPayout,
@@ -89,6 +91,8 @@ interface BlackjackState {
   allowDouble: boolean;
   standsSoft17: boolean;
   blackjackPays: number;
+  /** Shoe size, persisted so a resumed hand rebuilds the same shoe size. */
+  decks: number;
 }
 
 function draw(shoe: ShoeCard[], decks: number): ShoeCard {
@@ -99,6 +103,11 @@ function draw(shoe: ShoeCard[], decks: number): ShoeCard {
   if (!next) throw new Error('Unable to draw a card');
   shoe.push(...rebuilt);
   return next;
+}
+
+/** A two-card 21: the only hand that pays the blackjack bonus. */
+function isNatural(cards: ShoeCard[]): boolean {
+  return cards.length === 2 && handTotal(cards) === 21;
 }
 
 function dealerPlay(state: BlackjackState, decks: number): void {
@@ -157,8 +166,7 @@ function settle(
     status = 'lost';
   }
 
-  const rawPayout = Math.floor(input.bet * payoutMultiplier);
-  const payout = Math.min(rawPayout, maxPayout(db));
+  const payout = payoutFor(input.bet, payoutMultiplier, maxPayout(db));
   input.state.result = result;
   const payoutLedgerId = creditPayout(
     db,
@@ -201,7 +209,7 @@ const actionSchema = z.object({ action: z.enum(['hit', 'stand', 'double']) });
 export const blackjack: GameModule = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
 
     const decks = Math.min(8, Math.max(1, Math.floor(numberConfig(ctx.gameConfig, 'decks', 6))));
     const blackjackPays = Math.min(2, Math.max(1, numberConfig(ctx.gameConfig, 'blackjackPays', 1.5)));
@@ -221,6 +229,7 @@ export const blackjack: GameModule = {
       allowDouble,
       standsSoft17,
       blackjackPays,
+      decks,
     };
     const sessionId = newSessionId();
     const wagerLedgerId = debitWager(ctx.db, ctx.user.id, sessionId, ctx.bet, ctx.game.id);
@@ -235,10 +244,11 @@ export const blackjack: GameModule = {
       wagerLedgerId,
     });
 
-    const playerNatural = handTotal(player) === 21;
-    const dealerNatural = handTotal(dealer) === 21;
+    const playerNatural = isNatural(player);
+    const dealerNatural = isNatural(dealer);
     if (playerNatural || dealerNatural) {
-      dealerPlay(state, decks);
+      // A natural ends the hand immediately: the dealer never draws, because a
+      // player blackjack only pushes against another natural.
       state.lastActionId = null;
       settle(ctx.db, { sessionId, userId: ctx.user.id, bet: ctx.bet, state, natural: playerNatural });
     }
@@ -252,7 +262,7 @@ export const blackjack: GameModule = {
     const { action } = parse(actionSchema, ctx.body);
     const session = getSessionRow(ctx.db, ctx.sessionId);
     if (!session || session.user_id !== ctx.user.id) throw notFound('Game session not found.');
-    let state = parseJson<BlackjackState | null>(session.state, null);
+    const state = parseJson<BlackjackState | null>(session.state, null);
     if (!state) throw new Error('Corrupt game state');
 
     if (state.lastActionId && state.lastActionId === ctx.requestId) {
@@ -262,7 +272,7 @@ export const blackjack: GameModule = {
       throw conflict('This round is already complete.', 'ROUND_COMPLETE');
     }
 
-    const decks = 6;
+    const decks = Math.min(8, Math.max(1, Math.floor(state.decks || 6)));
     const bet = session.bet;
     state.lastActionId = ctx.requestId;
 
@@ -294,6 +304,14 @@ export const blackjack: GameModule = {
         throw badRequest('You can only double on the first two cards.', 'DOUBLE_NOT_ALLOWED');
       }
       const newBet = bet * 2;
+      // Doubling doubles the real wager, so the table maximum has to hold for the
+      // doubled amount too. Otherwise a 1M table limit could be bet past at 2M.
+      if (newBet > ctx.game.max_bet) {
+        throw badRequest(
+          `Doubling would stake ${compactAmount(newBet)} DonutSMP money, above the ${compactAmount(ctx.game.max_bet)} table maximum.`,
+          'WAGER_TOO_HIGH',
+        );
+      }
       applyLedger(ctx.db, {
         userId: session.user_id,
         amount: -bet,

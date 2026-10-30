@@ -26,6 +26,11 @@ var isProduction = process.env.NODE_ENV === "production";
 var port = intEnv("PORT", intEnv("HTTP_PLATFORM_PORT", 4e3, 1), 1);
 var appUrl = (process.env.APP_URL || "http://localhost:5173").replace(/\/+$/, "");
 var appUrlConfigured = Boolean(process.env.APP_URL);
+if (isProduction && !appUrlConfigured) {
+  console.warn(
+    `[config] APP_URL is not set, so email links and reset URLs fall back to ${appUrl}. Set APP_URL to the public origin before sending real email.`
+  );
+}
 var databasePath = path.resolve(root, process.env.DATABASE_PATH || path.join("data", "aurum.db"));
 function resolveSessionSecret() {
   const provided = (process.env.SESSION_SECRET || "").trim();
@@ -117,6 +122,11 @@ function parseJson(raw, fallback) {
 }
 function clientIp(req) {
   return req.ip ?? null;
+}
+var LOOPBACK_ADDRESSES = /* @__PURE__ */ new Set(["127.0.0.1", "0.0.0.0", "::1", "::ffff:127.0.0.1", "::ffff:0.0.0.0"]);
+function isLoopbackAddress(ip) {
+  if (!ip) return true;
+  return LOOPBACK_ADDRESSES.has(ip.trim().toLowerCase());
 }
 
 // server/lib/crypto.ts
@@ -454,6 +464,7 @@ function authMiddleware(db2) {
 }
 
 // server/lib/rate-limit.ts
+import { createHash as createHash2 } from "node:crypto";
 var RateLimiter = class {
   hits = /* @__PURE__ */ new Map();
   limit;
@@ -495,6 +506,13 @@ var RateLimiter = class {
     for (const key of this.hits.keys()) this.live(key, now);
   }
 };
+function callerKey(req, scope) {
+  const ip = req.ip ?? null;
+  if (!isLoopbackAddress(ip) && ip) return `${scope}:ip:${ip}`;
+  const agent = (req.get("user-agent") ?? "unknown").slice(0, 200);
+  const hash = createHash2("sha256").update(agent).digest("hex").slice(0, 16);
+  return `${scope}:agent:${hash}`;
+}
 var loginLimiter = new RateLimiter(10, 10 * 6e4);
 var registerLimiter = new RateLimiter(8, 60 * 6e4);
 var resetLimiter = new RateLimiter(6, 60 * 6e4);
@@ -898,6 +916,22 @@ DELETE FROM settings WHERE key IN ('economy.credit_request_limit', 'support.staf
 `
   },
   {
+    version: 10,
+    name: "raise_default_payout_ceiling",
+    // The original seed capped every payout at 1,000,000 while game wagers were
+    // allowed to exceed it, so wins were silently truncated to the stake. Raise
+    // the untouched seed value; a value an operator actually chose is kept.
+    sql: `
+UPDATE settings
+   SET value = '1000000000000', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+ WHERE key = 'economy.max_payout'
+   AND CAST(value AS INTEGER) = 1000000
+   AND NOT EXISTS (
+     SELECT 1 FROM audit_logs WHERE action = 'settings.update' AND target_id = 'economy.max_payout'
+   );
+`
+  },
+  {
     version: 9,
     name: "legal_acceptance_and_self_exclusion",
     sql: `
@@ -1037,7 +1071,7 @@ function seed(db2, options) {
       "platform.maintenance": false,
       "platform.maintenance_message": "We are tuning the tables. Please try again shortly.",
       "economy.starting_credits": options.startingCredits,
-      "economy.max_payout": 1e6,
+      "economy.max_payout": 1e12,
       "economy.cashier_request_limit": 5e9,
       "security.session_days": options.sessionDays,
       "notifications.email_enabled": false,
@@ -2466,7 +2500,7 @@ function createAuthRouter(db2) {
   const router = Router2();
   router.post("/register", async (req, res) => {
     const body = parse(registerSchema, req.body);
-    limiterGuard(registerLimiter.consume(req.ip ?? "unknown"));
+    limiterGuard(registerLimiter.consume(callerKey(req, "register")));
     if (!getSetting(db2, "platform.registration_open", true)) {
       throw new ApiError(403, "REGISTRATION_CLOSED", "Registration is currently closed.");
     }
@@ -2539,9 +2573,9 @@ function createAuthRouter(db2) {
   });
   router.post("/login", async (req, res) => {
     const body = parse(loginSchema, req.body);
-    const ipKey = `login:${req.ip ?? "unknown"}:${body.identifier.toLowerCase()}`;
+    const ipKey = `${callerKey(req, "login")}:${body.identifier.toLowerCase()}`;
     limiterGuard(loginLimiter.consume(ipKey));
-    limiterGuard(ipLimiter.consume(`login-ip:${req.ip ?? "unknown"}`));
+    limiterGuard(ipLimiter.consume(callerKey(req, "login-ip")));
     const row = db2.prepare(
       `SELECT id, username, email, role, status, password_hash, self_excluded_until FROM users
          WHERE email = ? COLLATE NOCASE OR username = ? COLLATE NOCASE`
@@ -2636,7 +2670,7 @@ function createAuthRouter(db2) {
   });
   router.post("/forgot-password", async (req, res) => {
     const body = parse(forgotSchema, req.body);
-    limiterGuard(resetLimiter.consume(`forgot:${req.ip ?? "unknown"}`));
+    limiterGuard(resetLimiter.consume(callerKey(req, "forgot")));
     limiterGuard(resetLimiter.consume(`forgot-email:${body.email}`));
     const user = db2.prepare("SELECT id, username, email, status FROM users WHERE email = ? COLLATE NOCASE").get(body.email);
     let resetPath;
@@ -2675,7 +2709,7 @@ function createAuthRouter(db2) {
   });
   router.post("/reset-password", async (req, res) => {
     const body = parse(resetSchema, req.body);
-    limiterGuard(resetLimiter.consume(`reset:${req.ip ?? "unknown"}`));
+    limiterGuard(resetLimiter.consume(callerKey(req, "reset")));
     const row = db2.prepare(
       `SELECT pr.id, pr.user_id, pr.expires_at, pr.used_at, u.username, u.email
          FROM password_resets pr JOIN users u ON u.id = pr.user_id
@@ -3290,7 +3324,7 @@ function insertSession(db2, input) {
   );
 }
 function maxPayout(db2) {
-  return getSetting(db2, "economy.max_payout", 1e6);
+  return getSetting(db2, "economy.max_payout", 1e12);
 }
 function creditPayout(db2, session, payout, reason) {
   if (payout <= 0) return null;
@@ -3308,10 +3342,10 @@ function creditPayout(db2, session, payout, reason) {
 }
 function finishSession(db2, sessionId, input) {
   const now = nowIso();
-  db2.prepare(
+  const result = db2.prepare(
     `UPDATE game_sessions
-     SET status = ?, payout = ?, state = ?, outcome = COALESCE(?, outcome), payout_ledger_id = ?, ended_at = ?
-     WHERE id = ? AND status = 'active'`
+       SET status = ?, payout = ?, state = ?, outcome = COALESCE(?, outcome), payout_ledger_id = ?, ended_at = ?
+       WHERE id = ? AND status = 'active'`
   ).run(
     input.status,
     input.payout,
@@ -3321,6 +3355,7 @@ function finishSession(db2, sessionId, input) {
     now,
     sessionId
   );
+  if (result.changes !== 1) throw conflict("This round is already complete.", "ROUND_COMPLETE");
   const row = getSessionRow(db2, sessionId);
   if (!row) throw badRequest("Game session not found.", "SESSION_NOT_FOUND");
   return row;
@@ -3374,17 +3409,37 @@ function newSessionId() {
 
 // server/games/instant.ts
 import { z as z6 } from "zod";
+
+// shared/payout.ts
+function normalizeMultiplier(multiplier) {
+  if (!Number.isFinite(multiplier) || multiplier <= 0) return 0;
+  return Math.round(multiplier * 100) / 100;
+}
+function payoutFor(bet, multiplier, cap = Number.MAX_SAFE_INTEGER) {
+  if (!Number.isFinite(bet) || bet <= 0) return 0;
+  const normalized = normalizeMultiplier(multiplier);
+  if (normalized <= 0) return 0;
+  const betInt = BigInt(Math.trunc(bet));
+  const hundredths = BigInt(Math.round(normalized * 100));
+  const capInt = BigInt(Math.max(0, Math.trunc(cap)));
+  const raw = betInt * hundredths / 100n;
+  return Number(raw < capInt ? raw : capInt);
+}
+function capBelowWager(bet, cap) {
+  return Number.isFinite(cap) && cap > 0 && bet > cap;
+}
+
+// server/games/instant.ts
 var coinflipSchema = z6.object({ pick: z6.enum(["heads", "tails"]) });
 var coinflip = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
     const { pick } = parse(coinflipSchema, ctx.body);
     const outcome = secureInt(2) === 0 ? "heads" : "tails";
     const multiplier = Math.min(2, Math.max(1.5, numberConfig(ctx.gameConfig, "winMultiplier", 1.96)));
     const won = pick === outcome;
-    const rawPayout = won ? Math.floor(ctx.bet * multiplier) : 0;
-    const payout = Math.min(rawPayout, maxPayout(ctx.db));
+    const payout = won ? payoutFor(ctx.bet, multiplier, maxPayout(ctx.db)) : 0;
     const sessionId = newSessionId();
     const state = { pick, outcome, multiplier };
     const wagerLedgerId = debitWager(ctx.db, ctx.user.id, sessionId, ctx.bet, ctx.game.id);
@@ -3441,7 +3496,7 @@ var plinkoSchema = z6.object({ risk: z6.enum(["low", "medium", "high"]) });
 var plinko = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
     const { risk } = parse(plinkoSchema, ctx.body);
     const enabledRisks = Array.isArray(ctx.gameConfig.enabledRisks) ? ctx.gameConfig.enabledRisks : ["low", "medium", "high"];
     if (!enabledRisks.includes(risk)) {
@@ -3450,8 +3505,7 @@ var plinko = {
     const path4 = Array.from({ length: PLINKO_ROWS }, () => secureInt(2) === 0 ? "left" : "right");
     const slot = path4.filter((step) => step === "right").length;
     const multiplier = PLINKO_TABLES[risk][slot] ?? 0;
-    const rawPayout = Math.floor(ctx.bet * multiplier);
-    const payout = Math.min(rawPayout, maxPayout(ctx.db));
+    const payout = payoutFor(ctx.bet, multiplier, maxPayout(ctx.db));
     const won = payout > 0;
     const sessionId = newSessionId();
     const state = { risk, path: path4, slot, multiplier };
@@ -3565,7 +3619,7 @@ function betWins(bet, winning) {
 var roulette = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
     const parsed = parse(rouletteSchema, ctx.body);
     const maxBets = Math.max(1, Math.floor(numberConfig(ctx.gameConfig, "maxBetsPerSpin", 10)));
     if (parsed.bets.length > maxBets) {
@@ -3691,6 +3745,9 @@ function draw(shoe, decks) {
   shoe.push(...rebuilt);
   return next;
 }
+function isNatural(cards) {
+  return cards.length === 2 && handTotal(cards) === 21;
+}
 function dealerPlay(state, decks) {
   for (let guard = 0; guard < 30; guard += 1) {
     const total = handTotal(state.dealer);
@@ -3735,8 +3792,7 @@ function settle(db2, input) {
     result = "Dealer wins.";
     status = "lost";
   }
-  const rawPayout = Math.floor(input.bet * payoutMultiplier);
-  const payout = Math.min(rawPayout, maxPayout(db2));
+  const payout = payoutFor(input.bet, payoutMultiplier, maxPayout(db2));
   input.state.result = result;
   const payoutLedgerId = creditPayout(
     db2,
@@ -3774,7 +3830,7 @@ var actionSchema = z7.object({ action: z7.enum(["hit", "stand", "double"]) });
 var blackjack = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
     const decks = Math.min(8, Math.max(1, Math.floor(numberConfig(ctx.gameConfig, "decks", 6))));
     const blackjackPays = Math.min(2, Math.max(1, numberConfig(ctx.gameConfig, "blackjackPays", 1.5)));
     const standsSoft17 = ctx.gameConfig.dealerStandsSoft17 !== false;
@@ -3792,7 +3848,8 @@ var blackjack = {
       lastActionId: null,
       allowDouble,
       standsSoft17,
-      blackjackPays
+      blackjackPays,
+      decks
     };
     const sessionId = newSessionId();
     const wagerLedgerId = debitWager(ctx.db, ctx.user.id, sessionId, ctx.bet, ctx.game.id);
@@ -3806,10 +3863,9 @@ var blackjack = {
       requestId: ctx.requestId,
       wagerLedgerId
     });
-    const playerNatural = handTotal(player) === 21;
-    const dealerNatural = handTotal(dealer) === 21;
+    const playerNatural = isNatural(player);
+    const dealerNatural = isNatural(dealer);
     if (playerNatural || dealerNatural) {
-      dealerPlay(state, decks);
       state.lastActionId = null;
       settle(ctx.db, { sessionId, userId: ctx.user.id, bet: ctx.bet, state, natural: playerNatural });
     }
@@ -3821,7 +3877,7 @@ var blackjack = {
     const { action } = parse(actionSchema, ctx.body);
     const session = getSessionRow(ctx.db, ctx.sessionId);
     if (!session || session.user_id !== ctx.user.id) throw notFound("Game session not found.");
-    let state = parseJson(session.state, null);
+    const state = parseJson(session.state, null);
     if (!state) throw new Error("Corrupt game state");
     if (state.lastActionId && state.lastActionId === ctx.requestId) {
       return buildView(session, state, balanceOf(ctx.db, ctx.user.id));
@@ -3829,7 +3885,7 @@ var blackjack = {
     if (session.status !== "active") {
       throw conflict("This round is already complete.", "ROUND_COMPLETE");
     }
-    const decks = 6;
+    const decks = Math.min(8, Math.max(1, Math.floor(state.decks || 6)));
     const bet = session.bet;
     state.lastActionId = ctx.requestId;
     if (action === "hit") {
@@ -3860,6 +3916,12 @@ var blackjack = {
         throw badRequest("You can only double on the first two cards.", "DOUBLE_NOT_ALLOWED");
       }
       const newBet = bet * 2;
+      if (newBet > ctx.game.max_bet) {
+        throw badRequest(
+          `Doubling would stake ${compactAmount(newBet)} DonutSMP money, above the ${compactAmount(ctx.game.max_bet)} table maximum.`,
+          "WAGER_TOO_HIGH"
+        );
+      }
       applyLedger(ctx.db, {
         userId: session.user_id,
         amount: -bet,
@@ -3921,7 +3983,7 @@ var minesActionSchema = z8.object({
   action: z8.enum(["reveal", "cashout"]),
   tile: z8.number().int().min(0).max(GRID - 1).optional()
 });
-function minesView(row, state, balance, mineCount) {
+function minesView(row, state, balance, mineCount, cap) {
   const active = row.status === "active";
   const safeTiles = GRID - mineCount;
   return {
@@ -3930,7 +3992,8 @@ function minesView(row, state, balance, mineCount) {
     revealed: state.revealed,
     multiplier: state.multiplier,
     nextMultiplier: active && state.revealed.length < safeTiles ? minesMultiplier(mineCount, state.revealed.length + 1, state.edge) : null,
-    potential: active && state.revealed.length > 0 ? Math.floor(row.bet * state.multiplier) : 0,
+    // The displayed potential is the settled payout, cap included.
+    potential: state.revealed.length > 0 ? payoutFor(row.bet, state.multiplier, cap) : 0,
     mineTiles: active ? null : state.mineTiles,
     hitTile: active ? null : state.hitTile ?? null
   };
@@ -3938,7 +4001,7 @@ function minesView(row, state, balance, mineCount) {
 var mines = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
     const { mines: mineCount } = parse(minesStartSchema, ctx.body);
     const maxMines = Math.min(24, Math.max(1, Math.floor(numberConfig(ctx.gameConfig, "maxMines", 20))));
     if (mineCount > maxMines) {
@@ -3969,7 +4032,7 @@ var mines = {
     });
     const row = getSessionRow(ctx.db, sessionId);
     if (!row) throw new Error("Session missing");
-    return minesView(row, state, balanceOf(ctx.db, ctx.user.id), mineCount);
+    return minesView(row, state, balanceOf(ctx.db, ctx.user.id), mineCount, maxPayout(ctx.db));
   },
   action(ctx) {
     const body = parse(minesActionSchema, ctx.body);
@@ -3978,7 +4041,7 @@ var mines = {
     const state = parseJson(session.state, null);
     if (!state) throw new Error("Corrupt game state");
     if (state.lastActionId && state.lastActionId === ctx.requestId) {
-      return minesView(session, state, balanceOf(ctx.db, ctx.user.id), state.mineTiles.length);
+      return minesView(session, state, balanceOf(ctx.db, ctx.user.id), state.mineTiles.length, maxPayout(ctx.db));
     }
     if (session.status !== "active") throw conflict("This round is already complete.", "ROUND_COMPLETE");
     const mineCount = state.mineTiles.length;
@@ -3989,7 +4052,7 @@ var mines = {
       if (state.revealed.length === 0) {
         throw badRequest("Reveal at least one safe tile before cashing out.", "NOTHING_TO_CASH_OUT");
       }
-      const payout = Math.min(Math.floor(session.bet * state.multiplier), maxPayout(ctx.db));
+      const payout = payoutFor(session.bet, state.multiplier, maxPayout(ctx.db));
       const ledgerId2 = creditPayout(
         ctx.db,
         { id: session.id, user_id: session.user_id, game_id: session.game_id },
@@ -4020,7 +4083,7 @@ var mines = {
         state.revealed.push(body.tile);
         state.multiplier = Math.min(minesMultiplier(mineCount, state.revealed.length, edge), 1e6);
         if (state.revealed.length === safeTiles) {
-          const payout = Math.min(Math.floor(session.bet * state.multiplier), maxPayout(ctx.db));
+          const payout = payoutFor(session.bet, state.multiplier, maxPayout(ctx.db));
           const ledgerId2 = creditPayout(
             ctx.db,
             { id: session.id, user_id: session.user_id, game_id: session.game_id },
@@ -4042,12 +4105,12 @@ var mines = {
     const updated = getSessionRow(ctx.db, session.id);
     if (!updated) throw new Error("Session missing");
     const finalState = parseJson(updated.state, state);
-    return minesView(updated, finalState, balanceOf(ctx.db, ctx.user.id), mineCount);
+    return minesView(updated, finalState, balanceOf(ctx.db, ctx.user.id), mineCount, maxPayout(ctx.db));
   },
-  resume(row, balance) {
+  resume(row, balance, cap = Number.MAX_SAFE_INTEGER) {
     const state = parseJson(row.state, null);
     if (!state) throw new Error("Corrupt game state");
-    return minesView(row, state, balance, state.mineTiles.length);
+    return minesView(row, state, balance, state.mineTiles.length, cap);
   }
 };
 var TILES_PER_LEVEL = 3;
@@ -4062,7 +4125,7 @@ function towerMultiplier(level, edge) {
   if (level === 0) return 1;
   return round2((1 - edge) * 1.5 ** level);
 }
-function towersView(row, state, balance, levels) {
+function towersView(row, state, balance, levels, cap) {
   const active = row.status === "active";
   const trapTile = state.failedLevel !== null ? state.traps[state.failedLevel] ?? null : null;
   return {
@@ -4071,14 +4134,14 @@ function towersView(row, state, balance, levels) {
     revealed: state.choices,
     multiplier: state.multiplier,
     nextMultiplier: active && state.level < levels ? towerMultiplier(state.level + 1, state.edge) : state.multiplier,
-    potential: active && state.level > 0 ? Math.floor(row.bet * state.multiplier) : 0,
+    potential: state.level > 0 ? payoutFor(row.bet, state.multiplier, cap) : 0,
     trapTile
   };
 }
 var towers = {
   start(ctx) {
     const replay = findReplay(ctx.db, ctx.user.id, ctx.requestId);
-    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id));
+    if (replay) return this.resume(replay, balanceOf(ctx.db, ctx.user.id), maxPayout(ctx.db));
     const levels = towerLevels(ctx.gameConfig);
     const edge = Math.min(0.1, Math.max(0, numberConfig(ctx.gameConfig, "houseEdge", 0.03)));
     const state = {
@@ -4104,7 +4167,7 @@ var towers = {
     });
     const row = getSessionRow(ctx.db, sessionId);
     if (!row) throw new Error("Session missing");
-    return towersView(row, state, balanceOf(ctx.db, ctx.user.id), levels);
+    return towersView(row, state, balanceOf(ctx.db, ctx.user.id), levels, maxPayout(ctx.db));
   },
   action(ctx) {
     const body = parse(towersActionSchema, ctx.body);
@@ -4113,7 +4176,7 @@ var towers = {
     const state = parseJson(session.state, null);
     if (!state) throw new Error("Corrupt game state");
     if (state.lastActionId && state.lastActionId === ctx.requestId) {
-      return towersView(session, state, balanceOf(ctx.db, ctx.user.id), state.traps.length);
+      return towersView(session, state, balanceOf(ctx.db, ctx.user.id), state.traps.length, maxPayout(ctx.db));
     }
     if (session.status !== "active") throw conflict("This round is already complete.", "ROUND_COMPLETE");
     const levels = state.traps.length;
@@ -4123,7 +4186,7 @@ var towers = {
       if (state.level === 0) {
         throw badRequest("Reveal at least one safe floor before cashing out.", "NOTHING_TO_CASH_OUT");
       }
-      const payout = Math.min(Math.floor(session.bet * state.multiplier), maxPayout(ctx.db));
+      const payout = payoutFor(session.bet, state.multiplier, maxPayout(ctx.db));
       const ledgerId2 = creditPayout(
         ctx.db,
         { id: session.id, user_id: session.user_id, game_id: session.game_id },
@@ -4153,7 +4216,7 @@ var towers = {
         state.level += 1;
         state.multiplier = Math.min(towerMultiplier(state.level, edge), 1e6);
         if (state.level === levels) {
-          const payout = Math.min(Math.floor(session.bet * state.multiplier), maxPayout(ctx.db));
+          const payout = payoutFor(session.bet, state.multiplier, maxPayout(ctx.db));
           const ledgerId2 = creditPayout(
             ctx.db,
             { id: session.id, user_id: session.user_id, game_id: session.game_id },
@@ -4175,12 +4238,12 @@ var towers = {
     const updated = getSessionRow(ctx.db, session.id);
     if (!updated) throw new Error("Session missing");
     const finalState = parseJson(updated.state, state);
-    return towersView(updated, finalState, balanceOf(ctx.db, ctx.user.id), levels);
+    return towersView(updated, finalState, balanceOf(ctx.db, ctx.user.id), levels, maxPayout(ctx.db));
   },
-  resume(row, balance) {
+  resume(row, balance, cap = Number.MAX_SAFE_INTEGER) {
     const state = parseJson(row.state, null);
     if (!state) throw new Error("Corrupt game state");
-    return towersView(row, state, balance, state.traps.length);
+    return towersView(row, state, balance, state.traps.length, cap);
   }
 };
 
@@ -4334,7 +4397,7 @@ function loadActiveRound(db2, userId) {
   return {
     game: session.game_id,
     status,
-    view: module.resume(session, balanceOf(db2, userId))
+    view: module.resume(session, balanceOf(db2, userId), maxPayout(db2))
   };
 }
 
@@ -4378,7 +4441,7 @@ function createGamesRouter(db2) {
     });
     res.json({
       games,
-      maxPayout: getSetting(db2, "economy.max_payout", 1e6),
+      maxPayout: getSetting(db2, "economy.max_payout", 1e12),
       maintenance: isMaintenanceMode(db2),
       startingCredits: getSetting(db2, "economy.starting_credits", config.startingCredits)
     });
@@ -4407,7 +4470,7 @@ function createGamesRouter(db2) {
     if (!row || row.user_id !== user.id) throw notFound("Game session not found.");
     const module = getGameModule(row.game_id);
     if (!module) throw notFound("Game not available.");
-    res.json(module.resume(row, balanceOf(db2, user.id)));
+    res.json(module.resume(row, balanceOf(db2, user.id), getSetting(db2, "economy.max_payout", 1e12)));
   });
   router.post("/:slug/play", async (req, res) => {
     const user = requireActive(req);
@@ -4420,8 +4483,8 @@ function createGamesRouter(db2) {
     if (!game.enabled) throw badRequest(`${game.name} is currently unavailable.`, "GAME_DISABLED");
     const parsed = parse(playSchema, req.body);
     assertWager(game, parsed.bet);
-    if (packetLimit(db2) < parsed.bet) {
-      throw badRequest("That wager exceeds the platform limit.", "WAGER_TOO_HIGH");
+    if (capBelowWager(parsed.bet, getSetting(db2, "economy.max_payout", 1e12))) {
+      throw badRequest("That wager is above the platform payout limit.", "WAGER_ABOVE_PAYOUT_CAP");
     }
     const replay = findReplay(db2, user.id, parsed.requestId);
     if (replay && replay.game_id !== slug) {
@@ -4489,9 +4552,6 @@ function createGamesRouter(db2) {
     res.json({ ok: true });
   });
   return router;
-}
-function packetLimit(db2) {
-  return getSetting(db2, "economy.max_payout", 1e6);
 }
 
 // server/routes/tickets.ts
@@ -5595,6 +5655,10 @@ var roleChangeSchema = z12.object({
   role: roleSchema,
   reason: z12.string().trim().max(500).optional()
 });
+var wipeSchema = z12.object({
+  confirmUsername: z12.string().trim().min(1, "Type the username to confirm.").max(40),
+  reason: z12.string().trim().max(500).optional()
+});
 var adjustSchema = z12.object({
   amount: amountSchema({ allowNegative: true, maxAbs: 1e12, label: "adjustment" }),
   reason: z12.string().trim().min(5, "Record a reason of at least 5 characters.").max(500),
@@ -5970,6 +6034,67 @@ function createAdminRouter(db2) {
       ip: clientIp(req)
     });
     res.json({ user: loadUser(db2, userId) });
+  });
+  router.post("/users/:id/wipe", (req, res) => {
+    const admin = requirePermission(req, "users.manage");
+    const userId = req.params.id ?? "";
+    const body = parse(wipeSchema, req.body);
+    const target = db2.prepare("SELECT id, username, role, status FROM users WHERE id = ?").get(userId);
+    if (!target) throw notFound("User not found.");
+    if (target.id === admin.id) throw forbidden("You cannot wipe your own account.", "SELF_MODERATION");
+    assertCanModerate(admin, target);
+    if (target.username.toLowerCase() !== body.confirmUsername.trim().toLowerCase()) {
+      throw badRequest("Type the exact username to confirm this wipe.", "CONFIRMATION_MISMATCH", {
+        fields: { confirmUsername: "Does not match the username." }
+      });
+    }
+    const summary = inTransaction(db2, () => {
+      const balanceBefore = balanceOf(db2, userId);
+      const aborted = db2.prepare(
+        `UPDATE game_sessions
+              SET status = 'lost', payout = 0, ended_at = ?, outcome = COALESCE(outcome, ?)
+            WHERE user_id = ? AND status = 'active'`
+      ).run(nowIso(), JSON.stringify({ aborted: "account wiped" }), userId).changes;
+      db2.prepare("DELETE FROM active_rounds WHERE user_id = ?").run(userId);
+      const claimsRemoved = db2.prepare("DELETE FROM reward_claims WHERE user_id = ?").run(userId).changes;
+      if (balanceBefore > 0) {
+        applyLedger(db2, {
+          userId,
+          amount: -balanceBefore,
+          type: "admin_adjustment",
+          actorId: admin.id,
+          reason: "Account progression wiped",
+          refType: "user",
+          refId: userId,
+          idempotencyKey: `wipe:${userId}:${randomBytes4(8).toString("hex")}`,
+          metadata: { action: "user.wipe", admin: admin.username }
+        });
+      }
+      const balanceAfter = balanceOf(db2, userId);
+      if (balanceAfter !== 0) {
+        throw conflict("The balance could not be reset. Nothing was changed.", "WIPE_INCOMPLETE");
+      }
+      recordAudit(db2, {
+        actorId: admin.id,
+        action: "user.wipe",
+        targetType: "user",
+        targetId: userId,
+        targetLabel: target.username,
+        reason: body.reason ?? null,
+        metadata: { balanceBefore, balanceAfter, abortedRounds: aborted, rewardClaimsRemoved: claimsRemoved },
+        ip: clientIp(req)
+      });
+      return { balanceBefore, abortedRounds: aborted, rewardClaimsRemoved: claimsRemoved };
+    });
+    notify(db2, {
+      userId,
+      type: "account_wipe",
+      title: "Your progression was reset",
+      body: "An administrator reset your balance and reward streak. Your account is still active.",
+      link: "/rewards",
+      actorId: admin.id
+    });
+    res.json({ ok: true, balance: balanceOf(db2, userId), ...summary, user: loadUser(db2, userId) });
   });
   router.post("/users/:id/adjust", (req, res) => {
     const admin = requirePermission(req, "credits.adjust");
@@ -7167,7 +7292,7 @@ function createApp(db2) {
     if (origin && !config.allowedOrigins.includes(origin) && !isSameOrigin(req, origin)) {
       return next(new ApiError(403, "ORIGIN_BLOCKED", "This origin is not allowed to perform that action."));
     }
-    if (config.isProduction && !mutationLimiter.consume(`mutate:${req.ip ?? "unknown"}`).allowed) {
+    if (config.isProduction && !mutationLimiter.consume(callerKey(req, "mutate")).allowed) {
       return next(new ApiError(429, "RATE_LIMITED", "Too many requests. Please slow down."));
     }
     next();

@@ -1,7 +1,7 @@
 import type { DB } from '../db/index.ts';
 import type { ActiveRound, BaseGameView } from '../../shared/types.ts';
 import { conflict, nowIso } from './core.ts';
-import { getSessionRow } from '../games/common.ts';
+import { getSessionRow, maxPayout } from '../games/common.ts';
 import { getGameModule } from '../games/index.ts';
 import { balanceOf } from './wallet.ts';
 
@@ -167,6 +167,6 @@ export function loadActiveRound(db: DB, userId: string): ActiveRound | null {
   return {
     game: session.game_id,
     status,
-    view: module.resume(session, balanceOf(db, userId)),
+    view: module.resume(session, balanceOf(db, userId), maxPayout(db)),
   };
 }

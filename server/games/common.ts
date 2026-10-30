@@ -1,7 +1,7 @@
 import type { DB } from '../db/index.ts';
 import type { BaseGameView, GameSessionSummary, SessionUser } from '../../shared/types.ts';
 import { applyLedger } from '../lib/wallet.ts';
-import { badRequest, newId, nowIso, parseJson } from '../lib/core.ts';
+import { badRequest, conflict, newId, nowIso, parseJson } from '../lib/core.ts';
 import { randomInt } from 'node:crypto';
 import { getSetting } from '../db/index.ts';
 import { compactAmount } from '../../shared/amount.ts';
@@ -56,7 +56,8 @@ export interface ActionContext {
 export interface GameModule {
   start: (ctx: StartContext) => BaseGameView;
   action?: (ctx: ActionContext) => BaseGameView;
-  resume: (row: GameSessionRow, balance: number) => BaseGameView;
+  /** `cap` is the platform payout ceiling, so resumed views show the real payout. */
+  resume: (row: GameSessionRow, balance: number, cap?: number) => BaseGameView;
 }
 
 export function secureInt(maxExclusive: number): number {
@@ -146,7 +147,7 @@ export function insertSession(
 }
 
 export function maxPayout(db: DB): number {
-  return getSetting(db, 'economy.max_payout', 1_000_000);
+  return getSetting(db, 'economy.max_payout', 1_000_000_000_000);
 }
 
 /** Credits the payout exactly once for a session. Must run in a transaction. */
@@ -182,19 +183,24 @@ export function finishSession(
   },
 ): GameSessionRow {
   const now = nowIso();
-  db.prepare(
-    `UPDATE game_sessions
-     SET status = ?, payout = ?, state = ?, outcome = COALESCE(?, outcome), payout_ledger_id = ?, ended_at = ?
-     WHERE id = ? AND status = 'active'`,
-  ).run(
-    input.status,
-    input.payout,
-    JSON.stringify(input.state),
-    input.outcome === undefined ? null : JSON.stringify(input.outcome),
-    input.payoutLedgerId ?? null,
-    now,
-    sessionId,
-  );
+  const result = db
+    .prepare(
+      `UPDATE game_sessions
+       SET status = ?, payout = ?, state = ?, outcome = COALESCE(?, outcome), payout_ledger_id = ?, ended_at = ?
+       WHERE id = ? AND status = 'active'`,
+    )
+    .run(
+      input.status,
+      input.payout,
+      JSON.stringify(input.state),
+      input.outcome === undefined ? null : JSON.stringify(input.outcome),
+      input.payoutLedgerId ?? null,
+      now,
+      sessionId,
+    );
+  // A second settlement (double cash-out, replayed request, concurrent handler)
+  // must abort the whole transaction instead of silently paying again.
+  if (result.changes !== 1) throw conflict('This round is already complete.', 'ROUND_COMPLETE');
   const row = getSessionRow(db, sessionId);
   if (!row) throw badRequest('Game session not found.', 'SESSION_NOT_FOUND');
   return row;

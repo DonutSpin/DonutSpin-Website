@@ -12,6 +12,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   UserCog,
   Users,
 } from 'lucide-react';
@@ -60,6 +61,16 @@ import {
   Tr,
   cn,
 } from '../../components/ui';
+
+/** What each role can actually do, shown before the change is confirmed. */
+const ROLE_CONSEQUENCE: Record<Role, string> = {
+  user: 'Player access only. No support queue and no admin tools.',
+  support: 'Support queue only: read tickets, reply, add internal notes, and move the ticket workflow.',
+  moderator: 'Everything support can do, plus admin panel access and the ability to restrict accounts.',
+  admin:
+    'Full admin panel access, including game and economy settings, role management, and cashier decisions.',
+  owner: 'Complete control of the platform, including assigning the owner role and every other permission.',
+};
 
 interface AdminUserRow {
   id: string;
@@ -296,8 +307,11 @@ export function AdminUserDetailPage() {
   const [adjustReason, setAdjustReason] = useState('');
   const [adjustRequestId, setAdjustRequestId] = useState('');
   const [roleOpen, setRoleOpen] = useState(false);
+  const [roleStep, setRoleStep] = useState<'choose' | 'confirm'>('choose');
   const [nextRole, setNextRole] = useState<Role>('user');
   const [roleReason, setRoleReason] = useState('');
+  const [wipeOpen, setWipeOpen] = useState(false);
+  const [wipeConfirm, setWipeConfirm] = useState('');
   const [statusOpen, setStatusOpen] = useState(false);
   const [nextStatus, setNextStatus] = useState<'active' | 'restricted' | 'suspended'>('active');
   const [statusReason, setStatusReason] = useState('');
@@ -344,6 +358,7 @@ export function AdminUserDetailPage() {
   const canAdjust = Boolean(canModerate && me && roleHasPermission(me.role, 'credits.adjust'));
   const canRole = Boolean(canModerate && me && roleHasPermission(me.role, 'roles.manage'));
   const canStatus = Boolean(canModerate && me && roleHasPermission(me.role, 'users.restrict'));
+  const canWipe = Boolean(canModerate && me && roleHasPermission(me.role, 'users.manage'));
   const projectedBalance = target.balance + (typeof adjustAmount === 'number' ? adjustAmount : 0);
 
   const refetchAfter = (message: string) => {
@@ -358,6 +373,22 @@ export function AdminUserDetailPage() {
     setFields({});
     setActionError(null);
     setAdjustOpen(true);
+  };
+
+  const openRole = () => {
+    setNextRole(target.role);
+    setRoleReason('');
+    setRoleStep('choose');
+    setFields({});
+    setActionError(null);
+    setRoleOpen(true);
+  };
+
+  const openWipe = () => {
+    setWipeConfirm('');
+    setFields({});
+    setActionError(null);
+    setWipeOpen(true);
   };
 
   const submitAdjust = async () => {
@@ -391,6 +422,23 @@ export function AdminUserDetailPage() {
     } catch (err) {
       setActionError(errorMessage(err));
       toastError('Role change failed', errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const submitWipe = async () => {
+    setBusy('wipe');
+    setActionError(null);
+    try {
+      await api.post(`/admin/users/${target.id}/wipe`, { confirmUsername: wipeConfirm.trim() });
+      success('Account wiped', `${target.username} now starts over with a zero balance.`);
+      setWipeOpen(false);
+      setWipeConfirm('');
+      query.refetch();
+    } catch (err) {
+      setActionError(errorMessage(err));
+      toastError('Wipe failed', errorMessage(err));
     } finally {
       setBusy(null);
     }
@@ -449,13 +497,18 @@ export function AdminUserDetailPage() {
               </Button>
             )}
             {canRole && (
-              <Button variant="secondary" onClick={() => { setFields({}); setActionError(null); setRoleOpen(true); }} leftIcon={<UserCog className="h-4 w-4" />}>
+              <Button variant="secondary" onClick={openRole} leftIcon={<UserCog className="h-4 w-4" />}>
                 Change role
               </Button>
             )}
             {canAdjust && (
               <Button variant="primary" onClick={openAdjust} leftIcon={<Coins className="h-4 w-4" />}>
                 Adjust money
+              </Button>
+            )}
+            {canWipe && (
+              <Button variant="danger" onClick={openWipe} leftIcon={<Trash2 className="h-4 w-4" />}>
+                Wipe account
               </Button>
             )}
           </>
@@ -694,38 +747,146 @@ export function AdminUserDetailPage() {
       <Modal
         open={roleOpen}
         onClose={() => setRoleOpen(false)}
-        title="Change account role"
-        description={`Current role: ${ROLE_LABELS[target.role]}. Role changes take effect on the next request.`}
+        title={roleStep === 'confirm' ? 'Confirm role change' : 'Change account role'}
+        description={
+          roleStep === 'confirm'
+            ? `${target.username} will move from ${ROLE_LABELS[target.role]} to ${ROLE_LABELS[nextRole]}.`
+            : `Current role: ${ROLE_LABELS[target.role]}. Role changes take effect on the next request.`
+        }
+        size="sm"
+        footer={
+          roleStep === 'confirm' ? (
+            <>
+              <Button variant="ghost" onClick={() => setRoleStep('choose')} disabled={busy === 'role'}>
+                Back
+              </Button>
+              <Button
+                variant={ROLE_RANK[nextRole] < ROLE_RANK[target.role] || nextRole === 'owner' ? 'danger' : 'primary'}
+                loading={busy === 'role'}
+                onClick={() => void submitRole()}
+              >
+                Confirm role change
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={() => setRoleOpen(false)} disabled={busy === 'role'}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={() => setRoleStep('confirm')} disabled={nextRole === target.role}>
+                Review change
+              </Button>
+            </>
+          )
+        }
+      >
+        {actionError && <Alert tone="error" className="mb-3">{actionError}</Alert>}
+        {roleStep === 'confirm' ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-line bg-surface-2 p-3.5">
+              <p className="text-[10px] font-medium uppercase tracking-[0.09em] text-faint">Account</p>
+              <p className="mt-1 text-[13px] font-medium text-ink">{target.username}</p>
+              <p className="text-[11px] text-faint">{target.email}</p>
+              <div className="mt-3 flex items-center gap-2 text-[12px]">
+                <RoleBadge role={target.role} />
+                <span className="text-faint">→</span>
+                <RoleBadge role={nextRole} strict />
+              </div>
+            </div>
+            <div>
+              <p className="text-[10.5px] font-medium uppercase tracking-[0.09em] text-faint">What changes</p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-muted">{ROLE_CONSEQUENCE[nextRole]}</p>
+            </div>
+            {ROLE_RANK[nextRole] < ROLE_RANK[target.role] && (
+              <Alert tone="warning" title="This removes access">
+                {target.username} immediately loses the permissions that came with {ROLE_LABELS[target.role]}.
+              </Alert>
+            )}
+            {nextRole === 'owner' && (
+              <Alert tone="warning" title="Owner is the highest role">
+                This account gains every permission on the platform, including managing other owners.
+              </Alert>
+            )}
+            {roleReason.trim() && (
+              <div>
+                <p className="text-[10.5px] font-medium uppercase tracking-[0.09em] text-faint">Reason</p>
+                <p className="mt-1 text-[12px] text-muted">{roleReason.trim()}</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Field label="New role">
+              <Select
+                value={nextRole}
+                onChange={(event) => {
+                  setNextRole(event.target.value as Role);
+                  setRoleStep('choose');
+                }}
+              >
+                {allowedRoles.map((role) => (
+                  <option key={role} value={role}>
+                    {ROLE_LABELS[role]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Reason (optional)" hint="Stored in the audit log.">
+              <Textarea value={roleReason} onChange={(event) => setRoleReason(event.target.value)} rows={2} maxLength={500} />
+            </Field>
+            <Alert tone="info">
+              You cannot promote above your own role, modify your own role, or remove the last active owner. These rules are
+              enforced on the server.
+            </Alert>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={wipeOpen}
+        onClose={() => setWipeOpen(false)}
+        title="Wipe account"
+        description={`Reset ${target.username} back to a fresh start. This cannot be undone.`}
         size="sm"
         footer={
           <>
-            <Button variant="ghost" onClick={() => setRoleOpen(false)} disabled={busy === 'role'}>
+            <Button variant="ghost" onClick={() => setWipeOpen(false)} disabled={busy === 'wipe'}>
               Cancel
             </Button>
-            <Button variant="primary" loading={busy === 'role'} onClick={() => void submitRole()} disabled={nextRole === target.role}>
-              Change role
+            <Button
+              variant="danger"
+              loading={busy === 'wipe'}
+              onClick={() => void submitWipe()}
+              disabled={wipeConfirm.trim() !== target.username}
+            >
+              Wipe account
             </Button>
           </>
         }
       >
         {actionError && <Alert tone="error" className="mb-3">{actionError}</Alert>}
         <div className="space-y-4">
-          <Field label="New role">
-            <Select value={nextRole} onChange={(event) => setNextRole(event.target.value as Role)}>
-              {allowedRoles.map((role) => (
-                <option key={role} value={role}>
-                  {ROLE_LABELS[role]}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Reason (optional)" hint="Stored in the audit log.">
-            <Textarea value={roleReason} onChange={(event) => setRoleReason(event.target.value)} rows={2} maxLength={500} />
-          </Field>
-          <Alert tone="info">
-            You cannot promote above your own role, modify your own role, or remove the last active owner. These rules are
-            enforced on the server.
+          <Alert tone="warning" title="This resets progression and money">
+            The account stays usable and can sign in afterwards, but the following is cleared permanently.
           </Alert>
+          <ul className="space-y-1.5 rounded-lg border border-line bg-surface-2 p-3.5 text-[12px] text-muted">
+            <li className="flex gap-2"><span className="text-danger">•</span> Credit balance set to zero (ledgered)</li>
+            <li className="flex gap-2"><span className="text-danger">•</span> Reward streak and claim history</li>
+            <li className="flex gap-2"><span className="text-danger">•</span> Any unfinished game round is released</li>
+            <li className="flex gap-2"><span className="text-danger">•</span> Current balance {money(target.balance)} money</li>
+          </ul>
+          <p className="text-[11px] leading-relaxed text-faint">
+            Tickets, ledger history and the account itself are kept. The wipe is written to the audit log with your name.
+          </p>
+          <Field label={`Type “${target.username}” to confirm`} hint="The confirm button stays disabled until it matches.">
+            <Input
+              value={wipeConfirm}
+              onChange={(event) => setWipeConfirm(event.target.value)}
+              placeholder={target.username}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </Field>
         </div>
       </Modal>
 

@@ -49,6 +49,18 @@ export function clientIp(req: { ip?: string }): string | null {
   return req.ip ?? null;
 }
 
+const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '0.0.0.0', '::1', '::ffff:127.0.0.1', '::ffff:0.0.0.0']);
+
+/**
+ * True when the socket address is the local proxy rather than a real visitor.
+ * Hosts such as IIS/HttpPlatformHandler terminate the request and forward it
+ * from the loopback interface, so the client address is not known.
+ */
+export function isLoopbackAddress(ip: string | null | undefined): boolean {
+  if (!ip) return true;
+  return LOOPBACK_ADDRESSES.has(ip.trim().toLowerCase());
+}
+
 export function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
 }

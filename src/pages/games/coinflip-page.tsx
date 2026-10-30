@@ -7,6 +7,7 @@ import { acknowledgeRound, playGame, type CoinflipView as CoinflipViewType } fro
 import { useRestoreActiveRound } from '../../lib/useActiveRound';
 import { api, errorMessage, requestId } from '../../lib/api';
 import { money } from '../../lib/format';
+import { payoutFor } from '../../../shared/payout';
 import { useToast } from '../../context/ToastContext';
 import {
   BalanceRow,
@@ -22,24 +23,35 @@ import {
 import { Alert, Button, Card, Toggle, cn } from '../../components/ui';
 
 const TOSS_MS = 3100;
+/** Full turns added before landing, so the flip reads as a real toss. */
+const TURNS = 4;
+const COIN_EASING = 'cubic-bezier(0.16, 0.84, 0.18, 1)';
 const SOUND_KEY = 'donutcash:coin-sound';
 type CoinSide = 'heads' | 'tails';
-interface CoinMotion {
-  startY: number;
-  spinY: number;
-  endZ: number;
+
+/** Heads is the un-rotated face; tails is the back of the coin. */
+function faceDegrees(side: CoinSide): number {
+  return side === 'tails' ? 180 : 0;
 }
 
-function coinMotion(from: CoinSide, to: CoinSide): CoinMotion {
-  const startY = from === 'tails' ? 180 : 0;
-  const endY = to === 'tails' ? 180 : 0;
-  const delta = ((endY - startY) % 360 + 360) % 360;
-  return {
-    startY,
-    // Four full turns plus the shortest path to the actual settled face.
-    spinY: 1440 + delta,
-    endZ: to === 'tails' ? 2 : -2,
-  };
+function normalizeDegrees(value: number): number {
+  return ((value % 360) + 360) % 360;
+}
+
+/**
+ * Absolute rotation angle whose visible face is `outcome`.
+ *
+ * The visible face is decided purely by the angle modulo 360, so the ending
+ * angle is derived from the server result and nothing else. The angle always
+ * advances forwards, so the coin keeps spinning the same way instead of
+ * snapping backwards to reach a face.
+ */
+function landingDegrees(from: number, outcome: CoinSide): number {
+  const current = normalizeDegrees(from);
+  const raw = ((faceDegrees(outcome) - current) % 360 + 360) % 360;
+  // A remaining angle under 45° would look like an abrupt snap on landing.
+  const delta = raw < 45 ? raw + 360 : raw;
+  return current + TURNS * 360 + delta;
 }
 
 function prefersReducedMotion(): boolean {
@@ -163,17 +175,16 @@ function CoinFace({ side }: { side: 'heads' | 'tails' }) {
 function Coin({
   outcome,
   tossing,
-  round,
-  restSide,
-  motion,
+  landed,
+  angle,
+  animated,
 }: {
   outcome: CoinSide | null;
   tossing: boolean;
-  round: number;
-  restSide: CoinSide;
-  motion: CoinMotion;
+  landed: boolean;
+  angle: number;
+  animated: boolean;
 }) {
-  const restY = restSide === 'tails' ? 180 : 0;
   return (
     <div
       className="coin-stage"
@@ -186,23 +197,23 @@ function Coin({
       <div className="coin-aura" aria-hidden />
       <div className="coin-floor" aria-hidden />
       <div className={cn('coin-impact', !tossing && outcome && 'is-active')} aria-hidden />
-      <div className={cn('coin-float', outcome && 'is-still')}>
+      <div className={cn('coin-float', landed && 'is-still')}>
+        {/*
+          The rotation is driven inline rather than by a CSS keyframe class so
+          the angle the animation stops on is exactly the angle derived from the
+          server outcome. `animation: none` stops any stylesheet keyframe from
+          overriding the inline transform, and the element is never remounted,
+          so the transition is not interrupted by a re-render.
+        */}
         <div
-          key={`${round}-${outcome ?? 'idle'}`}
-          className={cn(
-            'coin',
-            tossing && 'is-tossing',
-            !tossing && !outcome && 'is-idle',
-            !tossing && outcome && 'is-landed',
-            !tossing && outcome === 'heads' && 'land-heads',
-            !tossing && outcome === 'tails' && 'land-tails',
-          )}
+          className={cn('coin', !tossing && landed && 'is-landed')}
           style={
             {
-              '--coin-start-y': `${motion.startY}deg`,
-              '--coin-spin-y': `${motion.spinY}deg`,
-              '--coin-end-z': `${motion.endZ}deg`,
-              '--coin-rest-y': `${restY}deg`,
+              transform: `rotateY(${angle}deg)`,
+              transition: animated ? `transform ${TOSS_MS}ms ${COIN_EASING}` : 'none',
+              animation: 'none',
+              transformStyle: 'preserve-3d',
+              willChange: animated ? 'transform' : undefined,
             } as CSSProperties
           }
         >
@@ -255,14 +266,13 @@ export function CoinflipPage() {
   const [view, setView] = useState<CoinflipViewType | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [round, setRound] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [animating, setAnimating] = useState(false);
-  const [restSide, setRestSide] = useState<CoinSide>('heads');
-  const [motion, setMotion] = useState<CoinMotion>(() => coinMotion('heads', 'heads'));
-  const restSideRef = useRef<CoinSide>('heads');
+  const [coin, setCoin] = useState<{ angle: number; animated: boolean }>({ angle: 0, animated: false });
+  const restAngleRef = useRef(0);
   const initialized = useRef(false);
   const timeoutRef = useRef<number | null>(null);
+  const frameRef = useRef<number | null>(null);
   const reduced = prefersReducedMotion();
 
   useEffect(() => {
@@ -275,28 +285,55 @@ export function CoinflipPage() {
   useEffect(() => {
     return () => {
       if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+      if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
     };
   }, []);
 
-  const settle = useCallback(
-    (result: CoinflipViewType) => {
-      const start = restSideRef.current;
-      setMotion(coinMotion(start, result.outcome));
+  /**
+   * Reveals a settled round. The final coin angle is derived from the server
+   * outcome, so the face the coin stops on can never disagree with the payout.
+   * `immediate` skips the spin for restored or reduced-motion rounds.
+   */
+  const showSettled = useCallback(
+    (result: CoinflipViewType, immediate: boolean) => {
+      const target = landingDegrees(restAngleRef.current, result.outcome);
+
+      const finish = () => {
+        const resting = normalizeDegrees(target);
+        restAngleRef.current = resting;
+        setCoin({ angle: resting, animated: false });
+        setAnimating(false);
+        setBusy(false);
+        setRevealed(true);
+        sound.playLanding(result.won);
+        void acknowledgeRound(result.session.id);
+      };
+
+      if (immediate || reduced) {
+        const resting = faceDegrees(result.outcome);
+        restAngleRef.current = resting;
+        setCoin({ angle: resting, animated: false });
+        setAnimating(false);
+        setBusy(false);
+        setRevealed(true);
+        sound.playLanding(result.won);
+        void acknowledgeRound(result.session.id);
+        return;
+      }
+
+      // Park the coin on its current face with transitions off, then start the
+      // flip on the next painted frame so the change is actually animated.
       setRevealed(false);
+      setCoin({ angle: restAngleRef.current, animated: false });
       setAnimating(true);
       sound.playToss();
-      timeoutRef.current = window.setTimeout(
-        () => {
-          restSideRef.current = result.outcome;
-          setRestSide(result.outcome);
-          setAnimating(false);
-          setRevealed(true);
-          setBusy(false);
-          sound.playLanding(result.won);
-          void acknowledgeRound(result.session.id);
-        },
-        reduced ? 320 : TOSS_MS,
-      );
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = window.requestAnimationFrame(() => {
+          frameRef.current = null;
+          setCoin({ angle: target, animated: true });
+        });
+      });
+      timeoutRef.current = window.setTimeout(finish, TOSS_MS + 120);
     },
     [reduced, sound],
   );
@@ -308,9 +345,10 @@ export function CoinflipPage() {
     setBet(restored.session.bet);
     setPick(restored.pick);
     setView(restored);
-    setRound((value) => value + 1);
     updateBalance(restored.balance);
-    settle(restored);
+    // Already settled: show the true face immediately instead of replaying a
+    // spin that could appear to decide a new result.
+    showSettled(restored, true);
   });
 
   if (loading) return <GameSkeleton />;
@@ -318,7 +356,9 @@ export function CoinflipPage() {
 
   const winMultiplier = typeof game.config.winMultiplier === 'number' ? game.config.winMultiplier : 1.96;
   const balance = user?.balance ?? 0;
-  const potential = Math.floor(bet * winMultiplier);
+  // Same helper the server uses, so the shown return cannot drift from the
+  // credited amount (including the platform payout ceiling).
+  const potential = payoutFor(bet, winMultiplier, typeof maxPayout === 'number' ? maxPayout : undefined);
 
   const flip = async () => {
     if (busy) return;
@@ -333,11 +373,11 @@ export function CoinflipPage() {
         pick,
       });
       setView(response);
-      setRound((value) => value + 1);
       updateBalance(response.balance);
-      settle(response);
+      showSettled(response, false);
     } catch (err) {
       setBusy(false);
+      setAnimating(false);
       setActionError(errorMessage(err));
       toastError('The coin could not be flipped', errorMessage(err));
     }
@@ -393,7 +433,13 @@ export function CoinflipPage() {
               </div>
             )}
 
-            <Coin outcome={outcome} tossing={tossing} round={round} restSide={restSide} motion={motion} />
+            <Coin
+              outcome={outcome}
+              tossing={tossing}
+              landed={showResult}
+              angle={coin.angle}
+              animated={coin.animated}
+            />
 
             <div className="flex min-h-9 items-center justify-center">
               {busy && !showResult ? (
@@ -523,6 +569,7 @@ export function CoinflipPage() {
                 onClick={() => {
                   setView(null);
                   setRevealed(false);
+                  setCoin({ angle: restAngleRef.current, animated: false });
                 }}
               >
                 Clear result

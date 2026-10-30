@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { isLoopbackAddress } from './core.ts';
+
 /**
  * Small in-process sliding-window limiter for authentication and abuse-prone
  * endpoints. Single-node deployments only; documented as such.
@@ -48,6 +51,23 @@ export class RateLimiter {
     const now = Date.now();
     for (const key of this.hits.keys()) this.live(key, now);
   }
+}
+
+/**
+ * Bucket key for the caller of a rate-limited route.
+ *
+ * Behind IIS the socket address is always the loopback proxy, so keying a
+ * limiter on `req.ip` puts every visitor into a single shared bucket: a few
+ * sign-in attempts (or a busy minute of gameplay) would lock the whole site
+ * out. When the real client address is unavailable the browser fingerprint is
+ * used instead, which still bounds one client without creating a global cap.
+ */
+export function callerKey(req: { ip?: string; get: (name: string) => string | undefined }, scope: string): string {
+  const ip = req.ip ?? null;
+  if (!isLoopbackAddress(ip) && ip) return `${scope}:ip:${ip}`;
+  const agent = (req.get('user-agent') ?? 'unknown').slice(0, 200);
+  const hash = createHash('sha256').update(agent).digest('hex').slice(0, 16);
+  return `${scope}:agent:${hash}`;
 }
 
 export const loginLimiter = new RateLimiter(10, 10 * 60_000);

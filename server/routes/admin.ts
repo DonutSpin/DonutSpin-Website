@@ -47,6 +47,11 @@ const roleChangeSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
+const wipeSchema = z.object({
+  confirmUsername: z.string().trim().min(1, 'Type the username to confirm.').max(40),
+  reason: z.string().trim().max(500).optional(),
+});
+
 const adjustSchema = z.object({
   amount: amountSchema({ allowNegative: true, maxAbs: 1_000_000_000_000, label: 'adjustment' }),
   reason: z.string().trim().min(5, 'Record a reason of at least 5 characters.').max(500),
@@ -565,6 +570,87 @@ export function createAdminRouter(db: DB): Router {
       ip: clientIp(req),
     });
     res.json({ user: loadUser(db, userId) });
+  });
+
+  /**
+   * Wipes progression for one account: balance to zero, reward streak and claim
+   * history removed, unfinished rounds aborted, active-bet slot released. The
+   * account, its ledger history and its tickets stay intact, so the player can
+   * still sign in and start over from the intended initial state.
+   */
+  router.post('/users/:id/wipe', (req, res) => {
+    const admin = requirePermission(req, 'users.manage');
+    const userId = req.params.id ?? '';
+    const body = parse(wipeSchema, req.body);
+    const target = db
+      .prepare('SELECT id, username, role, status FROM users WHERE id = ?')
+      .get(userId) as { id: string; username: string; role: Role; status: string } | undefined;
+    if (!target) throw notFound('User not found.');
+    if (target.id === admin.id) throw forbidden('You cannot wipe your own account.', 'SELF_MODERATION');
+    assertCanModerate(admin, target);
+    if (target.username.toLowerCase() !== body.confirmUsername.trim().toLowerCase()) {
+      throw badRequest('Type the exact username to confirm this wipe.', 'CONFIRMATION_MISMATCH', {
+        fields: { confirmUsername: 'Does not match the username.' },
+      });
+    }
+
+    const summary = inTransaction(db, () => {
+      const balanceBefore = balanceOf(db, userId);
+
+      const aborted = db
+        .prepare(
+          `UPDATE game_sessions
+              SET status = 'lost', payout = 0, ended_at = ?, outcome = COALESCE(outcome, ?)
+            WHERE user_id = ? AND status = 'active'`,
+        )
+        .run(nowIso(), JSON.stringify({ aborted: 'account wiped' }), userId).changes;
+      db.prepare('DELETE FROM active_rounds WHERE user_id = ?').run(userId);
+
+      const claimsRemoved = db.prepare('DELETE FROM reward_claims WHERE user_id = ?').run(userId).changes;
+
+      if (balanceBefore > 0) {
+        applyLedger(db, {
+          userId,
+          amount: -balanceBefore,
+          type: 'admin_adjustment',
+          actorId: admin.id,
+          reason: 'Account progression wiped',
+          refType: 'user',
+          refId: userId,
+          idempotencyKey: `wipe:${userId}:${randomBytes(8).toString('hex')}`,
+          metadata: { action: 'user.wipe', admin: admin.username },
+        });
+      }
+
+      const balanceAfter = balanceOf(db, userId);
+      if (balanceAfter !== 0) {
+        throw conflict('The balance could not be reset. Nothing was changed.', 'WIPE_INCOMPLETE');
+      }
+
+      recordAudit(db, {
+        actorId: admin.id,
+        action: 'user.wipe',
+        targetType: 'user',
+        targetId: userId,
+        targetLabel: target.username,
+        reason: body.reason ?? null,
+        metadata: { balanceBefore, balanceAfter, abortedRounds: aborted, rewardClaimsRemoved: claimsRemoved },
+        ip: clientIp(req),
+      });
+
+      return { balanceBefore, abortedRounds: aborted, rewardClaimsRemoved: claimsRemoved };
+    });
+
+    notify(db, {
+      userId,
+      type: 'account_wipe',
+      title: 'Your progression was reset',
+      body: 'An administrator reset your balance and reward streak. Your account is still active.',
+      link: '/rewards',
+      actorId: admin.id,
+    });
+
+    res.json({ ok: true, balance: balanceOf(db, userId), ...summary, user: loadUser(db, userId) });
   });
 
   router.post('/users/:id/adjust', (req, res) => {

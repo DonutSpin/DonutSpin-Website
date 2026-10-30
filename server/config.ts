@@ -35,6 +35,13 @@ const appUrl = (process.env.APP_URL || 'http://localhost:5173').replace(/\/+$/, 
  */
 const appUrlConfigured = Boolean(process.env.APP_URL);
 
+if (isProduction && !appUrlConfigured) {
+  console.warn(
+    `[config] APP_URL is not set, so email links and reset URLs fall back to ${appUrl}. ` +
+      'Set APP_URL to the public origin before sending real email.',
+  );
+}
+
 const databasePath = path.resolve(root, process.env.DATABASE_PATH || path.join('data', 'aurum.db'));
 
 /**

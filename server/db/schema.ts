@@ -389,6 +389,22 @@ DELETE FROM settings WHERE key IN ('economy.credit_request_limit', 'support.staf
 `,
   },
   {
+    version: 10,
+    name: 'raise_default_payout_ceiling',
+    // The original seed capped every payout at 1,000,000 while game wagers were
+    // allowed to exceed it, so wins were silently truncated to the stake. Raise
+    // the untouched seed value; a value an operator actually chose is kept.
+    sql: `
+UPDATE settings
+   SET value = '1000000000000', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+ WHERE key = 'economy.max_payout'
+   AND CAST(value AS INTEGER) = 1000000
+   AND NOT EXISTS (
+     SELECT 1 FROM audit_logs WHERE action = 'settings.update' AND target_id = 'economy.max_payout'
+   );
+`,
+  },
+  {
     version: 9,
     name: 'legal_acceptance_and_self_exclusion',
     sql: `
@@ -533,7 +549,7 @@ export function seed(db: Database, options: { appName: string; startingCredits: 
       'platform.maintenance': false,
       'platform.maintenance_message': 'We are tuning the tables. Please try again shortly.',
       'economy.starting_credits': options.startingCredits,
-      'economy.max_payout': 1_000_000,
+      'economy.max_payout': 1_000_000_000_000,
       'economy.cashier_request_limit': 5_000_000_000,
       'security.session_days': options.sessionDays,
       'notifications.email_enabled': false,
