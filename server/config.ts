@@ -68,6 +68,44 @@ if (isProduction && !appUrlConfigured) {
 const databasePath = path.resolve(root, process.env.DATABASE_PATH || path.join('data', 'aurum.db'));
 
 /**
+ * `vite build` empties dist/, and a server build replaces build/. A database
+ * placed in either folder would disappear on the next deploy, so refuse to
+ * start instead of silently pointing a production site at disposable storage.
+ */
+export function assertDatabasePathSafe(dbPath: string, appRoot = root): void {
+  for (const segment of ['dist', 'build']) {
+    const directory = path.resolve(appRoot, segment);
+    const relative = path.relative(directory, dbPath);
+    if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+      throw new Error(
+        `DATABASE_PATH resolves inside ${segment}/ (${dbPath}); that directory is deleted by the build. ` +
+          'Use the default data/aurum.db or another persistent path outside dist/ and build/.',
+      );
+    }
+  }
+}
+
+assertDatabasePathSafe(databasePath);
+
+/**
+ * Turnstile's site key is public and safe to ship. The secret key is never
+ * exposed by the API or the client bundle; it is read from the host environment
+ * and only used by the server-side Siteverify call. CAPTCHA stays disabled until
+ * the secret is configured, so a missing panel variable cannot lock everyone out.
+ */
+const turnstileSiteKey = (process.env.TURNSTILE_SITE_KEY || '0x4AAAAAAFtGePz0IE36l1Gz').trim();
+const turnstileSecretKey = (process.env.TURNSTILE_SECRET_KEY || '').trim();
+const turnstileEnabled =
+  process.env.TURNSTILE_ENABLED === 'false' ? false : Boolean(turnstileSiteKey && turnstileSecretKey);
+
+if (isProduction && !turnstileEnabled) {
+  console.warn(
+    '[config] Turnstile is disabled because TURNSTILE_SECRET_KEY is not set. ' +
+      'Set it in the hosting panel to enable CAPTCHA on login, registration and password reset requests.',
+  );
+}
+
+/**
  * A hosted deployment often has no way to inject a secret. Rather than crash on
  * boot, generate a strong secret once and persist it beside the database. An
  * explicit SESSION_SECRET always wins.
@@ -112,6 +150,12 @@ export const config = {
   trustedProxies,
   cookieSecure,
   databasePath,
+  turnstile: {
+    enabled: turnstileEnabled,
+    siteKey: turnstileSiteKey,
+    secretKey: turnstileSecretKey,
+    expectedHostname: (process.env.TURNSTILE_EXPECTED_HOSTNAME || '').trim().toLowerCase(),
+  },
   sessionDays: intEnv('SESSION_DAYS', 7),
   sessionSecret: resolveSessionSecret(),
   startingCredits: intEnv('STARTING_CREDITS', 5_000_000),

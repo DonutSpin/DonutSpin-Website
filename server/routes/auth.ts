@@ -28,6 +28,7 @@ import {
   registerLimiter,
   resetLimiter,
 } from '../lib/rate-limit.ts';
+import { createTurnstileVerifier, type TurnstileVerifier } from '../lib/turnstile.ts';
 import { requireAuth } from '../lib/permissions.ts';
 import { assertNotInMaintenance } from '../lib/maintenance.ts';
 import { compactAmount } from '../../shared/amount.ts';
@@ -45,14 +46,19 @@ const registerSchema = z.object({
   ageConfirmed: requiredConsent('You must confirm that you are 18 years or older.'),
   acceptTerms: requiredConsent('You must agree to the Terms of Service and Privacy Policy.'),
   acknowledgeDonutRules: requiredConsent('You must acknowledge the DonutSMP risk.'),
+  turnstileToken: z.string().trim().max(2048).optional(),
 });
 
 const loginSchema = z.object({
   identifier: z.string().trim().min(1, 'Enter your username or email.').max(254),
   password: z.string().min(1, 'Enter your password.').max(200),
+  turnstileToken: z.string().trim().max(2048).optional(),
 });
 
-const forgotSchema = z.object({ email: emailSchema });
+const forgotSchema = z.object({
+  email: emailSchema,
+  turnstileToken: z.string().trim().max(2048).optional(),
+});
 
 const resetSchema = z.object({
   token: z.string().min(10, 'Reset link is invalid.'),
@@ -72,7 +78,10 @@ function limiterGuard(result: { allowed: boolean; retryAfterSeconds: number }): 
   }
 }
 
-export function createAuthRouter(db: DB): Router {
+export function createAuthRouter(
+  db: DB,
+  turnstile: TurnstileVerifier = createTurnstileVerifier(config.turnstile),
+): Router {
   const router = Router();
 
   router.post('/register', async (req, res) => {
@@ -86,6 +95,7 @@ export function createAuthRouter(db: DB): Router {
       throw new ApiError(403, 'REGISTRATION_CLOSED', 'Registration is currently closed.');
     }
     assertNotInMaintenance(db);
+    await turnstile.verify(body.turnstileToken, 'register', clientAddress(req));
 
     const existing = db
       .prepare('SELECT id, username, email FROM users WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE')
@@ -168,6 +178,7 @@ export function createAuthRouter(db: DB): Router {
     limiterGuard(loginLimiter.consume(ipKey));
     const loginAddress = clientAddress(req);
     if (loginAddress) limiterGuard(loginIpLimiter.consume(`login-ip:${loginAddress}`));
+    await turnstile.verify(body.turnstileToken, 'login', loginAddress);
 
     const row = db
       .prepare(
@@ -289,6 +300,7 @@ export function createAuthRouter(db: DB): Router {
     const forgotAddress = clientAddress(req);
     if (forgotAddress) limiterGuard(resetLimiter.consume(`forgot:ip:${forgotAddress}`));
     limiterGuard(resetLimiter.consume(`forgot-email:${body.email}`));
+    await turnstile.verify(body.turnstileToken, 'forgot-password', forgotAddress);
 
     const user = db
       .prepare('SELECT id, username, email, status FROM users WHERE email = ? COLLATE NOCASE')

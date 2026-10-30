@@ -9,6 +9,7 @@ import { config } from './config.ts';
 import { ApiError, isLoopbackAddress } from './lib/core.ts';
 import { authMiddleware } from './auth.ts';
 import { clientAddress, mutationLimiter } from './lib/rate-limit.ts';
+import { createTurnstileVerifier, type TurnstileVerifier } from './lib/turnstile.ts';
 import { createPublicRouter } from './routes/public.ts';
 import { createAuthRouter } from './routes/auth.ts';
 import { createLegalRouter } from './routes/legal.ts';
@@ -49,8 +50,9 @@ function isPrivatePath(urlPath: string): boolean {
   return PRIVATE_PREFIXES.some((prefix) => segments === prefix || segments.startsWith(`${prefix}/`));
 }
 
-export function createApp(db: DB): express.Express {
+export function createApp(db: DB, options: { turnstile?: TurnstileVerifier } = {}): express.Express {
   const app = express();
+  const turnstile = options.turnstile ?? createTurnstileVerifier(config.turnstile);
   app.disable('x-powered-by');
   // Only the local reverse proxy may contribute forwarding information, and
   // only when the deployment has confirmed the proxy sanitises those headers.
@@ -69,11 +71,12 @@ export function createApp(db: DB): express.Express {
         ? {
             directives: {
               defaultSrc: ["'self'"],
-              scriptSrc: ["'self'"],
+              scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
               styleSrc: ["'self'", "'unsafe-inline'"],
               imgSrc: ["'self'", 'data:'],
               fontSrc: ["'self'", 'data:'],
               connectSrc: ["'self'"],
+              frameSrc: ["'self'", 'https://challenges.cloudflare.com'],
               objectSrc: ["'none'"],
               frameAncestors: ["'none'"],
               baseUri: ["'self'"],
@@ -135,7 +138,7 @@ export function createApp(db: DB): express.Express {
   });
 
   app.use('/api/public', createPublicRouter(db));
-  app.use('/api/auth', createAuthRouter(db));
+  app.use('/api/auth', createAuthRouter(db, turnstile));
   app.use('/api/legal', createLegalRouter(db));
   app.use('/api/me', createMeRouter(db));
   app.use('/api/games', createGamesRouter(db));

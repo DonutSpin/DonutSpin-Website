@@ -104,6 +104,10 @@ Configuration lives in `.env`. The server loads it on startup, and environment v
 | `SMTP_PASS` | empty | Brevo SMTP key. Prefer saving it in Admin → Email settings; never commit it. |
 | `SMTP_FROM` | `Donutcash <no-reply@example.com>` | Sender identity. Use a domain authenticated in Brevo. |
 | `EMAIL_ENCRYPTION_KEY` | `SESSION_SECRET` | Stable secret used to encrypt the SMTP key saved from the admin panel. Set a separate value in production. |
+| `TURNSTILE_SITE_KEY` | built-in public key | Public Cloudflare Turnstile widget key. Safe to expose. |
+| `TURNSTILE_SECRET_KEY` | empty | Server-only Turnstile secret. Set it in the hosting panel or local `.env`; never commit it. CAPTCHA stays disabled while empty. |
+| `TURNSTILE_ENABLED` | `true` | Set to `false` to disable the widget and server checks without removing keys. |
+| `TURNSTILE_EXPECTED_HOSTNAME` | empty | Optional extra hostname check on Siteverify responses, for example `donutcash.runasp.net`. |
 
 Platform name, tagline, registration, maintenance, support categories, game limits, economy limits, reward rules, and email delivery are stored in the database and managed from the admin panel. The `economy.cashier_request_limit` setting is the maximum amount for a single cashier deposit or withdrawal request.
 
@@ -120,6 +124,12 @@ Email is optional and disabled until an owner enables it in **Admin → Email**.
 The preconfigured Brevo relay is `smtp-relay.brevo.com:587` (STARTTLS) with login `c05ccf001@smtp-brevo.com`. Add the SMTP key in the admin panel, set a sender on a domain verified in Brevo, enable delivery, then send a test email. Delivery is queued in SQLite with exponential retries and an admin-visible delivery log; a mail failure never blocks registration, rewards, cashier decisions, or sign-in.
 
 Templates cover welcome, email verification, password reset, password/email changes, new sign-ins, cashier decisions, daily rewards, and staff announcements. Each message has an HTML version and a plain-text fallback, with notification preferences linked in the footer.
+
+### Bot protection (Cloudflare Turnstile)
+
+Login, registration, and password-reset requests can require a Cloudflare Turnstile challenge. The widget is rendered on the client, but the server always calls Cloudflare's Siteverify endpoint before processing the request; a direct API submission without a valid, unused token is rejected. Tokens are single-use, expire after five minutes, and are checked against the form action and configured hostname when Cloudflare returns them.
+
+The public site key is served by `/api/public/config` and is safe to expose. The secret key is read only by the server from `TURNSTILE_SECRET_KEY`; it is never returned by the API, embedded in the client bundle, or logged. If the secret is missing, the integration reports itself disabled and logs a production warning rather than locking users out. Set the secret in **Websites → environment variables** on MonsterASP, add `donutcash.runasp.net` to the widget's hostname list in the Cloudflare dashboard, and restart/publish. No Cloudflare DNS migration is required.
 
 ## Cashier: DonutSMP money in and out
 
@@ -219,7 +229,7 @@ npm start
 - `APP_URL` must exactly match the browser origin. Production mutation requests with an unexpected `Origin` header are rejected.
 - Session cookies are `httpOnly`, `SameSite=Lax`, and `Secure` whenever `APP_URL` is an `https://` origin (`COOKIE_SECURE` overrides).
 - Rate-limit windows live in the SQLite database whenever a file database is used, so two Node workers on the same host cannot each allow a full quota. SQLite still prefers a single writer; do not scale to multiple hosts.
-- Keep `data/`, `.env`, and backups out of version control and public web roots.
+- Keep `data/`, `.env`, and backups out of version control, and never place the database in a folder served by `express.static` (`dist/`).
 - `SESSION_SECRET` is optional at runtime: when it is missing in production the server generates a random secret once and persists it to `data/.session-secret`. Set it explicitly to control rotation. A provided value shorter than 32 characters still fails closed.
 - `PORT` is read first, then `HTTP_PLATFORM_PORT` (the port IIS assigns). The app never hard-codes a listening port.
 - Production mutation requests must be same-origin or match `APP_URL`; a missing `APP_URL` trusts same-origin requests only.
@@ -231,11 +241,28 @@ This is a **Node** app, not a static site. Publishing only the `dist` folder pro
 1. In **Websites → Git deploy**, pick **Node.js SSR app** (sometimes labelled “Node.js application”). Do **not** pick **Node.js SPA** with a build output folder of `dist`: that type only publishes the frontend build and never starts Node.
 2. Build command: `npm ci && npm run build` — this type-checks, writes the client to `dist/`, and compiles the server to `build/server/index.js`.
 3. Start command: **`server.js`** — the field wants a JavaScript file Node can run, not an npm script, so `npm start` fails with “Start command target not found in the build output”. `server.js` sits at the project root, loads the compiled server from `build/server/index.js`, and pins the working directory to the app root so `dist/`, `data/` and `.env` resolve correctly. `npm start` runs the same file locally.
-4. Optionally set `APP_URL=https://your-site.runasp.net` and a 32+ character `SESSION_SECRET`. Without them the app still boots safely, but `APP_URL` keeps mutation origins pinned to your exact domain.
-5. The repository ships [`web.config`](web.config), which registers `HttpPlatformHandler`, maps `%HTTP_PLATFORM_PORT%` to `PORT`, sets `NODE_ENV=production`, and blocks `/data`, `/server`, `/src`, `/node_modules` and friends from being downloaded.
+4. Set `APP_URL=https://your-site.runasp.net`, a 32+ character `SESSION_SECRET`, and the server-only `TURNSTILE_SECRET_KEY` in the website environment variables. `APP_URL` pins mutation origins to your domain, makes session cookies `Secure`, and keeps email links on the public origin; without it, email links fall back to localhost and cookies are not marked `Secure`. Turnstile stays disabled until the secret is present.
+5. This repository ships [`web.config`](web.config) for manual IIS deployments. MonsterASP's Node.js SSR type generates its own `web.config` from the start command, so set `APP_URL`, `SESSION_SECRET`, and `TURNSTILE_SECRET_KEY` in the panel rather than relying on the repository copy. The server also rejects `/data`, `/server`, `/src` and other private prefixes in the SPA fallback.
 6. If the site still fails, enable **Control Panel → Websites → Logs → HttpPlatform** and read the startup output. A crash on boot, a missing dependency, or a native module that cannot load all show up there.
 
-The app writes the SQLite database to `data/` relative to the application root and expects that directory to stay writable across deploys. `web.config` hides it from the web.
+The app writes the SQLite database to `data/` relative to the application root (`/wwwroot` on MonsterASP) and expects that directory to stay writable across deploys. Never point `DATABASE_PATH` at `dist/` or `build/`: `vite build` empties `dist/`, so a database placed there is deleted on the next build. A Git-deployed Node.js SSR app gets a generated `web.config`, so the hidden segments in this repository's copy are not guaranteed to be active. The server itself rejects `/data` in the SPA fallback; a live request for `/data/aurum.db` returns the app's 404 rather than the file.
+
+#### MonsterASP protected files
+
+Protection is a second line of defence. `data/` is already ignored by Git, so a pull or reset does not touch it, but a deploy that cleans `/wwwroot`, or a future accidental commit of a runtime file, could. Open **Websites → Git deploy → Protected files** and add one path per line, relative to `/wwwroot` (forward slashes, no leading `/`):
+
+| Path | Why |
+| --- | --- |
+| `data/` | The whole runtime folder: `aurum.db`, `aurum.db-wal`, `aurum.db-shm`, `.session-secret`, `owner-credentials.txt`, and `backups/` |
+| `.env` | Only if the site uses a `.env`; it holds `SESSION_SECRET`, the SMTP fallback, and owner bootstrap values |
+
+If `DATABASE_PATH` in the website environment points somewhere else, protect that folder instead of (or in addition to) `data/`. This application has no upload feature, so there is no `uploads/` folder to protect.
+
+Do **not** protect `dist/`, `build/`, `node_modules/`, `src/`, `server/`, `shared/`, `public/`, `scripts/`, `tests/`, `package.json`, `package-lock.json`, `server.js`, `web.config`, `index.html`, `vite.config.ts`, `tsconfig.json`, or `.env.example`. Protecting build output keeps an old `assets/index-*.js` alive even after a successful deploy; protecting `node_modules/` freezes dependencies; protecting `web.config` blocks the generated IIS startup configuration from being refreshed. Set `APP_URL` and `SESSION_SECRET` under the website environment variables instead.
+
+`dist/` and `build/` are generated by `npm ci && npm run build` and are no longer tracked by Git. Never protect them; MonsterASP must rebuild them on every publish so the new bundle and server code are deployed.
+
+Protection prevents overwrites, but it is not a backup. Stop the app (or place `app_offline.htm` in `/wwwroot`), download the whole `data/` folder, and keep that copy off the host before risky changes. After a deploy, confirm the page references a new `assets/index-*.js` hash, `data/aurum.db` still exists, existing accounts and balances still load, and `/data/aurum.db` still returns 404.
 
 #### Client IPs behind IIS
 
@@ -312,7 +339,8 @@ server/              Express API
 shared/              Shared TypeScript types, permissions, and K/M/B/T amount helpers
 tests/               Vitest + Supertest integration tests
 data/                Runtime SQLite database (ignored by Git)
-dist/                 Production client build output
+dist/                 Generated client build output (ignored by Git)
+build/                Generated server build output (ignored by Git)
 ```
 
 ## Security notes
@@ -326,6 +354,7 @@ dist/                 Production client build output
 - Daily reward claims are transactionally unique per user and reward day; the client cannot choose an amount or claim day.
 - The SMTP key saved from the admin panel is encrypted with AES-256-GCM, never returned by an API, and never logged.
 - Audit log entries record actor, action, target, reason where supplied, metadata, and IP.
+- Turnstile tokens are validated server-side with Cloudflare Siteverify; the secret key is never sent to the browser, and missing/invalid tokens are rejected when CAPTCHA is enabled.
 
 ## Limitations
 

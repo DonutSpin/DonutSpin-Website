@@ -60,6 +60,9 @@ const server = app.listen(config.port, () => {
   );
   console.info(`[donutcash] rate limits: ${isSharedRateLimitStoreEnabled() ? 'shared SQLite windows' : 'in-process windows'}`);
   console.info(`[donutcash] session cookie secure: ${config.cookieSecure}`);
+  console.info(
+    `[donutcash] turnstile: ${config.turnstile.enabled ? 'enabled' : 'disabled (TURNSTILE_SECRET_KEY not set)'}`,
+  );
   if (!config.isProduction) console.info('[donutcash] start the client with `npm run dev:web` (Vite proxies /api here)');
 });
 

@@ -9,12 +9,13 @@ interface AuthContextValue {
   bootError: string | null;
   unread: number;
   setUnread: (value: number) => void;
-  login: (identifier: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string, turnstileToken?: string) => Promise<void>;
   register: (
     username: string,
     email: string,
     password: string,
     consent: { ageConfirmed: boolean; acceptTerms: boolean; acknowledgeDonutRules: boolean },
+    turnstileToken?: string,
   ) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -71,8 +72,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('donutcash:unauthorized', onUnauthorized);
   }, []);
 
-  const login = useCallback(async (identifier: string, password: string) => {
-    const result = await api.post<{ user: SessionUser }>('/auth/login', { identifier, password });
+  const login = useCallback(async (identifier: string, password: string, turnstileToken?: string) => {
+    const result = await api.post<{ user: SessionUser }>('/auth/login', {
+      identifier,
+      password,
+      turnstileToken,
+    });
     setUser(result.user);
     setUnread(0);
   }, []);
@@ -83,12 +88,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: string,
       password: string,
       consent: { ageConfirmed: boolean; acceptTerms: boolean; acknowledgeDonutRules: boolean },
+      turnstileToken?: string,
     ) => {
       const result = await api.post<{ user: SessionUser }>('/auth/register', {
         username,
         email,
         password,
         ...consent,
+        turnstileToken,
       });
       setUser(result.user);
     },

@@ -20,6 +20,7 @@ import { money } from '../lib/format';
 import { Alert, Button, Field, Input } from '../components/ui';
 import { BrandMark } from '../components/BrandMark';
 import { LegalCheckbox, LegalDisclaimer, LegalFooterLinks } from '../components/legal';
+import { TurnstileWidget } from '../components/Turnstile';
 
 function AuthLayout({ children, title, subtitle }: { children: ReactNode; title: string; subtitle: string }) {
   const { config } = useAuth();
@@ -149,20 +150,33 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileReset, setTurnstileReset] = useState(0);
+  const [turnstileError, setTurnstileError] = useState<string | null>(null);
 
   const from = (location.state as { from?: string } | null)?.from;
+  const turnstileEnabled = Boolean(config?.turnstile.enabled);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     setFields({});
+    if (turnstileEnabled && !turnstileToken) {
+      setError('Please complete the bot check before signing in.');
+      return;
+    }
     setLoading(true);
     try {
-      await login(identifier, password);
+      await login(identifier, password, turnstileToken ?? undefined);
       navigate(from && from !== '/login' ? from : '/', { replace: true });
     } catch (err) {
       setError(errorMessage(err));
-      if (err instanceof ApiRequestError) setFields(err.fieldErrors);
+      if (err instanceof ApiRequestError) {
+        setFields(err.fieldErrors);
+        if (['CAPTCHA_FAILED', 'CAPTCHA_REQUIRED', 'CAPTCHA_UNAVAILABLE'].includes(err.code)) {
+          setTurnstileReset((value) => value + 1);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -209,6 +223,22 @@ export function LoginPage() {
             Forgot password?
           </Link>
         </div>
+        {config?.turnstile.enabled ? (
+          <div className="space-y-2">
+            <TurnstileWidget
+              siteKey={config.turnstile.siteKey}
+              action="login"
+              onToken={(token) => {
+                setTurnstileToken(token);
+                if (token) setTurnstileError(null);
+              }}
+              onError={setTurnstileError}
+              resetKey={turnstileReset}
+              className="flex justify-center"
+            />
+            {turnstileError && <p className="text-[11.5px] text-danger">{turnstileError}</p>}
+          </div>
+        ) : null}
         <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full">
           Sign in
         </Button>
@@ -259,8 +289,12 @@ export function RegisterPage() {
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [acknowledgeDonutRules, setAcknowledgeDonutRules] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileReset, setTurnstileReset] = useState(0);
+  const [turnstileError, setTurnstileError] = useState<string | null>(null);
   const strength = passwordStrength(password);
   const allAccepted = ageConfirmed && acceptTerms && acknowledgeDonutRules;
+  const turnstileEnabled = Boolean(config?.turnstile.enabled);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -274,14 +308,23 @@ export function RegisterPage() {
       setFields({ confirm: 'Passwords do not match.' });
       return;
     }
+    if (turnstileEnabled && !turnstileToken) {
+      setError('Please complete the bot check before creating an account.');
+      return;
+    }
     setLoading(true);
     try {
-      await register(username, email, password, { ageConfirmed, acceptTerms, acknowledgeDonutRules });
+      await register(username, email, password, { ageConfirmed, acceptTerms, acknowledgeDonutRules }, turnstileToken ?? undefined);
       success('Account created', 'Your starting DonutSMP balance has been added to your wallet.');
       navigate('/', { replace: true });
     } catch (err) {
       setError(errorMessage(err));
-      if (err instanceof ApiRequestError) setFields(err.fieldErrors);
+      if (err instanceof ApiRequestError) {
+        setFields(err.fieldErrors);
+        if (['CAPTCHA_FAILED', 'CAPTCHA_REQUIRED', 'CAPTCHA_UNAVAILABLE'].includes(err.code)) {
+          setTurnstileReset((value) => value + 1);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -402,6 +445,22 @@ export function RegisterPage() {
             I understand that this activity may violate DonutSMP’s rules and could result in a ban.
           </LegalCheckbox>
         </div>
+        {config?.turnstile.enabled ? (
+          <div className="space-y-2">
+            <TurnstileWidget
+              siteKey={config.turnstile.siteKey}
+              action="register"
+              onToken={(token) => {
+                setTurnstileToken(token);
+                if (token) setTurnstileError(null);
+              }}
+              onError={setTurnstileError}
+              resetKey={turnstileReset}
+              className="flex justify-center"
+            />
+            {turnstileError && <p className="text-[11.5px] text-danger">{turnstileError}</p>}
+          </div>
+        ) : null}
         <Button
           type="submit"
           variant="primary"
@@ -427,23 +486,39 @@ export function RegisterPage() {
 }
 
 export function ForgotPasswordPage() {
+  const { config } = useAuth();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [resetPath, setResetPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileReset, setTurnstileReset] = useState(0);
+  const [turnstileError, setTurnstileError] = useState<string | null>(null);
+  const turnstileEnabled = Boolean(config?.turnstile.enabled);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     setMessage(null);
+    if (turnstileEnabled && !turnstileToken) {
+      setError('Please complete the bot check before requesting a reset link.');
+      return;
+    }
     setLoading(true);
     try {
-      const result = await api.post<{ message: string; resetPath?: string }>('/auth/forgot-password', { email });
+      const result = await api.post<{ message: string; resetPath?: string }>('/auth/forgot-password', {
+        email,
+        turnstileToken: turnstileToken ?? undefined,
+      });
       setMessage(result.message);
       setResetPath(result.resetPath ?? null);
+      setTurnstileReset((value) => value + 1);
     } catch (err) {
       setError(errorMessage(err));
+      if (err instanceof ApiRequestError && ['CAPTCHA_FAILED', 'CAPTCHA_REQUIRED', 'CAPTCHA_UNAVAILABLE'].includes(err.code)) {
+        setTurnstileReset((value) => value + 1);
+      }
     } finally {
       setLoading(false);
     }
@@ -490,6 +565,22 @@ export function ForgotPasswordPage() {
             autoFocus
           />
         </Field>
+        {config?.turnstile.enabled ? (
+          <div className="space-y-2">
+            <TurnstileWidget
+              siteKey={config.turnstile.siteKey}
+              action="forgot-password"
+              onToken={(token) => {
+                setTurnstileToken(token);
+                if (token) setTurnstileError(null);
+              }}
+              onError={setTurnstileError}
+              resetKey={turnstileReset}
+              className="flex justify-center"
+            />
+            {turnstileError && <p className="text-[11.5px] text-danger">{turnstileError}</p>}
+          </div>
+        ) : null}
         <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full" leftIcon={<Mail className="h-4 w-4" />}>
           Send reset link
         </Button>

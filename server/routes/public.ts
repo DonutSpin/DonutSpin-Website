@@ -24,6 +24,12 @@ export function createPublicRouter(db: DB): Router {
         const email = getEmailConfig(db);
         return email.enabled && emailReady(email);
       })(),
+      // The site key is public. The secret key stays in server config and is
+      // never included in this payload.
+      turnstile: {
+        enabled: config.turnstile.enabled,
+        siteKey: config.turnstile.siteKey,
+      },
       supportCategories: loadSupportCategories(db, true),
     };
     res.json(payload);

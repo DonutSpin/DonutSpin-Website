@@ -209,6 +209,10 @@ export interface PublicConfig {
   startingCredits: number;
   rewardsEnabled: boolean;
   emailEnabled: boolean;
+  turnstile: {
+    enabled: boolean;
+    siteKey: string;
+  };
   supportCategories: SupportCategory[];
 }
 

@@ -1,8 +1,29 @@
+# Dependencies
 node_modules/
+
+# Runtime data: SQLite database, WAL sidecars, session secret, generated owner
+# credentials and backups. Never commit these; MonsterASP protects data/ too.
 data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Secrets and local environment
 .env
-.env.local
+.env.*
+!.env.example
+
+# Generated build output: rebuilt by `npm run build` on the host
+dist/
+build/
+
+# User uploads (none today; keep future uploads out of Git)
+uploads/
+
+# Logs and local tooling output
 *.log
-.DS_Store
-coverage/
 logs/
+coverage/
+.DS_Store

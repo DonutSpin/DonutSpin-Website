@@ -11,6 +11,9 @@ export default defineConfig({
       NODE_ENV: 'test',
       APP_NAME: 'Aurum Test',
       EXPOSE_RESET_TOKEN: 'true',
+      // Keep the suite deterministic even when a developer has a real .env.
+      TURNSTILE_ENABLED: 'false',
+      TURNSTILE_SECRET_KEY: '',
     },
   },
 });
