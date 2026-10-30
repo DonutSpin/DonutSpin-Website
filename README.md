@@ -79,7 +79,7 @@ The default `.env.example` grants 5,000,000 DonutSMP money to each new account. 
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run build` | Type-check, build the client into `dist/`, and compile the server to `build/server/index.js` |
 | `npm run build:server` | Rebuild only the production server bundle |
-| `npm start` | Start the production server (`node build/server/index.js`) |
+| `npm start` | Start the production server (`node server.js`) |
 | `npm run db:migrate` | Create/migrate the database and print schema status |
 | `npm run db:backup -- --out data/backups` | Take an online SQLite backup and verify it |
 | `npm run owner -- --email …` | Bootstrap an owner account |
@@ -231,7 +231,7 @@ This is a **Node** app, not a static site. Publishing only the `dist` folder pro
 
 1. In **Websites → Git deploy**, pick **Node.js SSR app** (sometimes labelled “Node.js application”). Do **not** pick **Node.js SPA** with a build output folder of `dist`: that type only publishes the frontend build and never starts Node.
 2. Build command: `npm ci && npm run build` — this type-checks, writes the client to `dist/`, and compiles the server to `build/server/index.js`.
-3. Start command: **`build/server/index.js`** — the field wants a JavaScript file Node can run, not an npm script, so `npm start` fails with “Start command target not found in the build output”. `npm start` runs that same file locally.
+3. Start command: **`server.js`** — the field wants a JavaScript file Node can run, not an npm script, so `npm start` fails with “Start command target not found in the build output”. `server.js` sits at the project root, loads the compiled server from `build/server/index.js`, and pins the working directory to the app root so `dist/`, `data/` and `.env` resolve correctly. `npm start` runs the same file locally.
 4. Optionally set `APP_URL=https://your-site.runasp.net` and a 32+ character `SESSION_SECRET`. Without them the app still boots safely, but `APP_URL` keeps mutation origins pinned to your exact domain.
 5. The repository ships [`web.config`](web.config), which registers `HttpPlatformHandler`, maps `%HTTP_PLATFORM_PORT%` to `PORT`, sets `NODE_ENV=production`, and blocks `/data`, `/server`, `/src`, `/node_modules` and friends from being downloaded.
 6. If the site still fails, enable **Control Panel → Websites → Logs → HttpPlatform** and read the startup output. A crash on boot, a missing dependency, or a native module that cannot load all show up there.
