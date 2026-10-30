@@ -2,8 +2,24 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_DEVELOPMENT_APP_URL,
   DEFAULT_PRODUCTION_APP_URL,
+  isProductionRuntime,
   resolveAppUrl,
 } from '../server/config.ts';
+
+describe('production runtime detection', () => {
+  it('recognises NODE_ENV=production', () => {
+    expect(isProductionRuntime({ NODE_ENV: 'production' })).toBe(true);
+  });
+
+  it('recognises an IIS-hosted process even without NODE_ENV', () => {
+    expect(isProductionRuntime({ HTTP_PLATFORM_PORT: '12345' })).toBe(true);
+  });
+
+  it('keeps local development on the development defaults', () => {
+    expect(isProductionRuntime({ NODE_ENV: 'test' })).toBe(false);
+    expect(isProductionRuntime({})).toBe(false);
+  });
+});
 
 describe('public app URL resolution', () => {
   it('uses the Vite origin for local development', () => {

@@ -25,6 +25,11 @@ try {
   /* keep the inherited working directory if it is not writable */
 }
 
+// This entry point runs the compiled production server. Default NODE_ENV so a
+// host that only sets a start command still gets production URLs, secure
+// cookies, and the production session-secret checks.
+if (!process.env.NODE_ENV) process.env.NODE_ENV = 'production';
+
 const entry = path.join(appRoot, 'build', 'server', 'index.js');
 
 if (!fs.existsSync(entry)) {

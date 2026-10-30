@@ -17,7 +17,17 @@ function intEnv(name: string, fallback: number, min = Number.MIN_SAFE_INTEGER): 
 }
 
 const root = process.cwd();
-const isProduction = process.env.NODE_ENV === 'production';
+
+/**
+ * IIS's HttpPlatformHandler always assigns HTTP_PLATFORM_PORT to the child
+ * process. Treat that as production even when a generated web.config forgot
+ * NODE_ENV, otherwise a hosted deployment falls back to localhost email links.
+ */
+export function isProductionRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NODE_ENV === 'production' || Boolean(env.HTTP_PLATFORM_PORT);
+}
+
+const isProduction = isProductionRuntime();
 
 /**
  * The production origin is the default so a missing or copied-development
