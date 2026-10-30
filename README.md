@@ -241,6 +241,27 @@ The app writes the SQLite database to `data/` relative to the application root a
 If you must stay on static hosting, host the API on a separate Node instance and point the client at it; a static deploy alone cannot process registration, games, wallet, tickets or cashier requests.
 
 
+### Owner account on a hosted deployment
+
+Never commit an owner password. The repository contains no credentials; the owner is created from the host's environment instead.
+
+**Preferred: set environment variables in the hosting panel**
+
+| Variable | Purpose |
+| --- | --- |
+| `OWNER_EMAIL` | Email of the owner account |
+| `OWNER_USERNAME` | Username to create (3–20 letters, numbers, underscores). Defaults to `owner` |
+| `OWNER_PASSWORD` | Password, at least 10 characters with a letter and a number |
+| `OWNER_RESET_PASSWORD` | Set to `true` to overwrite that account's password on boot |
+
+On startup the server creates the owner if no account uses `OWNER_EMAIL`, promotes it if the account exists with a lower role, and optionally resets its password. The password is never logged. This makes the variables safe to keep configured, and it is the recovery path for a forgotten owner password.
+
+**Fallback: no configuration and no owner in the database**
+
+If `OWNER_EMAIL`/`OWNER_PASSWORD` are unset and the database has no owner at all, one is generated with a strong random password. The credentials are printed once to the process log (on IIS: the HttpPlatform log) and written to `data/owner-credentials.txt`, which `web.config` hides. Sign in, change the password, then delete that file.
+
+In both cases the new owner must accept the current Terms of Service and Privacy Policy on first sign-in before the admin panel unlocks. That gate is intentional and applies to every account.
+
 ## Legal, consent and self-exclusion
 
 The legal pages live at `/terms`, `/privacy`, and `/responsible-gambling`, with a `?lang=nl` Dutch version. They are templates and carry a visible notice that a qualified legal professional must review them before publication. Replace the placeholder operator, jurisdiction, and contact details in [`shared/legal.ts`](shared/legal.ts) and [`src/content/legal.ts`](src/content/legal.ts) first.

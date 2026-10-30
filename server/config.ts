@@ -8,11 +8,12 @@ try {
   /* .env is optional; hosted platforms inject the real environment */
 }
 
-function intEnv(name: string, fallback: number): number {
+function intEnv(name: string, fallback: number, min = Number.MIN_SAFE_INTEGER): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  if (!Number.isFinite(parsed) || parsed < min) return fallback;
+  return parsed;
 }
 
 const root = process.cwd();
@@ -23,7 +24,9 @@ const isProduction = process.env.NODE_ENV === 'production';
  * usually map it to PORT. Accept both so a missing mapping cannot leave the
  * process listening on a port nothing forwards to.
  */
-const port = intEnv('PORT', intEnv('HTTP_PLATFORM_PORT', 4000));
+// Port 0 means "unassigned" on hosting platforms. Binding it would pick a
+// random port that nothing forwards to, so it is treated as unset.
+const port = intEnv('PORT', intEnv('HTTP_PLATFORM_PORT', 4000, 1), 1);
 
 const appUrl = (process.env.APP_URL || 'http://localhost:5173').replace(/\/+$/, '');
 /**

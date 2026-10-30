@@ -3,9 +3,19 @@ import { getDatabase, closeDatabase } from './db/index.ts';
 import { config } from './config.ts';
 import { assertProductionSecrets } from './lib/crypto.ts';
 import { processEmailQueue } from './lib/email.ts';
+import { ensureBootstrapOwner } from './lib/owner-bootstrap.ts';
 
 assertProductionSecrets();
 const db = getDatabase();
+
+// Hosted deployments have no shell to run `npm run owner`, so the owner is
+// created here from environment variables, or with a generated password when
+// the database has no owner at all.
+try {
+  ensureBootstrapOwner(db);
+} catch (error) {
+  console.error('[owner] bootstrap failed:', error instanceof Error ? error.message : error);
+}
 
 function maintenance(): void {
   try {

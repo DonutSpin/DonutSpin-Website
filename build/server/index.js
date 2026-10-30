@@ -14,15 +14,16 @@ try {
   process.loadEnvFile(".env");
 } catch {
 }
-function intEnv(name, fallback) {
+function intEnv(name, fallback, min = Number.MIN_SAFE_INTEGER) {
   const raw = process.env[name];
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  if (!Number.isFinite(parsed) || parsed < min) return fallback;
+  return parsed;
 }
 var root = process.cwd();
 var isProduction = process.env.NODE_ENV === "production";
-var port = intEnv("PORT", intEnv("HTTP_PLATFORM_PORT", 4e3));
+var port = intEnv("PORT", intEnv("HTTP_PLATFORM_PORT", 4e3, 1), 1);
 var appUrl = (process.env.APP_URL || "http://localhost:5173").replace(/\/+$/, "");
 var appUrlConfigured = Boolean(process.env.APP_URL);
 var databasePath = path.resolve(root, process.env.DATABASE_PATH || path.join("data", "aurum.db"));
@@ -1571,9 +1572,9 @@ function textValue(payload, key, fallback = "") {
   if (typeof value === "number") return String(value);
   return fallback;
 }
-function safeUrl(email, path3) {
-  if (/^https?:\/\//i.test(path3)) return path3;
-  return `${email.appUrl}${path3.startsWith("/") ? path3 : `/${path3}`}`;
+function safeUrl(email, path4) {
+  if (/^https?:\/\//i.test(path4)) return path4;
+  return `${email.appUrl}${path4.startsWith("/") ? path4 : `/${path4}`}`;
 }
 function formatDateTime(value, timezone) {
   const iso = typeof value === "string" ? value : (/* @__PURE__ */ new Date()).toISOString();
@@ -1591,11 +1592,11 @@ function formatDateTime(value, timezone) {
 function paragraph(text, tone = "muted") {
   return `<p style="margin:0 0 16px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.7;color:${tone === "ink" ? "#f6f4ef" : "#aeb5c2"};">${text}</p>`;
 }
-function button(email, label, path3) {
+function button(email, label, path4) {
   return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:26px 0 8px;">
   <tr>
     <td align="center" bgcolor="#e6c27a" style="border-radius:10px;box-shadow:0 10px 24px -14px rgba(230,194,122,0.8);">
-      <a href="${escapeHtml(safeUrl(email, path3))}" target="_blank" style="display:inline-block;padding:14px 28px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:700;line-height:1;color:#211706;text-decoration:none;border-radius:10px;">${escapeHtml(label)}</a>
+      <a href="${escapeHtml(safeUrl(email, path4))}" target="_blank" style="display:inline-block;padding:14px 28px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:700;line-height:1;color:#211706;text-decoration:none;border-radius:10px;">${escapeHtml(label)}</a>
     </td>
   </tr>
 </table>`;
@@ -1705,7 +1706,7 @@ Open the lobby: ${safeUrl(email, "/")}`;
 function renderEmail(template, payload, email) {
   const username = textValue(payload, "username", "there");
   const amount = Number(payload.amount ?? 0);
-  const cta = (label, path3) => button(email, label, path3);
+  const cta = (label, path4) => button(email, label, path4);
   const signoff = `<p style="margin:24px 0 0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.7;color:#8f97a5;">See you at the tables,<br><strong style="color:#f6f4ef;">The ${escapeHtml(email.appName)} team</strong></p>`;
   switch (template) {
     case "welcome": {
@@ -2654,18 +2655,18 @@ function createAuthRouter(db2) {
         targetLabel: user.username,
         ip: clientIp(req)
       });
-      const path3 = `/reset-password?token=${encodeURIComponent(token)}`;
+      const path4 = `/reset-password?token=${encodeURIComponent(token)}`;
       const queued = enqueueEmail(db2, {
         userId: user.id,
         recipient: user.email,
         template: "password-reset",
-        payload: { username: user.username, resetUrl: path3 },
+        payload: { username: user.username, resetUrl: path4 },
         dedupeKey: `password-reset:${user.id}:${now}`
       });
       if (!queued && (!config.isProduction || config.exposeResetToken)) {
-        console.info(`[auth] Password reset link for ${user.email}: ${config.appUrl}${path3}`);
+        console.info(`[auth] Password reset link for ${user.email}: ${config.appUrl}${path4}`);
       }
-      if (config.exposeResetToken) resetPath = path3;
+      if (config.exposeResetToken) resetPath = path4;
     }
     res.json({
       message: "If an account matches that email, a password reset link has been issued. It expires in one hour.",
@@ -3446,14 +3447,14 @@ var plinko = {
     if (!enabledRisks.includes(risk)) {
       throw badRequest("That risk level is disabled.", "RISK_DISABLED", { fields: { risk: "Choose an available risk level." } });
     }
-    const path3 = Array.from({ length: PLINKO_ROWS }, () => secureInt(2) === 0 ? "left" : "right");
-    const slot = path3.filter((step) => step === "right").length;
+    const path4 = Array.from({ length: PLINKO_ROWS }, () => secureInt(2) === 0 ? "left" : "right");
+    const slot = path4.filter((step) => step === "right").length;
     const multiplier = PLINKO_TABLES[risk][slot] ?? 0;
     const rawPayout = Math.floor(ctx.bet * multiplier);
     const payout = Math.min(rawPayout, maxPayout(ctx.db));
     const won = payout > 0;
     const sessionId = newSessionId();
-    const state = { risk, path: path3, slot, multiplier };
+    const state = { risk, path: path4, slot, multiplier };
     const wagerLedgerId = debitWager(ctx.db, ctx.user.id, sessionId, ctx.bet, ctx.game.id);
     insertSession(ctx.db, {
       id: sessionId,
@@ -3481,7 +3482,7 @@ var plinko = {
     return {
       ...baseView(row, balanceOf(ctx.db, ctx.user.id)),
       risk,
-      path: path3,
+      path: path4,
       slot,
       multiplier,
       won
@@ -7256,9 +7257,139 @@ function createApp(db2) {
   return app2;
 }
 
+// server/lib/owner-bootstrap.ts
+import fs3 from "node:fs";
+import path3 from "node:path";
+import { randomBytes as randomBytes5 } from "node:crypto";
+var USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
+function credentialsPath() {
+  return path3.join(config.root, "data", "owner-credentials.txt");
+}
+function writeCredentialsFile(lines) {
+  try {
+    const file = credentialsPath();
+    fs3.mkdirSync(path3.dirname(file), { recursive: true });
+    fs3.writeFileSync(file, `${lines.join("\n")}
+`, { mode: 384 });
+  } catch (error) {
+    console.warn("[owner] could not write owner-credentials.txt:", error instanceof Error ? error.message : error);
+  }
+}
+function createOwner(db2, username, email, password) {
+  const startingCredits = getSetting(db2, "economy.starting_credits", config.startingCredits);
+  const userId = newId("usr");
+  const now = nowIso();
+  db2.transaction(() => {
+    db2.prepare(
+      `INSERT INTO users (id, username, email, password_hash, role, status, email_verified, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'owner', 'active', 1, ?, ?)`
+    ).run(userId, username, email, hashPassword(password), now, now);
+    createWallet(db2, userId, startingCredits, userId);
+  })();
+  recordAudit(db2, {
+    actorId: userId,
+    action: "owner.bootstrap",
+    targetType: "user",
+    targetId: userId,
+    targetLabel: username
+  });
+  return userId;
+}
+function ensureBootstrapOwner(db2) {
+  const email = (process.env.OWNER_EMAIL || "").trim().toLowerCase();
+  const username = (process.env.OWNER_USERNAME || "owner").trim();
+  const password = process.env.OWNER_PASSWORD || "";
+  if (email && password) {
+    const issues = passwordIssues(password);
+    if (issues.length) {
+      console.error(`[owner] OWNER_PASSWORD does not meet the password policy: ${issues.join(" ")}`);
+      return;
+    }
+    if (!USERNAME_PATTERN.test(username)) {
+      console.error("[owner] OWNER_USERNAME must be 3-20 letters, numbers, or underscores.");
+      return;
+    }
+    const byEmail = db2.prepare("SELECT id, role FROM users WHERE email = ? COLLATE NOCASE").get(email);
+    if (byEmail) {
+      if (byEmail.role !== "owner") {
+        db2.prepare("UPDATE users SET role = 'owner', status = 'active', updated_at = ? WHERE id = ?").run(
+          nowIso(),
+          byEmail.id
+        );
+        recordAudit(db2, {
+          actorId: byEmail.id,
+          action: "owner.bootstrap.promote",
+          targetType: "user",
+          targetId: byEmail.id,
+          targetLabel: email,
+          metadata: { from: byEmail.role }
+        });
+        console.info(`[owner] promoted existing account ${email} to owner.`);
+      }
+      if (process.env.OWNER_RESET_PASSWORD === "true") {
+        db2.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?").run(
+          hashPassword(password),
+          nowIso(),
+          byEmail.id
+        );
+        recordAudit(db2, {
+          actorId: byEmail.id,
+          action: "owner.bootstrap.password_reset",
+          targetType: "user",
+          targetId: byEmail.id,
+          targetLabel: email
+        });
+        console.info(`[owner] reset the password for ${email} from OWNER_PASSWORD.`);
+      }
+      return;
+    }
+    const clash = db2.prepare("SELECT id FROM users WHERE username = ? COLLATE NOCASE").get(username);
+    if (clash) {
+      console.error(`[owner] OWNER_USERNAME "${username}" is already taken; set OWNER_USERNAME to a free name.`);
+      return;
+    }
+    createOwner(db2, username, email, password);
+    console.info(`[owner] created owner account ${username} <${email}> from environment variables.`);
+    const others = db2.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'owner'").get();
+    if (others.count > 1) {
+      console.warn(`[owner] ${others.count} owner accounts now exist; the environment owner is independent of them.`);
+    }
+    return;
+  }
+  const owners = db2.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'owner'").get();
+  if (owners.count > 0) return;
+  const generated = `Donutcash-${randomBytes5(9).toString("base64url")}!9`;
+  const ownerUsername = USERNAME_PATTERN.test(username) ? username : "owner";
+  const ownerEmail = email || `owner@${new URL(config.appUrl).hostname}`;
+  createOwner(db2, ownerUsername, ownerEmail, generated);
+  console.info("");
+  console.info("==============================================================");
+  console.info(" Owner account created (no owner existed in this database).");
+  console.info(`   Username: ${ownerUsername}`);
+  console.info(`   Email:    ${ownerEmail}`);
+  console.info(`   Password: ${generated}`);
+  console.info(" Sign in, then change this password immediately.");
+  console.info(" This is printed once; it is not stored anywhere in the repository.");
+  console.info("==============================================================");
+  console.info("");
+  writeCredentialsFile([
+    `Username: ${ownerUsername}`,
+    `Email: ${ownerEmail}`,
+    `Password: ${generated}`,
+    "",
+    "Created at startup because the database had no owner account.",
+    "Sign in and change this password, then delete this file."
+  ]);
+}
+
 // server/index.ts
 assertProductionSecrets();
 var db = getDatabase();
+try {
+  ensureBootstrapOwner(db);
+} catch (error) {
+  console.error("[owner] bootstrap failed:", error instanceof Error ? error.message : error);
+}
 function maintenance() {
   try {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString();
