@@ -76,8 +76,7 @@ The default `.env.example` grants 5,000,000 DonutSMP money to each new account. 
 | `npm run dev:web` | Run only the Vite client |
 | `npm run typecheck` | Type-check the whole repository |
 | `npm test` | Run the integration test suite once |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run build` | Type-check and build the client into `dist/client` |
+| `npm run test:watch` | Run tests in watch mode | | `npm run build` | Type-check and build the client into `dist/` |
 | `npm start` | Start the production server |
 | `npm run db:migrate` | Create/migrate the database and print schema status |
 | `npm run db:backup -- --out data/backups` | Take an online SQLite backup and verify it |
@@ -210,14 +209,24 @@ NODE_ENV=production \
 APP_URL=https://your-domain.example \
 SESSION_SECRET="<at-least-32-random-characters>" \
 npm start
-```
+``` - `npm run build` writes the client to `dist/`; the Express server serves it with a SPA fallback.
 
-- `npm run build` writes the client to `dist/client`; the Express server serves it with a SPA fallback.
 - Put the app behind a TLS-terminating reverse proxy and forward `/api` and the SPA to the Node process.
 - `APP_URL` must exactly match the browser origin. Production mutation requests with an unexpected `Origin` header are rejected.
 - Session cookies are `httpOnly`, `SameSite=Lax`, and `Secure` in production.
-- Run a single API process against a given SQLite file. SQLite and the in-process rate limiters are not designed for horizontal scaling with multiple writers.
-- Keep `data/`, `.env`, and backups out of version control and public web roots.
+- Run a single API process against a given SQLite file. SQLite and the in-process rate limiters are not designed for horizontal scaling with multiple writers. - Keep `data/`, `.env`, and backups out of version control and public web roots.
+
+### Deploying to Windows/IIS hosts that run Node behind HttpPlatformHandler
+
+Some hosts, such as MonsterASP, run Node.js behind IIS and assign the listening port through `process.env.PORT`. If yours is one of those:
+
+- Do not hard-code the listening port; let the server use `process.env.PORT`.
+- Make sure the host runs `npm start` (or an equivalent `NODE_ENV=production` start command), not just the static files from `dist/`.
+- Put `web.config` and the Node entry point where the host expects them, with `web.config` handed to `HttpPlatformHandler` so the Node process starts.
+- Confirm the host’s Node startup logs if sign-in or registration fails, because missing server startup is a common cause of “server not answering”.
+
+If your host only serves static files from `dist/`, this app will render but its `/api/...` routes will not exist. In that case you still need a running Node backend for login, registration, games, wallet, tickets, and cashier requests.
+
 
 ## Legal, consent and self-exclusion
 
@@ -257,7 +266,7 @@ server/              Express API
 shared/              Shared TypeScript types, permissions, and K/M/B/T amount helpers
 tests/               Vitest + Supertest integration tests
 data/                Runtime SQLite database (ignored by Git)
-dist/client/         Production client build output
+dist/                 Production client build output
 ```
 
 ## Security notes
