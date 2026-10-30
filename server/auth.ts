@@ -25,11 +25,14 @@ interface SessionJoinRow {
   balance: number;
 }
 
-export function sessionCookieOptions(): CookieOptions {
+export function sessionCookieOptions(req?: Request): CookieOptions {
   return {
     httpOnly: true,
     sameSite: 'lax',
-    secure: config.isProduction,
+    // Only flag the cookie Secure when the request actually arrived over TLS.
+    // IIS reports the scheme through X-Forwarded-Proto, so a blanket Secure
+    // flag silently breaks sign-in whenever the site is served over plain HTTP.
+    secure: config.isProduction ? (req ? req.secure : true) : false,
     path: '/',
     maxAge: config.sessionDays * 24 * 60 * 60 * 1000,
   };
@@ -63,12 +66,12 @@ export function revokeOtherSessions(db: DB, userId: string, keepSessionId: strin
   );
 }
 
-export function setSessionCookie(res: Response, token: string): void {
-  res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
+export function setSessionCookie(res: Response, token: string, req?: Request): void {
+  res.cookie(SESSION_COOKIE, token, sessionCookieOptions(req));
 }
 
-export function clearSessionCookie(res: Response): void {
-  res.clearCookie(SESSION_COOKIE, { ...sessionCookieOptions(), maxAge: undefined });
+export function clearSessionCookie(res: Response, req?: Request): void {
+  res.clearCookie(SESSION_COOKIE, { ...sessionCookieOptions(req), maxAge: undefined });
 }
 
 export function loadUser(db: DB, userId: string): SessionUser | null {
@@ -129,7 +132,7 @@ export function authMiddleware(db: DB) {
       )
       .get(tokenHash(token)) as SessionJoinRow | undefined;
     if (!row) {
-      clearSessionCookie(res);
+      clearSessionCookie(res, req);
       return next();
     }
     if (
@@ -139,7 +142,7 @@ export function authMiddleware(db: DB) {
       isSelfExclusionActive(row.self_excluded_until)
     ) {
       if (!row.revoked_at) revokeSession(db, row.session_id);
-      clearSessionCookie(res);
+      clearSessionCookie(res, req);
       return next();
     }
     const acceptance = latestLegalAcceptance(db, row.user_id);

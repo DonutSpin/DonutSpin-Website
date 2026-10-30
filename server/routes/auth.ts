@@ -146,7 +146,7 @@ export function createAuthRouter(db: DB): Router {
     });
 
     const { token } = createSession(db, userId, req);
-    setSessionCookie(res, token);
+    setSessionCookie(res, token, req);
     res.status(201).json({ user: loadUser(db, userId), startingCredits });
   });
 
@@ -222,7 +222,7 @@ export function createAuthRouter(db: DB): Router {
     const now = nowIso();
     db.prepare('UPDATE users SET last_login_at = ?, last_seen_at = ? WHERE id = ?').run(now, now, row.id);
     const { token } = createSession(db, row.id, req);
-    setSessionCookie(res, token);
+    setSessionCookie(res, token, req);
     const email = getEmailConfig(db);
     const newDevice =
       previousSession &&
@@ -263,7 +263,7 @@ export function createAuthRouter(db: DB): Router {
         ip: clientIp(req),
       });
     }
-    clearSessionCookie(res);
+    clearSessionCookie(res, req);
     res.json({ ok: true });
   });
 

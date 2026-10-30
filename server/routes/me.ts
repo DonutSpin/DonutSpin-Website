@@ -333,7 +333,7 @@ export function createMeRouter(db: DB): Router {
         ip: clientIp(req),
       });
     })();
-    clearSessionCookie(res);
+    clearSessionCookie(res, req);
     res.json({
       ok: true,
       until,

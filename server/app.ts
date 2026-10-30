@@ -1,7 +1,8 @@
-import express, { type ErrorRequestHandler } from 'express';
+import express, { type ErrorRequestHandler, type Request } from 'express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { ZodError } from 'zod';
+import fs from 'node:fs';
 import path from 'node:path';
 import type { DB } from './db/index.ts';
 import { config } from './config.ts';
@@ -21,6 +22,30 @@ import { createAdminConfigRouter } from './routes/admin-config.ts';
 import { createRewardsRouter } from './routes/rewards.ts';
 import { createAdminRewardsRouter } from './routes/admin-rewards.ts';
 import { createAdminEmailRouter } from './routes/admin-email.ts';
+
+/**
+ * A request is same-origin when the browser's Origin host matches the host the
+ * request was actually addressed to. Proxies such as IIS forward the public
+ * host in Host or X-Forwarded-Host, so both are considered.
+ */
+function isSameOrigin(req: Request, origin: string): boolean {
+  try {
+    const target = new URL(origin);
+    const candidates = [req.get('host'), req.get('x-forwarded-host')?.split(',')[0]?.trim()];
+    return candidates.some((host) => Boolean(host) && target.host.toLowerCase() === host!.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/** Paths that must never be answered by the SPA fallback. */
+const PRIVATE_PREFIXES = ['/data', '/server', '/build', '/node_modules', '/shared', '/tests', '/src', '/.git', '/logs'];
+
+function isPrivatePath(urlPath: string): boolean {
+  const segments = urlPath.toLowerCase().split('?')[0] ?? '';
+  if (segments === '/.env' || segments.startsWith('/.env')) return true;
+  return PRIVATE_PREFIXES.some((prefix) => segments === prefix || segments.startsWith(`${prefix}/`));
+}
 
 export function createApp(db: DB): express.Express {
   const app = express();
@@ -59,7 +84,7 @@ export function createApp(db: DB): express.Express {
       return next(new ApiError(403, 'CSRF_HEADER', 'This request is missing the required application header.'));
     }
     const origin = req.get('origin');
-    if (origin && !config.allowedOrigins.includes(origin)) {
+    if (origin && !config.allowedOrigins.includes(origin) && !isSameOrigin(req, origin)) {
       return next(new ApiError(403, 'ORIGIN_BLOCKED', 'This origin is not allowed to perform that action.'));
     }
     if (config.isProduction && !mutationLimiter.consume(`mutate:${req.ip ?? 'unknown'}`).allowed) {
@@ -106,15 +131,22 @@ export function createApp(db: DB): express.Express {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'API endpoint not found.' } });
   });
 
-  if (config.isProduction) {
-    const clientDir = path.resolve(config.clientDist);
+  // Serve the built client whenever it is present. On IIS/HttpPlatformHandler the
+  // Node process is the only thing in front of the site, so the SPA fallback has
+  // to live here instead of in web.config.
+  const clientDir = path.resolve(config.clientDist);
+  const clientIndex = path.join(clientDir, 'index.html');
+  if (fs.existsSync(clientIndex)) {
     app.use(express.static(clientDir, { index: false, maxAge: '1h' }));
     app.use((req, res, next) => {
       if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
-      res.sendFile(path.join(clientDir, 'index.html'), (error) => {
+      if (isPrivatePath(req.path)) return next();
+      res.sendFile(clientIndex, (error) => {
         if (error) next(error);
       });
     });
+  } else if (config.isProduction) {
+    console.warn(`[api] no client build found at ${clientIndex}; only the API will be served. Run \`npm run build\`.`);
   }
 
   const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {

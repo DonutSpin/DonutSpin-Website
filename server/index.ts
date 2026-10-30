@@ -37,7 +37,24 @@ const app = createApp(db);
 const server = app.listen(config.port, () => {
   console.info(`[donutcash] API listening on http://localhost:${config.port}`);
   console.info(`[donutcash] environment: ${config.isProduction ? 'production' : 'development'}`);
+  console.info(`[donutcash] database: ${config.databasePath}`);
+  console.info(`[donutcash] client build: ${config.clientDist}`);
+  console.info(`[donutcash] public url: ${config.appUrl}${config.appUrlConfigured ? '' : ' (APP_URL not set; same-origin requests are trusted)'}`);
   if (!config.isProduction) console.info('[donutcash] start the client with `npm run dev:web` (Vite proxies /api here)');
+});
+
+server.on('error', (error: NodeJS.ErrnoException) => {
+  console.error(`[donutcash] could not listen on port ${config.port}:`, error.message);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[donutcash] uncaught exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[donutcash] unhandled rejection:', reason);
 });
 
 function shutdown(signal: string): void {

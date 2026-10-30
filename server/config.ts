@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 try {
   process.loadEnvFile('.env');
 } catch {
-  /* .env is optional */
+  /* .env is optional; hosted platforms inject the real environment */
 }
 
 function intEnv(name: string, fallback: number): number {
@@ -16,23 +17,74 @@ function intEnv(name: string, fallback: number): number {
 
 const root = process.cwd();
 const isProduction = process.env.NODE_ENV === 'production';
-const appUrl = process.env.APP_URL || 'http://localhost:5173';
+
+/**
+ * Hosts that run Node behind IIS hand the port over in HTTP_PLATFORM_PORT and
+ * usually map it to PORT. Accept both so a missing mapping cannot leave the
+ * process listening on a port nothing forwards to.
+ */
+const port = intEnv('PORT', intEnv('HTTP_PLATFORM_PORT', 4000));
+
+const appUrl = (process.env.APP_URL || 'http://localhost:5173').replace(/\/+$/, '');
+/**
+ * When APP_URL is not configured we cannot know the public origin up front, so
+ * same-origin requests are trusted instead of locking the site to localhost.
+ */
+const appUrlConfigured = Boolean(process.env.APP_URL);
+
+const databasePath = path.resolve(root, process.env.DATABASE_PATH || path.join('data', 'aurum.db'));
+
+/**
+ * A hosted deployment often has no way to inject a secret. Rather than crash on
+ * boot, generate a strong secret once and persist it beside the database. An
+ * explicit SESSION_SECRET always wins.
+ */
+function resolveSessionSecret(): string {
+  const provided = (process.env.SESSION_SECRET || '').trim();
+  if (provided) return provided;
+  if (!isProduction) return '';
+
+  const secretFile = path.join(root, 'data', '.session-secret');
+  try {
+    const existing = fs.readFileSync(secretFile, 'utf8').trim();
+    if (existing.length >= 32) return existing;
+  } catch {
+    /* first boot */
+  }
+  const generated = randomBytes(48).toString('hex');
+  try {
+    fs.mkdirSync(path.dirname(secretFile), { recursive: true });
+    fs.writeFileSync(secretFile, generated, { mode: 0o600 });
+    console.warn(
+      '[config] SESSION_SECRET was not set; generated a persistent secret at data/.session-secret. ' +
+        'Set SESSION_SECRET in the environment to manage it yourself.',
+    );
+  } catch (error) {
+    console.warn(
+      '[config] SESSION_SECRET was not set and the generated secret could not be persisted:',
+      error instanceof Error ? error.message : error,
+    );
+  }
+  return generated;
+}
 
 export const config = {
   root,
   isProduction,
-  port: intEnv('PORT', 4000),
+  port,
   appName: process.env.APP_NAME || 'Donutcash',
   appUrl,
-  databasePath: process.env.DATABASE_PATH || path.join(root, 'data', 'aurum.db'),
+  appUrlConfigured,
+  databasePath,
   sessionDays: intEnv('SESSION_DAYS', 7),
-  sessionSecret: process.env.SESSION_SECRET || '',
+  sessionSecret: resolveSessionSecret(),
   startingCredits: intEnv('STARTING_CREDITS', 5_000_000),
   exposeResetToken: process.env.EXPOSE_RESET_TOKEN === 'true' || (!isProduction && process.env.EXPOSE_RESET_TOKEN !== 'false'),
   allowedOrigins: isProduction
     ? [appUrl]
     : [appUrl, 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4000', 'http://127.0.0.1:4000'],
-  clientDist: path.join(root, 'dist', 'client'),
+  /** The Vite build output. `npm run build` writes `index.html` and `assets/` here. */
+  clientDist: path.join(root, 'dist'),
   mail: {
     host: process.env.SMTP_HOST || '',
     port: intEnv('SMTP_PORT', 587),

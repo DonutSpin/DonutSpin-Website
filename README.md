@@ -76,8 +76,7 @@ The default `.env.example` grants 5,000,000 DonutSMP money to each new account. 
 | `npm run dev:web` | Run only the Vite client |
 | `npm run typecheck` | Type-check the whole repository |
 | `npm test` | Run the integration test suite once |
-| `npm run test:watch` | Run tests in watch mode | | `npm run build` | Type-check and build the client into `dist/` |
-| `npm start` | Start the production server |
+| `npm run test:watch` | Run tests in watch mode | | `npm run build` | Type-check and build the client into `dist/` | | `npm start` | Start the production server (`node --import tsx server/index.ts`) |
 | `npm run db:migrate` | Create/migrate the database and print schema status |
 | `npm run db:backup -- --out data/backups` | Take an online SQLite backup and verify it |
 | `npm run owner -- --email …` | Bootstrap an owner account |
@@ -88,11 +87,11 @@ Configuration lives in `.env`. The server loads it on startup, and environment v
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `PORT` | `4000` | API/production server port |
+| `PORT` | `4000` | API/production server port. Falls back to `HTTP_PLATFORM_PORT`, which IIS assigns. |
 | `APP_NAME` | `Donutcash` | Initial platform name seed |
 | `APP_URL` | `http://localhost:5173` | Public client origin. In production this is the only allowed mutation origin and is used in reset links. Set it to the exact external URL. |
 | `DATABASE_PATH` | `data/aurum.db` | SQLite file. Parent directories are created automatically. |
-| `SESSION_SECRET` | empty | At least 32 characters in production; startup fails closed otherwise. |
+| `SESSION_SECRET` | generated | At least 32 characters. If unset in production, a random secret is generated once and persisted to `data/.session-secret`. |
 | `SESSION_DAYS` | `7` | Session lifetime |
 | `STARTING_CREDITS` | `5000000` | Initial DonutSMP money grant |
 | `EXPOSE_RESET_TOKEN` | development only | Returns reset paths in the API response for local testing. Keep `false` in production. |
@@ -209,23 +208,34 @@ NODE_ENV=production \
 APP_URL=https://your-domain.example \
 SESSION_SECRET="<at-least-32-random-characters>" \
 npm start
-``` - `npm run build` writes the client to `dist/`; the Express server serves it with a SPA fallback.
+```
+
+- `npm run build` writes the client to `dist/`; the Express server serves it with a SPA fallback.
 
 - Put the app behind a TLS-terminating reverse proxy and forward `/api` and the SPA to the Node process.
 - `APP_URL` must exactly match the browser origin. Production mutation requests with an unexpected `Origin` header are rejected.
 - Session cookies are `httpOnly`, `SameSite=Lax`, and `Secure` in production.
-- Run a single API process against a given SQLite file. SQLite and the in-process rate limiters are not designed for horizontal scaling with multiple writers. - Keep `data/`, `.env`, and backups out of version control and public web roots.
+- Run a single API process against a given SQLite file. SQLite and the in-process rate limiters are not designed for horizontal scaling with multiple writers.
+- Keep `data/`, `.env`, and backups out of version control and public web roots.
+- `SESSION_SECRET` is optional at runtime: when it is missing in production the server generates a random secret once and persists it to `data/.session-secret`. Set it explicitly to control rotation. A provided value shorter than 32 characters still fails closed.
+- `PORT` is read first, then `HTTP_PLATFORM_PORT` (the port IIS assigns). The app never hard-codes a listening port.
+- Session cookies are marked `Secure` only when the request actually arrived over TLS, so a site served over plain HTTP can still sign in.
+- Production mutation requests must be same-origin or match `APP_URL`; a missing `APP_URL` trusts same-origin requests only.
 
-### Deploying to Windows/IIS hosts that run Node behind HttpPlatformHandler
+### Deploying to MonsterASP (Windows / IIS + HttpPlatformHandler)
 
-Some hosts, such as MonsterASP, run Node.js behind IIS and assign the listening port through `process.env.PORT`. If yours is one of those:
+This is a **Node** app, not a static site. Publishing only the `dist` folder produces a site that renders and then says “The server is not answering”, because IIS serves the HTML but no process answers `/api`.
 
-- Do not hard-code the listening port; let the server use `process.env.PORT`.
-- Make sure the host runs `npm start` (or an equivalent `NODE_ENV=production` start command), not just the static files from `dist/`.
-- Put `web.config` and the Node entry point where the host expects them, with `web.config` handed to `HttpPlatformHandler` so the Node process starts.
-- Confirm the host’s Node startup logs if sign-in or registration fails, because missing server startup is a common cause of “server not answering”.
+1. In **Websites → Git deploy**, pick **Node.js SSR app** (sometimes labelled “Node.js application”). Do **not** pick **Node.js SPA** with a build output folder of `dist`: that type only publishes the frontend build and never starts Node.
+2. Build command: `npm ci && npm run build` — this type-checks and writes the client to `dist/`.
+3. Start command: `npm start` — this runs `node --import tsx server/index.ts`. `tsx` is a runtime dependency, so it works with production-only installs.
+4. Optionally set `APP_URL=https://your-site.runasp.net` and a 32+ character `SESSION_SECRET`. Without them the app still boots safely, but `APP_URL` keeps mutation origins pinned to your exact domain.
+5. The repository ships [`web.config`](web.config), which registers `HttpPlatformHandler`, maps `%HTTP_PLATFORM_PORT%` to `PORT`, sets `NODE_ENV=production`, and blocks `/data`, `/server`, `/src`, `/node_modules` and friends from being downloaded.
+6. If the site still fails, enable **Control Panel → Websites → Logs → HttpPlatform** and read the startup output. A crash on boot, a missing dependency, or a native module that cannot load all show up there.
 
-If your host only serves static files from `dist/`, this app will render but its `/api/...` routes will not exist. In that case you still need a running Node backend for login, registration, games, wallet, tickets, and cashier requests.
+The app writes the SQLite database to `data/` relative to the application root and expects that directory to stay writable across deploys. `web.config` hides it from the web.
+
+If you must stay on static hosting, host the API on a separate Node instance and point the client at it; a static deploy alone cannot process registration, games, wallet, tickets or cashier requests.
 
 
 ## Legal, consent and self-exclusion
