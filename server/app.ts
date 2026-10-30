@@ -6,9 +6,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DB } from './db/index.ts';
 import { config } from './config.ts';
-import { ApiError } from './lib/core.ts';
+import { ApiError, isLoopbackAddress } from './lib/core.ts';
 import { authMiddleware } from './auth.ts';
-import { callerKey, mutationLimiter } from './lib/rate-limit.ts';
+import { clientAddress, mutationLimiter } from './lib/rate-limit.ts';
 import { createPublicRouter } from './routes/public.ts';
 import { createAuthRouter } from './routes/auth.ts';
 import { createLegalRouter } from './routes/legal.ts';
@@ -25,13 +25,15 @@ import { createAdminEmailRouter } from './routes/admin-email.ts';
 
 /**
  * A request is same-origin when the browser's Origin host matches the host the
- * request was actually addressed to. Proxies such as IIS forward the public
- * host in Host or X-Forwarded-Host, so both are considered.
+ * request was actually addressed to. `X-Forwarded-Host` is only consulted when
+ * the deployment explicitly trusts forwarded headers, because anyone can send
+ * that header when a proxy forwards it untouched.
  */
 function isSameOrigin(req: Request, origin: string): boolean {
   try {
     const target = new URL(origin);
-    const candidates = [req.get('host'), req.get('x-forwarded-host')?.split(',')[0]?.trim()];
+    const candidates = [req.get('host')];
+    if (config.trustProxyHeaders) candidates.push(req.get('x-forwarded-host')?.split(',')[0]?.trim());
     return candidates.some((host) => Boolean(host) && target.host.toLowerCase() === host!.toLowerCase());
   } catch {
     return false;
@@ -50,7 +52,16 @@ function isPrivatePath(urlPath: string): boolean {
 export function createApp(db: DB): express.Express {
   const app = express();
   app.disable('x-powered-by');
-  if (config.isProduction) app.set('trust proxy', 1);
+  // Only the local reverse proxy may contribute forwarding information, and
+  // only when the deployment has confirmed the proxy sanitises those headers.
+  // Otherwise forwarding headers are ignored entirely, so a caller cannot pick
+  // their own rate-limit bucket or forge an audit IP.
+  app.set(
+    'trust proxy',
+    config.trustProxyHeaders
+      ? (address: string) => isLoopbackAddress(address) || config.trustedProxies.includes(address)
+      : false,
+  );
 
   app.use(
     helmet({
@@ -87,13 +98,24 @@ export function createApp(db: DB): express.Express {
     if (origin && !config.allowedOrigins.includes(origin) && !isSameOrigin(req, origin)) {
       return next(new ApiError(403, 'ORIGIN_BLOCKED', 'This origin is not allowed to perform that action.'));
     }
-    if (config.isProduction && !mutationLimiter.consume(callerKey(req, 'mutate')).allowed) {
-      return next(new ApiError(429, 'RATE_LIMITED', 'Too many requests. Please slow down.'));
-    }
     next();
   });
 
   app.use(authMiddleware(db));
+
+  // Mutation flood control. Signed-in callers are counted per account, which is
+  // exact; anonymous callers are counted per real address when one is known.
+  // Without either, no bucket is charged rather than one shared by every
+  // visitor (the auth routes have their own per-account limits).
+  app.use('/api', (req, _res, next) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || !config.isProduction) return next();
+    const address = clientAddress(req);
+    const key = req.user ? `mutate:user:${req.user.id}` : address ? `mutate:ip:${address}` : null;
+    if (key && !mutationLimiter.consume(key).allowed) {
+      return next(new ApiError(429, 'RATE_LIMITED', 'Too many requests. Please slow down.'));
+    }
+    next();
+  });
 
   // Authenticated accounts must accept the current legal versions before any
   // private API becomes available. Public config, auth, and legal actions must

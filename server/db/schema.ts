@@ -405,6 +405,23 @@ UPDATE settings
 `,
   },
   {
+    version: 11,
+    name: 'shared_rate_limit_windows',
+    // Limits used to live in per-process memory. Hosts that run more than one
+    // Node worker (IIS web garden, scale-out) would then hand every worker its
+    // own quota. The window lives in the database the workers already share, so
+    // the effective limit no longer multiplies by the worker count.
+    sql: `
+CREATE TABLE rate_limits (
+  key TEXT PRIMARY KEY,
+  window_start INTEGER NOT NULL,
+  hits INTEGER NOT NULL CHECK (hits >= 0),
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX rate_limits_expiry_idx ON rate_limits(expires_at);
+`,
+  },
+  {
     version: 9,
     name: 'legal_acceptance_and_self_exclusion',
     sql: `

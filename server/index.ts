@@ -4,6 +4,7 @@ import { config } from './config.ts';
 import { assertProductionSecrets } from './lib/crypto.ts';
 import { processEmailQueue } from './lib/email.ts';
 import { ensureBootstrapOwner } from './lib/owner-bootstrap.ts';
+import { isSharedRateLimitStoreEnabled } from './lib/rate-limit.ts';
 
 assertProductionSecrets();
 const db = getDatabase();
@@ -50,6 +51,15 @@ const server = app.listen(config.port, () => {
   console.info(`[donutcash] database: ${config.databasePath}`);
   console.info(`[donutcash] client build: ${config.clientDist}`);
   console.info(`[donutcash] public url: ${config.appUrl}${config.appUrlConfigured ? '' : ' (APP_URL not set; same-origin requests are trusted)'}`);
+  console.info(
+    `[donutcash] client ip: ${
+      config.trustProxyHeaders
+        ? `forwarded headers trusted from loopback${config.trustedProxies.length ? ` and ${config.trustedProxies.join(', ')}` : ''}`
+        : 'forwarded headers ignored (recorded IPs fall back to unknown)'
+    }`,
+  );
+  console.info(`[donutcash] rate limits: ${isSharedRateLimitStoreEnabled() ? 'shared SQLite windows' : 'in-process windows'}`);
+  console.info(`[donutcash] session cookie secure: ${config.cookieSecure}`);
   if (!config.isProduction) console.info('[donutcash] start the client with `npm run dev:web` (Vite proxies /api here)');
 });
 

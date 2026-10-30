@@ -26,6 +26,10 @@ var isProduction = process.env.NODE_ENV === "production";
 var port = intEnv("PORT", intEnv("HTTP_PLATFORM_PORT", 4e3, 1), 1);
 var appUrl = (process.env.APP_URL || "http://localhost:5173").replace(/\/+$/, "");
 var appUrlConfigured = Boolean(process.env.APP_URL);
+var trustProxyHeaders = process.env.TRUST_PROXY_HEADERS === "true";
+var trustedProxies = (process.env.TRUSTED_PROXY_IPS || "").split(",").map((entry) => entry.trim()).filter(Boolean);
+var cookieSecureOverride = process.env.COOKIE_SECURE;
+var cookieSecure = cookieSecureOverride === void 0 ? isProduction && appUrl.startsWith("https://") : cookieSecureOverride === "true";
 if (isProduction && !appUrlConfigured) {
   console.warn(
     `[config] APP_URL is not set, so email links and reset URLs fall back to ${appUrl}. Set APP_URL to the public origin before sending real email.`
@@ -64,6 +68,9 @@ var config = {
   appName: process.env.APP_NAME || "Donutcash",
   appUrl,
   appUrlConfigured,
+  trustProxyHeaders,
+  trustedProxies,
+  cookieSecure,
   databasePath,
   sessionDays: intEnv("SESSION_DAYS", 7),
   sessionSecret: resolveSessionSecret(),
@@ -120,13 +127,14 @@ function parseJson(raw, fallback) {
     return fallback;
   }
 }
-function clientIp(req) {
-  return req.ip ?? null;
-}
 var LOOPBACK_ADDRESSES = /* @__PURE__ */ new Set(["127.0.0.1", "0.0.0.0", "::1", "::ffff:127.0.0.1", "::ffff:0.0.0.0"]);
 function isLoopbackAddress(ip) {
   if (!ip) return true;
   return LOOPBACK_ADDRESSES.has(ip.trim().toLowerCase());
+}
+function clientIp(req) {
+  const ip = req.ip ?? null;
+  return ip && !isLoopbackAddress(ip) ? ip : null;
 }
 
 // server/lib/crypto.ts
@@ -351,10 +359,10 @@ function sessionCookieOptions(req) {
   return {
     httpOnly: true,
     sameSite: "lax",
-    // Only flag the cookie Secure when the request actually arrived over TLS.
-    // IIS reports the scheme through X-Forwarded-Proto, so a blanket Secure
-    // flag silently breaks sign-in whenever the site is served over plain HTTP.
-    secure: config.isProduction ? req ? req.secure : true : false,
+    // Derived from the configured public origin (HTTPS ⇒ Secure) instead of a
+    // forwarded protocol header, which a client can forge. COOKIE_SECURE
+    // overrides it for the rare production site served over plain HTTP.
+    secure: config.cookieSecure,
     path: "/",
     maxAge: config.sessionDays * 24 * 60 * 60 * 1e3
   };
@@ -367,7 +375,7 @@ function createSession(db2, userId, req) {
   db2.prepare(
     `INSERT INTO sessions (id, user_id, token_hash, created_at, expires_at, last_used_at, ip, user_agent)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(sessionId, userId, tokenHash(token), createdAt, expiresAt, createdAt, req.ip ?? null, req.get("user-agent") ?? null);
+  ).run(sessionId, userId, tokenHash(token), createdAt, expiresAt, createdAt, clientIp(req), req.get("user-agent") ?? null);
   return { token, sessionId, expiresAt };
 }
 function revokeSession(db2, sessionId) {
@@ -464,7 +472,42 @@ function authMiddleware(db2) {
 }
 
 // server/lib/rate-limit.ts
-import { createHash as createHash2 } from "node:crypto";
+var sharedDb = null;
+var calls = 0;
+function useSharedRateLimitStore(db2) {
+  sharedDb = db2;
+}
+function isSharedRateLimitStoreEnabled() {
+  return sharedDb !== null;
+}
+function consumeShared(db2, key, limit, windowMs) {
+  const now = Date.now();
+  const run = db2.transaction(() => {
+    calls += 1;
+    if (calls % 256 === 0) db2.prepare("DELETE FROM rate_limits WHERE expires_at < ?").run(now - windowMs);
+    const row = db2.prepare("SELECT window_start, hits FROM rate_limits WHERE key = ?").get(key);
+    if (!row || now - row.window_start >= windowMs) {
+      db2.prepare(
+        `INSERT INTO rate_limits (key, window_start, hits, expires_at) VALUES (?, ?, 1, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           window_start = excluded.window_start,
+           hits = 1,
+           expires_at = excluded.expires_at`
+      ).run(key, now, now + windowMs);
+      return { allowed: true, retryAfterSeconds: 0, remaining: Math.max(0, limit - 1) };
+    }
+    if (row.hits >= limit) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil((row.window_start + windowMs - now) / 1e3)),
+        remaining: 0
+      };
+    }
+    db2.prepare("UPDATE rate_limits SET hits = hits + 1 WHERE key = ?").run(key);
+    return { allowed: true, retryAfterSeconds: 0, remaining: Math.max(0, limit - row.hits - 1) };
+  });
+  return run.immediate();
+}
 var RateLimiter = class {
   hits = /* @__PURE__ */ new Map();
   limit;
@@ -481,6 +524,7 @@ var RateLimiter = class {
   }
   /** Returns false when the key is over its limit. */
   consume(key) {
+    if (sharedDb) return consumeShared(sharedDb, key, this.limit, this.windowMs);
     const now = Date.now();
     const list = this.live(key, now);
     if (list.length >= this.limit) {
@@ -496,8 +540,13 @@ var RateLimiter = class {
     return { allowed: true, retryAfterSeconds: 0, remaining: this.limit - list.length };
   }
   reset(key) {
+    if (sharedDb) {
+      sharedDb.prepare("DELETE FROM rate_limits WHERE key = ?").run(key);
+      return;
+    }
     this.hits.delete(key);
   }
+  /** Clears this limiter's local counters. Shared windows expire on their own. */
   clear() {
     this.hits.clear();
   }
@@ -506,15 +555,14 @@ var RateLimiter = class {
     for (const key of this.hits.keys()) this.live(key, now);
   }
 };
-function callerKey(req, scope) {
+function clientAddress(req) {
   const ip = req.ip ?? null;
-  if (!isLoopbackAddress(ip) && ip) return `${scope}:ip:${ip}`;
-  const agent = (req.get("user-agent") ?? "unknown").slice(0, 200);
-  const hash = createHash2("sha256").update(agent).digest("hex").slice(0, 16);
-  return `${scope}:agent:${hash}`;
+  return ip && !isLoopbackAddress(ip) ? ip : null;
 }
 var loginLimiter = new RateLimiter(10, 10 * 6e4);
+var loginIpLimiter = new RateLimiter(30, 10 * 6e4);
 var registerLimiter = new RateLimiter(8, 60 * 6e4);
+var registerGlobalLimiter = new RateLimiter(120, 60 * 6e4);
 var resetLimiter = new RateLimiter(6, 60 * 6e4);
 var mutationLimiter = new RateLimiter(240, 6e4);
 var ticketCreateLimiter = new RateLimiter(10, 60 * 6e4);
@@ -932,6 +980,23 @@ UPDATE settings
 `
   },
   {
+    version: 11,
+    name: "shared_rate_limit_windows",
+    // Limits used to live in per-process memory. Hosts that run more than one
+    // Node worker (IIS web garden, scale-out) would then hand every worker its
+    // own quota. The window lives in the database the workers already share, so
+    // the effective limit no longer multiplies by the worker count.
+    sql: `
+CREATE TABLE rate_limits (
+  key TEXT PRIMARY KEY,
+  window_start INTEGER NOT NULL,
+  hits INTEGER NOT NULL CHECK (hits >= 0),
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX rate_limits_expiry_idx ON rate_limits(expires_at);
+`
+  },
+  {
     version: 9,
     name: "legal_acceptance_and_self_exclusion",
     sql: `
@@ -1121,6 +1186,7 @@ function createDatabase(filePath = config.databasePath) {
     startingCredits: config.startingCredits,
     sessionDays: config.sessionDays
   });
+  useSharedRateLimitStore(filePath === ":memory:" ? null : db2);
   return db2;
 }
 var singleton = null;
@@ -2467,7 +2533,6 @@ function verifyEmailToken(db2, token) {
 }
 
 // server/routes/auth.ts
-var ipLimiter = new RateLimiter(30, 10 * 6e4);
 var requiredConsent = (message) => z2.boolean().refine((value) => value === true, { message });
 var registerSchema = z2.object({
   username: usernameSchema,
@@ -2500,7 +2565,9 @@ function createAuthRouter(db2) {
   const router = Router2();
   router.post("/register", async (req, res) => {
     const body = parse(registerSchema, req.body);
-    limiterGuard(registerLimiter.consume(callerKey(req, "register")));
+    const registerAddress = clientAddress(req);
+    if (registerAddress) limiterGuard(registerLimiter.consume(`register:ip:${registerAddress}`));
+    else limiterGuard(registerGlobalLimiter.consume("register:global"));
     if (!getSetting(db2, "platform.registration_open", true)) {
       throw new ApiError(403, "REGISTRATION_CLOSED", "Registration is currently closed.");
     }
@@ -2573,9 +2640,10 @@ function createAuthRouter(db2) {
   });
   router.post("/login", async (req, res) => {
     const body = parse(loginSchema, req.body);
-    const ipKey = `${callerKey(req, "login")}:${body.identifier.toLowerCase()}`;
+    const ipKey = `login:${body.identifier.toLowerCase()}`;
     limiterGuard(loginLimiter.consume(ipKey));
-    limiterGuard(ipLimiter.consume(callerKey(req, "login-ip")));
+    const loginAddress = clientAddress(req);
+    if (loginAddress) limiterGuard(loginIpLimiter.consume(`login-ip:${loginAddress}`));
     const row = db2.prepare(
       `SELECT id, username, email, role, status, password_hash, self_excluded_until FROM users
          WHERE email = ? COLLATE NOCASE OR username = ? COLLATE NOCASE`
@@ -2626,7 +2694,7 @@ function createAuthRouter(db2) {
     const { token } = createSession(db2, row.id, req);
     setSessionCookie(res, token, req);
     const email = getEmailConfig(db2);
-    const newDevice = previousSession && (previousSession.ip !== (req.ip ?? null) || previousSession.user_agent !== (req.get("user-agent") ?? null));
+    const newDevice = previousSession && (previousSession.ip !== clientIp(req) || previousSession.user_agent !== (req.get("user-agent") ?? null));
     if (newDevice && email.securityNotifications) {
       enqueueEmail(db2, {
         userId: row.id,
@@ -2635,7 +2703,7 @@ function createAuthRouter(db2) {
         payload: {
           username: row.username,
           at: now,
-          ip: req.ip ?? "Unknown",
+          ip: clientIp(req) ?? "Unknown",
           device: (req.get("user-agent") ?? "Unknown device").slice(0, 160)
         },
         dedupeKey: `new-login:${row.id}:${now.slice(0, 13)}`
@@ -2670,7 +2738,8 @@ function createAuthRouter(db2) {
   });
   router.post("/forgot-password", async (req, res) => {
     const body = parse(forgotSchema, req.body);
-    limiterGuard(resetLimiter.consume(callerKey(req, "forgot")));
+    const forgotAddress = clientAddress(req);
+    if (forgotAddress) limiterGuard(resetLimiter.consume(`forgot:ip:${forgotAddress}`));
     limiterGuard(resetLimiter.consume(`forgot-email:${body.email}`));
     const user = db2.prepare("SELECT id, username, email, status FROM users WHERE email = ? COLLATE NOCASE").get(body.email);
     let resetPath;
@@ -2709,7 +2778,8 @@ function createAuthRouter(db2) {
   });
   router.post("/reset-password", async (req, res) => {
     const body = parse(resetSchema, req.body);
-    limiterGuard(resetLimiter.consume(callerKey(req, "reset")));
+    const resetAddress = clientAddress(req);
+    if (resetAddress) limiterGuard(resetLimiter.consume(`reset:ip:${resetAddress}`));
     const row = db2.prepare(
       `SELECT pr.id, pr.user_id, pr.expires_at, pr.used_at, u.username, u.email
          FROM password_resets pr JOIN users u ON u.id = pr.user_id
@@ -6219,6 +6289,21 @@ function createAdminRouter(db2) {
       }))
     });
   });
+  router.get("/diagnostics/request", (req, res) => {
+    requirePermission(req, "settings.manage");
+    res.json({
+      socketAddress: req.socket.remoteAddress ?? null,
+      resolvedClientIp: clientIp(req),
+      forwardedFor: req.get("x-forwarded-for") ?? null,
+      forwardedProto: req.get("x-forwarded-proto") ?? null,
+      forwardedHost: req.get("x-forwarded-host") ?? null,
+      trustProxyHeaders: config.trustProxyHeaders,
+      trustedProxies: config.trustedProxies,
+      secureRequest: req.secure,
+      cookieSecure: config.cookieSecure,
+      guidance: config.trustProxyHeaders ? "Forwarded headers are trusted from the configured proxies. Confirm the proxy overwrites client-supplied values." : "Forwarded headers are ignored. Set TRUST_PROXY_HEADERS=true only after the proxy is configured to replace them."
+    });
+  });
   router.get("/staff", (req, res) => {
     requirePermission(req, "staff.manage");
     const staff = staffWorkload(db2).map((member) => {
@@ -7246,7 +7331,8 @@ function createAdminEmailRouter(db2) {
 function isSameOrigin(req, origin) {
   try {
     const target = new URL(origin);
-    const candidates = [req.get("host"), req.get("x-forwarded-host")?.split(",")[0]?.trim()];
+    const candidates = [req.get("host")];
+    if (config.trustProxyHeaders) candidates.push(req.get("x-forwarded-host")?.split(",")[0]?.trim());
     return candidates.some((host) => Boolean(host) && target.host.toLowerCase() === host.toLowerCase());
   } catch {
     return false;
@@ -7261,7 +7347,10 @@ function isPrivatePath(urlPath) {
 function createApp(db2) {
   const app2 = express();
   app2.disable("x-powered-by");
-  if (config.isProduction) app2.set("trust proxy", 1);
+  app2.set(
+    "trust proxy",
+    config.trustProxyHeaders ? (address) => isLoopbackAddress(address) || config.trustedProxies.includes(address) : false
+  );
   app2.use(
     helmet({
       contentSecurityPolicy: config.isProduction ? {
@@ -7292,12 +7381,18 @@ function createApp(db2) {
     if (origin && !config.allowedOrigins.includes(origin) && !isSameOrigin(req, origin)) {
       return next(new ApiError(403, "ORIGIN_BLOCKED", "This origin is not allowed to perform that action."));
     }
-    if (config.isProduction && !mutationLimiter.consume(callerKey(req, "mutate")).allowed) {
+    next();
+  });
+  app2.use(authMiddleware(db2));
+  app2.use("/api", (req, _res, next) => {
+    if (["GET", "HEAD", "OPTIONS"].includes(req.method) || !config.isProduction) return next();
+    const address = clientAddress(req);
+    const key = req.user ? `mutate:user:${req.user.id}` : address ? `mutate:ip:${address}` : null;
+    if (key && !mutationLimiter.consume(key).allowed) {
       return next(new ApiError(429, "RATE_LIMITED", "Too many requests. Please slow down."));
     }
     next();
   });
-  app2.use(authMiddleware(db2));
   app2.use("/api", (req, _res, next) => {
     if (!req.user?.legalAcceptanceRequired) return next();
     if (req.path.startsWith("/auth") || req.path.startsWith("/legal") || req.path.startsWith("/public")) return next();
@@ -7544,6 +7639,11 @@ var server = app.listen(config.port, () => {
   console.info(`[donutcash] database: ${config.databasePath}`);
   console.info(`[donutcash] client build: ${config.clientDist}`);
   console.info(`[donutcash] public url: ${config.appUrl}${config.appUrlConfigured ? "" : " (APP_URL not set; same-origin requests are trusted)"}`);
+  console.info(
+    `[donutcash] client ip: ${config.trustProxyHeaders ? `forwarded headers trusted from loopback${config.trustedProxies.length ? ` and ${config.trustedProxies.join(", ")}` : ""}` : "forwarded headers ignored (recorded IPs fall back to unknown)"}`
+  );
+  console.info(`[donutcash] rate limits: ${isSharedRateLimitStoreEnabled() ? "shared SQLite windows" : "in-process windows"}`);
+  console.info(`[donutcash] session cookie secure: ${config.cookieSecure}`);
   if (!config.isProduction) console.info("[donutcash] start the client with `npm run dev:web` (Vite proxies /api here)");
 });
 server.on("error", (error) => {

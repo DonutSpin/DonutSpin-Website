@@ -297,7 +297,9 @@ describe('authentication and account security', () => {
     expect(stored.tos_accepted).toBe(1);
     expect(stored.donut_rules_acknowledged).toBe(1);
     expect(Date.parse(stored.accepted_at)).not.toBeNaN();
-    expect(stored.ip).toBeTruthy();
+    // The test client connects from loopback and forwarded headers are ignored
+    // by default, so there is no trustworthy client address to record.
+    expect(stored.ip).toBeNull();
 
     const accepted = await account.agent.get('/api/legal/status');
     expectStatus(accepted, 200);

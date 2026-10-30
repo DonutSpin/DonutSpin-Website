@@ -217,12 +217,11 @@ npm start
 
 - Put the app behind a TLS-terminating reverse proxy and forward `/api` and the SPA to the Node process.
 - `APP_URL` must exactly match the browser origin. Production mutation requests with an unexpected `Origin` header are rejected.
-- Session cookies are `httpOnly`, `SameSite=Lax`, and `Secure` in production.
-- Run a single API process against a given SQLite file. SQLite and the in-process rate limiters are not designed for horizontal scaling with multiple writers.
+- Session cookies are `httpOnly`, `SameSite=Lax`, and `Secure` whenever `APP_URL` is an `https://` origin (`COOKIE_SECURE` overrides).
+- Rate-limit windows live in the SQLite database whenever a file database is used, so two Node workers on the same host cannot each allow a full quota. SQLite still prefers a single writer; do not scale to multiple hosts.
 - Keep `data/`, `.env`, and backups out of version control and public web roots.
 - `SESSION_SECRET` is optional at runtime: when it is missing in production the server generates a random secret once and persists it to `data/.session-secret`. Set it explicitly to control rotation. A provided value shorter than 32 characters still fails closed.
 - `PORT` is read first, then `HTTP_PLATFORM_PORT` (the port IIS assigns). The app never hard-codes a listening port.
-- Session cookies are marked `Secure` only when the request actually arrived over TLS, so a site served over plain HTTP can still sign in.
 - Production mutation requests must be same-origin or match `APP_URL`; a missing `APP_URL` trusts same-origin requests only.
 
 ### Deploying to MonsterASP (Windows / IIS + HttpPlatformHandler)
@@ -237,6 +236,19 @@ This is a **Node** app, not a static site. Publishing only the `dist` folder pro
 6. If the site still fails, enable **Control Panel → Websites → Logs → HttpPlatform** and read the startup output. A crash on boot, a missing dependency, or a native module that cannot load all show up there.
 
 The app writes the SQLite database to `data/` relative to the application root and expects that directory to stay writable across deploys. `web.config` hides it from the web.
+
+#### Client IPs behind IIS
+
+HttpPlatformHandler connects to Node from loopback and does **not** sanitise `X-Forwarded-For`. If the site forwards it untouched, a caller can choose any address: rotating that header would reset their rate-limit bucket and forge audit-log IPs. The app therefore ignores forwarded headers by default and records no IP rather than a fake one.
+
+To get real client IPs, have the host (or you, in the panel) make IIS **replace** the header before it reaches Node, for example with ARR's “preserve client IP in the following header” set to `X-Forwarded-For` after TLS terminates at IIS, or an approved URL Rewrite rule that sets `HTTP_X_FORWARDED_FOR` to `{REMOTE_ADDR}`. Only then set:
+
+| Variable | Purpose |
+| --- | --- |
+| `TRUST_PROXY_HEADERS` | `true` to trust forwarded headers from loopback (and `TRUSTED_PROXY_IPS`) |
+| `TRUSTED_PROXY_IPS` | Extra trusted proxy addresses, comma separated (loopback is always included) |
+
+After changing it, sign in as an admin and call `GET /api/admin/diagnostics/request` with a browser or `curl`. It reports `socketAddress`, `resolvedClientIp`, the raw forwarding headers, and whether trust is on. If `resolvedClientIp` still differs from your public IP, the proxy is not overwriting the header and trust must stay off. Note that a site-level `web.config` normally cannot grant itself permission to set `HTTP_X_FORWARDED_FOR`; that needs the hosting provider's IIS administrator.
 
 If you must stay on static hosting, host the API on a separate Node instance and point the client at it; a static deploy alone cannot process registration, games, wallet, tickets or cashier requests.
 

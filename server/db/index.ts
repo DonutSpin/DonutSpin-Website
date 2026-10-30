@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { config, ensureDataDir } from '../config.ts';
+import { useSharedRateLimitStore } from '../lib/rate-limit.ts';
 import { migrate, seed } from './schema.ts';
 
 export type DB = Database.Database;
@@ -17,6 +18,9 @@ export function createDatabase(filePath = config.databasePath): DB {
     startingCredits: config.startingCredits,
     sessionDays: config.sessionDays,
   });
+  // A file database is shared by every worker on the host, so rate-limit
+  // windows are counted there too. In-memory databases (tests) stay local.
+  useSharedRateLimitStore(filePath === ':memory:' ? null : db);
   return db;
 }
 

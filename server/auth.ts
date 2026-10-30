@@ -2,8 +2,8 @@ import type { Request, Response, NextFunction } from 'express';
 import type { CookieOptions } from 'express';
 import type { DB } from './db/index.ts';
 import { config, SESSION_COOKIE } from './config.ts';
+import { clientIp, nowIso } from './lib/core.ts';
 import { randomToken, tokenHash } from './lib/crypto.ts';
-import { nowIso } from './lib/core.ts';
 import { ROLE_PERMISSIONS, type AccountStatus, type Role, type SessionUser } from '../shared/types.ts';
 import { isCurrentLegalAcceptance, isSelfExclusionActive, latestLegalAcceptance } from './lib/legal.ts';
 
@@ -29,10 +29,10 @@ export function sessionCookieOptions(req?: Request): CookieOptions {
   return {
     httpOnly: true,
     sameSite: 'lax',
-    // Only flag the cookie Secure when the request actually arrived over TLS.
-    // IIS reports the scheme through X-Forwarded-Proto, so a blanket Secure
-    // flag silently breaks sign-in whenever the site is served over plain HTTP.
-    secure: config.isProduction ? (req ? req.secure : true) : false,
+    // Derived from the configured public origin (HTTPS ⇒ Secure) instead of a
+    // forwarded protocol header, which a client can forge. COOKIE_SECURE
+    // overrides it for the rare production site served over plain HTTP.
+    secure: config.cookieSecure,
     path: '/',
     maxAge: config.sessionDays * 24 * 60 * 60 * 1000,
   };
@@ -46,7 +46,7 @@ export function createSession(db: DB, userId: string, req: Request): { token: st
   db.prepare(
     `INSERT INTO sessions (id, user_id, token_hash, created_at, expires_at, last_used_at, ip, user_agent)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(sessionId, userId, tokenHash(token), createdAt, expiresAt, createdAt, req.ip ?? null, req.get('user-agent') ?? null);
+  ).run(sessionId, userId, tokenHash(token), createdAt, expiresAt, createdAt, clientIp(req), req.get('user-agent') ?? null);
   return { token, sessionId, expiresAt };
 }
 

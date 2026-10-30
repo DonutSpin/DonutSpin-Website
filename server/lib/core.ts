@@ -45,10 +45,6 @@ export function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   }
 }
 
-export function clientIp(req: { ip?: string }): string | null {
-  return req.ip ?? null;
-}
-
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '0.0.0.0', '::1', '::ffff:127.0.0.1', '::ffff:0.0.0.0']);
 
 /**
@@ -59,6 +55,16 @@ const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '0.0.0.0', '::1', '::ffff:127.0
 export function isLoopbackAddress(ip: string | null | undefined): boolean {
   if (!ip) return true;
   return LOOPBACK_ADDRESSES.has(ip.trim().toLowerCase());
+}
+
+/**
+ * The visitor's address, or null when only the local proxy is visible.
+ * Recording `127.0.0.1` in an audit log would look like a real address when it
+ * is really the absence of one.
+ */
+export function clientIp(req: { ip?: string }): string | null {
+  const ip = req.ip ?? null;
+  return ip && !isLoopbackAddress(ip) ? ip : null;
 }
 
 export function clampInt(value: number, min: number, max: number): number {

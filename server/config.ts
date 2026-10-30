@@ -35,6 +35,29 @@ const appUrl = (process.env.APP_URL || 'http://localhost:5173').replace(/\/+$/, 
  */
 const appUrlConfigured = Boolean(process.env.APP_URL);
 
+/**
+ * Forwarded headers are opt-in, because a proxy that passes `X-Forwarded-For`
+ * through untouched lets the caller choose their own address. IIS does exactly
+ * that unless Application Request Routing is configured to replace the header,
+ * so trusting it by default would hand every attacker a fresh rate-limit bucket
+ * and forge audit-log IPs. Turn this on only after the host confirms it strips
+ * or overwrites client-supplied forwarding headers.
+ */
+const trustProxyHeaders = process.env.TRUST_PROXY_HEADERS === 'true';
+const trustedProxies = (process.env.TRUSTED_PROXY_IPS || '')
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+
+/**
+ * Session cookies are Secure whenever the public origin is HTTPS; that does not
+ * depend on a forwarded protocol header. `COOKIE_SECURE` overrides it for the
+ * unusual case of production over plain HTTP.
+ */
+const cookieSecureOverride = process.env.COOKIE_SECURE;
+const cookieSecure =
+  cookieSecureOverride === undefined ? isProduction && appUrl.startsWith('https://') : cookieSecureOverride === 'true';
+
 if (isProduction && !appUrlConfigured) {
   console.warn(
     `[config] APP_URL is not set, so email links and reset URLs fall back to ${appUrl}. ` +
@@ -85,6 +108,9 @@ export const config = {
   appName: process.env.APP_NAME || 'Donutcash',
   appUrl,
   appUrlConfigured,
+  trustProxyHeaders,
+  trustedProxies,
+  cookieSecure,
   databasePath,
   sessionDays: intEnv('SESSION_DAYS', 7),
   sessionSecret: resolveSessionSecret(),

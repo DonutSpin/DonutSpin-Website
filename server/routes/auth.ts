@@ -20,15 +20,20 @@ import { recordAudit } from '../lib/audit.ts';
 import { notify } from '../lib/notifications.ts';
 import { enqueueEmail, getEmailConfig } from '../lib/email.ts';
 import { createEmailVerification, verifyEmailToken } from '../lib/email-verification.ts';
-import { callerKey, loginLimiter, registerLimiter, resetLimiter, RateLimiter } from '../lib/rate-limit.ts';
+import {
+  clientAddress,
+  loginIpLimiter,
+  loginLimiter,
+  registerGlobalLimiter,
+  registerLimiter,
+  resetLimiter,
+} from '../lib/rate-limit.ts';
 import { requireAuth } from '../lib/permissions.ts';
 import { assertNotInMaintenance } from '../lib/maintenance.ts';
 import { compactAmount } from '../../shared/amount.ts';
 import { recordLegalAcceptance } from '../lib/legal.ts';
 import { isSelfExclusionActive } from '../lib/legal.ts';
 import { LEGAL_PRIVACY_VERSION, LEGAL_TERMS_VERSION } from '../../shared/legal.ts';
-
-const ipLimiter = new RateLimiter(30, 10 * 60_000);
 
 const requiredConsent = (message: string) =>
   z.boolean().refine((value) => value === true, { message });
@@ -72,7 +77,11 @@ export function createAuthRouter(db: DB): Router {
 
   router.post('/register', async (req, res) => {
     const body = parse(registerSchema, req.body);
-    limiterGuard(registerLimiter.consume(callerKey(req, 'register')));
+    // Per-address registration limit when the real address is known; without
+    // one, a platform-wide ceiling stops scripted sign-ups from running wild.
+    const registerAddress = clientAddress(req);
+    if (registerAddress) limiterGuard(registerLimiter.consume(`register:ip:${registerAddress}`));
+    else limiterGuard(registerGlobalLimiter.consume('register:global'));
     if (!getSetting(db, 'platform.registration_open', true)) {
       throw new ApiError(403, 'REGISTRATION_CLOSED', 'Registration is currently closed.');
     }
@@ -152,9 +161,13 @@ export function createAuthRouter(db: DB): Router {
 
   router.post('/login', async (req, res) => {
     const body = parse(loginSchema, req.body);
-    const ipKey = `${callerKey(req, 'login')}:${body.identifier.toLowerCase()}`;
+    // Always bound attempts per account, independent of the address. A per-IP
+    // limit is added only when a trustworthy address exists, because behind IIS
+    // the socket is the proxy and a shared bucket would lock every player out.
+    const ipKey = `login:${body.identifier.toLowerCase()}`;
     limiterGuard(loginLimiter.consume(ipKey));
-    limiterGuard(ipLimiter.consume(callerKey(req, 'login-ip')));
+    const loginAddress = clientAddress(req);
+    if (loginAddress) limiterGuard(loginIpLimiter.consume(`login-ip:${loginAddress}`));
 
     const row = db
       .prepare(
@@ -226,7 +239,7 @@ export function createAuthRouter(db: DB): Router {
     const email = getEmailConfig(db);
     const newDevice =
       previousSession &&
-      (previousSession.ip !== (req.ip ?? null) || previousSession.user_agent !== (req.get('user-agent') ?? null));
+      (previousSession.ip !== clientIp(req) || previousSession.user_agent !== (req.get('user-agent') ?? null));
     if (newDevice && email.securityNotifications) {
       enqueueEmail(db, {
         userId: row.id,
@@ -235,7 +248,7 @@ export function createAuthRouter(db: DB): Router {
         payload: {
           username: row.username,
           at: now,
-          ip: req.ip ?? 'Unknown',
+          ip: clientIp(req) ?? 'Unknown',
           device: (req.get('user-agent') ?? 'Unknown device').slice(0, 160),
         },
         dedupeKey: `new-login:${row.id}:${now.slice(0, 13)}`,
@@ -273,7 +286,8 @@ export function createAuthRouter(db: DB): Router {
 
   router.post('/forgot-password', async (req, res) => {
     const body = parse(forgotSchema, req.body);
-    limiterGuard(resetLimiter.consume(callerKey(req, 'forgot')));
+    const forgotAddress = clientAddress(req);
+    if (forgotAddress) limiterGuard(resetLimiter.consume(`forgot:ip:${forgotAddress}`));
     limiterGuard(resetLimiter.consume(`forgot-email:${body.email}`));
 
     const user = db
@@ -318,7 +332,8 @@ export function createAuthRouter(db: DB): Router {
 
   router.post('/reset-password', async (req, res) => {
     const body = parse(resetSchema, req.body);
-    limiterGuard(resetLimiter.consume(callerKey(req, 'reset')));
+    const resetAddress = clientAddress(req);
+    if (resetAddress) limiterGuard(resetLimiter.consume(`reset:ip:${resetAddress}`));
     const row = db
       .prepare(
         `SELECT pr.id, pr.user_id, pr.expires_at, pr.used_at, u.username, u.email

@@ -22,6 +22,7 @@ import { can, requireAuth, requirePermission } from '../lib/permissions.ts';
 import { applyLedger, balanceOf, createWallet, mapLedgerRow, reconcileWallets, type LedgerRow } from '../lib/wallet.ts';
 import { hashPassword } from '../lib/crypto.ts';
 import { createSession, revokeAllSessions } from '../auth.ts';
+import { config as appConfig } from '../config.ts';
 import { loadUser } from '../auth.ts';
 import { notify } from '../lib/notifications.ts';
 import { recordAudit } from '../lib/audit.ts';
@@ -799,6 +800,28 @@ export function createAdminRouter(db: DB): Router {
         target: row.target,
         actor: row.actor,
       })),
+    });
+  });
+
+  /**
+   * Addressing diagnostics for verifying a proxy setup. Admin-only, and it
+   * echoes no headers that could carry credentials.
+   */
+  router.get('/diagnostics/request', (req, res) => {
+    requirePermission(req, 'settings.manage');
+    res.json({
+      socketAddress: req.socket.remoteAddress ?? null,
+      resolvedClientIp: clientIp(req),
+      forwardedFor: req.get('x-forwarded-for') ?? null,
+      forwardedProto: req.get('x-forwarded-proto') ?? null,
+      forwardedHost: req.get('x-forwarded-host') ?? null,
+      trustProxyHeaders: appConfig.trustProxyHeaders,
+      trustedProxies: appConfig.trustedProxies,
+      secureRequest: req.secure,
+      cookieSecure: appConfig.cookieSecure,
+      guidance: appConfig.trustProxyHeaders
+        ? 'Forwarded headers are trusted from the configured proxies. Confirm the proxy overwrites client-supplied values.'
+        : 'Forwarded headers are ignored. Set TRUST_PROXY_HEADERS=true only after the proxy is configured to replace them.',
     });
   });
 
