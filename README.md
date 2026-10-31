@@ -415,7 +415,7 @@ In both cases the new owner must accept the current Terms of Service and Privacy
 
 ## Legal, consent and self-exclusion
 
-The legal pages live at `/terms`, `/privacy`, and `/responsible-gambling`, with a `?lang=nl` Dutch version. They are templates and carry a visible notice that a qualified legal professional must review them before publication. Replace the placeholder operator, jurisdiction, and contact details in [`shared/legal.ts`](shared/legal.ts) and [`src/content/legal.ts`](src/content/legal.ts) first.
+The legal pages live at `/terms`, `/privacy`, and `/responsible-gambling`, with a `?lang=nl` Dutch version. The published text is maintained in [`src/content/legal.ts`](src/content/legal.ts); contact is handled through the in-app support desk, and the governing law is the Netherlands. Edit that file directly when the documents change.
 
 Consent is versioned in [`shared/legal.ts`](shared/legal.ts). Bump `LEGAL_TERMS_VERSION` or `LEGAL_PRIVACY_VERSION` whenever the published text changes: every account is then required to accept the new version before private API access resumes. Each acceptance stores the version, timestamp, IP address, and user agent in `legal_acceptances`; registration also records consent in the same transaction that creates the account.
 

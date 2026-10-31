@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle,
   ArrowLeft,
   ArrowUpRight,
   Check,
@@ -161,14 +160,7 @@ export function LegalPage({ kind }: { kind: LegalPageKind }) {
           </aside>
 
           <article className="min-w-0 max-w-[780px]">
-            <div className="rounded-xl border border-warning/30 bg-warning/[0.07] p-4">
-              <div className="flex items-start gap-2.5">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-                <p className="text-[11px] font-medium leading-relaxed text-warning">{doc.templateNotice}</p>
-              </div>
-            </div>
-
-            <p className="mt-9 text-[10px] font-bold uppercase tracking-[0.18em] text-gold">{doc.eyebrow}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gold">{doc.eyebrow}</p>
             <h1 className="mt-2 font-display text-[34px] font-semibold leading-tight tracking-[-0.035em] text-ink sm:text-[42px]">
               {doc.title}
             </h1>

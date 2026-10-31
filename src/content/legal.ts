@@ -1,6 +1,4 @@
 import {
-  LEGAL_CONTACT_EMAIL,
-  LEGAL_PRIVACY_EMAIL,
   LEGAL_LAST_UPDATED_EN,
   LEGAL_LAST_UPDATED_NL,
   LEGAL_PRIVACY_VERSION,
@@ -28,7 +26,6 @@ export interface LegalDocument {
   title: string;
   eyebrow: string;
   intro: string;
-  templateNotice: string;
   sections: LegalSection[];
 }
 
@@ -45,7 +42,6 @@ export const legalUi: Record<
     brandSub: string;
     back: string;
     contents: string;
-    template: string;
     version: string;
     lastUpdated: string;
     footerHeading: string;
@@ -79,8 +75,6 @@ export const legalUi: Record<
     brandSub: 'DonutSMP casino',
     back: 'Back to Donutcash',
     contents: 'On this page',
-    template:
-      'TEMPLATE — This legal document is a template for informational purposes only. It must be reviewed and adapted by a qualified legal professional before publication. It does not constitute legal advice.',
     version: `Version ${LEGAL_TERMS_VERSION}`,
     lastUpdated: `Last updated ${LEGAL_LAST_UPDATED_EN}`,
     footerHeading: 'Legal',
@@ -117,8 +111,6 @@ export const legalUi: Record<
     brandSub: 'DonutSMP casino',
     back: 'Terug naar Donutcash',
     contents: 'Op deze pagina',
-    template:
-      'SJABLOON — Dit juridische document is uitsluitend een sjabloon ter informatie. Het moet vóór publicatie worden beoordeeld en aangepast door een gekwalificeerde juridische professional. Dit is geen juridisch advies.',
     version: `Versie ${LEGAL_TERMS_VERSION}`,
     lastUpdated: `Laatst bijgewerkt ${LEGAL_LAST_UPDATED_NL}`,
     footerHeading: 'Juridisch',
@@ -215,8 +207,6 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       eyebrow: 'Legal agreement',
       intro:
         'These Terms govern your use of Donutcash, a website for entertainment with DonutSMP in-game currency. Please read them carefully before creating an account.',
-      templateNotice:
-        'TEMPLATE — Have this document reviewed by a qualified legal professional and replace the placeholders (operator identity, jurisdiction, and contact details) before publication.',
       sections: [
         {
           id: 'about',
@@ -346,8 +336,8 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'law',
           title: '14. Governing law and contact',
           paragraphs: [
-            'These Terms are governed by the laws of [insert the operator’s country], and the courts of [insert the competent courts] have jurisdiction, subject to any mandatory consumer protections that apply in your country of residence.',
-            `Questions about these Terms can be sent to ${LEGAL_CONTACT_EMAIL} or submitted through the support desk.`,
+            'These Terms are governed by the laws of the Netherlands. Disputes that cannot be resolved informally will be submitted to the competent courts of the Netherlands, without prejudice to any mandatory consumer protections that apply in your country of residence.',
+            'Questions about these Terms can be submitted through the support desk in your account.',
           ],
         },
       ],
@@ -357,8 +347,6 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       eyebrow: 'Juridische overeenkomst',
       intro:
         'Deze voorwaarden gelden voor je gebruik van Donutcash, een website voor entertainment met DonutSMP in-game valuta. Lees ze zorgvuldig voordat je een account aanmaakt.',
-      templateNotice:
-        'SJABLOON — Laat dit document beoordelen door een gekwalificeerde juridische professional en vervang de placeholders (identiteit van de exploitant, rechtsgebied en contactgegevens) vóór publicatie.',
       sections: [
         {
           id: 'about',
@@ -488,8 +476,8 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'law',
           title: '14. Toepasselijk recht en contact',
           paragraphs: [
-            'Deze Voorwaarden worden beheerst door het recht van [land van de exploitant invoegen], en de rechtbanken van [bevoegde rechtbanken invoegen] hebben rechtsmacht, met inachtneming van dwingende consumentenbescherming in je woonland.',
-            `Vragen over deze Voorwaarden kun je sturen naar ${LEGAL_CONTACT_EMAIL} of indienen via de supportdesk.`,
+            'Deze Voorwaarden worden beheerst door het recht van Nederland. Geschillen die niet in onderling overleg kunnen worden opgelost, worden voorgelegd aan de bevoegde rechtbanken in Nederland, met inachtneming van dwingende consumentenbescherming in je woonland.',
+            'Vragen over deze Voorwaarden kun je indienen via de supportdesk in je account.',
           ],
         },
       ],
@@ -501,15 +489,13 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       eyebrow: 'Your data and your rights',
       intro:
         'This policy explains what data Donutcash collects, why we collect it, how long we keep it, and how you can request access or deletion.',
-      templateNotice:
-        'TEMPLATE — Have this policy reviewed by a qualified legal professional. Replace the placeholder controller details, contact addresses, retention periods, and transfer information before publication.',
       sections: [
         {
           id: 'controller',
           title: '1. Who is responsible for your data',
           paragraphs: [
-            'The operator of Donutcash is the data controller for the personal data described in this policy. The operator’s legal name, address, and company registration details must be inserted here before publication.',
-            `Privacy questions and requests can be sent to ${LEGAL_PRIVACY_EMAIL}. You can also open a support ticket from your account.`,
+            'The operator of Donutcash is the data controller for the personal data described in this policy.',
+            'Privacy questions and requests can be submitted through the support desk in your account.',
           ],
         },
         {
@@ -552,7 +538,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
             'Notification and email delivery metadata: up to 12 months, and delivery provider logs up to 90 days.',
           ],
           paragraphs: [
-            'When a retention period ends, we delete or anonymise the data. We may keep limited records longer where the law requires it, or where necessary to establish, exercise, or defend legal claims. These periods are template choices and must be confirmed against the operator’s legal obligations.',
+            'When a retention period ends, we delete or anonymise the data. We may keep limited records longer where the law requires it, or where necessary to establish, exercise, or defend legal claims.',
           ],
         },
         {
@@ -590,7 +576,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'deletion',
           title: '9. How to request deletion',
           paragraphs: [
-            `Send a deletion request to ${LEGAL_PRIVACY_EMAIL} from the email address on your account, or open a support ticket. We may ask for information to verify that the request comes from the account holder.`,
+            'Submit a deletion request through the support desk in your account. We may ask for information to verify that the request comes from the account holder.',
             'We aim to respond within 30 days. We will delete or anonymise data that we are not required to keep. We may retain records needed for legal obligations, ledger integrity, fraud prevention, dispute resolution, security, or an active self-exclusion. We will explain any retained category and the reason.',
           ],
         },
@@ -619,7 +605,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'contact',
           title: '13. Contact',
           paragraphs: [
-            `For privacy questions, access requests, corrections, or deletion requests, contact ${LEGAL_PRIVACY_EMAIL}. For account or gameplay support, use the support desk.`,
+            'For privacy questions, access requests, corrections, or deletion requests, use the support desk in your account.',
           ],
         },
       ],
@@ -629,15 +615,13 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       eyebrow: 'Jouw gegevens en rechten',
       intro:
         'Dit beleid legt uit welke gegevens Donutcash verzamelt, waarom we ze verzamelen, hoe lang we ze bewaren en hoe je inzage of verwijdering kunt aanvragen.',
-      templateNotice:
-        'SJABLOON — Laat dit beleid beoordelen door een gekwalificeerde juridische professional. Vervang de placeholders voor de verwerkingsverantwoordelijke, contactadressen, bewaartermijnen en doorgifte-informatie vóór publicatie.',
       sections: [
         {
           id: 'controller',
           title: '1. Wie is verantwoordelijk voor je gegevens',
           paragraphs: [
-            'De exploitant van Donutcash is de verwerkingsverantwoordelijke voor de persoonsgegevens die in dit beleid worden beschreven. De juridische naam, het adres en de registratiegegevens van de exploitant moeten hier vóór publicatie worden ingevuld.',
-            `Vragen en verzoeken over privacy kun je sturen naar ${LEGAL_PRIVACY_EMAIL}. Je kunt ook een supportticket openen vanuit je account.`,
+            'De exploitant van Donutcash is de verwerkingsverantwoordelijke voor de persoonsgegevens die in dit beleid worden beschreven.',
+            'Vragen en verzoeken over privacy kun je indienen via de supportdesk in je account.',
           ],
         },
         {
@@ -680,7 +664,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
             'Metadata over meldingen en e-mailbezorging: maximaal 12 maanden, en logbestanden van de bezorgprovider maximaal 90 dagen.',
           ],
           paragraphs: [
-            'Wanneer een bewaartermijn eindigt, verwijderen of anonimiseren we de gegevens. We kunnen beperkte gegevens langer bewaren als de wet dat vereist of als dat nodig is om juridische claims in te stellen, uit te oefenen of te verdedigen. Deze termijnen zijn sjabloonkeuzes en moeten worden afgestemd op de wettelijke verplichtingen van de exploitant.',
+            'Wanneer een bewaartermijn eindigt, verwijderen of anonimiseren we de gegevens. We kunnen beperkte gegevens langer bewaren als de wet dat vereist of als dat nodig is om juridische claims in te stellen, uit te oefenen of te verdedigen.',
           ],
         },
         {
@@ -718,7 +702,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'deletion',
           title: '9. Hoe je verwijdering aanvraagt',
           paragraphs: [
-            `Stuur een verwijderverzoek naar ${LEGAL_PRIVACY_EMAIL} vanaf het e-mailadres van je account, of open een supportticket. We kunnen informatie vragen om te controleren of het verzoek van de accounthouder afkomstig is.`,
+            'Dien een verwijderverzoek in via de supportdesk in je account. We kunnen informatie vragen om te controleren of het verzoek van de accounthouder afkomstig is.',
             'We streven ernaar binnen 30 dagen te reageren. We verwijderen of anonimiseren gegevens die we niet hoeven te bewaren. We kunnen gegevens bewaren die nodig zijn voor wettelijke verplichtingen, grootboekintegriteit, fraudepreventie, geschilbeslechting, beveiliging of een actieve zelfuitsluiting. We leggen uit welke categorie wordt bewaard en waarom.',
           ],
         },
@@ -747,7 +731,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'contact',
           title: '13. Contact',
           paragraphs: [
-            `Voor privacyvragen, inzageverzoeken, correcties of verwijderverzoeken kun je contact opnemen via ${LEGAL_PRIVACY_EMAIL}. Voor account- of spelondersteuning gebruik je de supportdesk.`,
+            'Voor privacyvragen, inzageverzoeken, correcties of verwijderverzoeken gebruik je de supportdesk in je account.',
           ],
         },
       ],
@@ -759,8 +743,6 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       eyebrow: 'Play for fun, not for survival',
       intro:
         'Donutcash uses in-game currency only, but gambling behaviour can still become harmful. This page explains how to keep play under control and where to find help.',
-      templateNotice:
-        'TEMPLATE — This responsible gambling page is a template and must be reviewed by a qualified legal professional before publication. Replace placeholder contact details and confirm that the listed support services are appropriate for your audience and jurisdiction.',
       sections: [
         {
           id: 'important',
@@ -829,8 +811,6 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       eyebrow: 'Speel voor plezier, niet om te overleven',
       intro:
         'Donutcash gebruikt alleen in-game valuta, maar gokgedrag kan nog steeds schadelijk worden. Deze pagina legt uit hoe je het spelen onder controle houdt en waar je hulp kunt vinden.',
-      templateNotice:
-        'SJABLOON — Deze pagina over verantwoord spelen is een sjabloon en moet vóór publicatie worden beoordeeld door een gekwalificeerde juridische professional. Vervang de placeholders voor contactgegevens en controleer of de genoemde hulpdiensten passen bij je doelgroep en rechtsgebied.',
       sections: [
         {
           id: 'important',
