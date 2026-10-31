@@ -12,7 +12,15 @@ import type { Database } from 'better-sqlite3';
  * 4. A pending migration takes a verified snapshot first; startup aborts if the
  *    snapshot cannot be created or passes `integrity_check`.
  */
-const migrations: { version: number; name: string; sql: string }[] = [
+type Migration = {
+  version: number;
+  name: string;
+  /** Plain SQL migrations run first; run() is for changes SQLite cannot express conditionally. */
+  sql?: string;
+  run?: (db: Database) => void;
+};
+
+const migrations: Migration[] = [
   {
     version: 1,
     name: 'initial_schema',
@@ -650,6 +658,20 @@ CREATE TABLE rain_participants (
 CREATE INDEX rain_participants_user_idx ON rain_participants(user_id, joined_at DESC);
 `,
   },
+  {
+    version: 17,
+    name: 'rain_refunded_amount_backfill',
+    // Migration 16 shipped and was applied on existing databases before the
+    // refund column was added to its SQL. Editing an applied migration does not
+    // run it again, so those databases need this additive repair. Fresh
+    // databases already have the column and the guard makes this a no-op.
+    run: (db) => {
+      const columns = db.prepare('PRAGMA table_info(rain_events)').all() as { name: string }[];
+      if (columns.length === 0) return;
+      if (columns.some((column) => column.name === 'refunded_amount')) return;
+      db.exec('ALTER TABLE rain_events ADD COLUMN refunded_amount INTEGER NOT NULL DEFAULT 0');
+    },
+  },
 ];
 
 export function pendingMigrations(db: Database): { version: number; name: string }[] {
@@ -673,7 +695,8 @@ export function migrate(db: Database): void {
   for (const migration of migrations) {
     if (!pending.some((entry) => entry.version === migration.version)) continue;
     db.transaction(() => {
-      db.exec(migration.sql);
+      if (migration.sql) db.exec(migration.sql);
+      migration.run?.(db);
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
         migration.version,
         migration.name,

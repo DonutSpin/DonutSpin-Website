@@ -378,6 +378,11 @@ export function joinRain(db: DB, user: { id: string; username: string }): RainVi
     if (new Date(active.ends_at).getTime() <= now) {
       throw conflict('This rain has already ended.', 'RAIN_ENDED');
     }
+    // The creator already paid the whole pool. Letting them join would pay part
+    // of it straight back and turn a funded rain into a free one.
+    if (active.creator_id === user.id) {
+      throw conflict('You funded this rain, so you cannot join it.', 'RAIN_SELF_JOIN');
+    }
     db.prepare(
       'INSERT OR IGNORE INTO rain_participants (rain_id, user_id, joined_at) VALUES (?, ?, ?)',
     ).run(active.id, user.id, new Date(now).toISOString());

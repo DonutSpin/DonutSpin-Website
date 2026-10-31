@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createDatabase, type DB } from '../server/db/index.ts';
+import { migrate } from '../server/db/schema.ts';
 import { createApp } from '../server/app.ts';
 import { hashPassword } from '../server/lib/crypto.ts';
 import { createWallet } from '../server/lib/wallet.ts';
@@ -109,9 +110,16 @@ describe('rain creation and escrow', () => {
     expect(created.body.rain.joined).toBe(false);
 
     expect(walletBalance(ids.creator!)).toBe(before - 250_000);
+    expect(created.body.balance).toBe(before - 250_000);
     const escrow = rainLedgerEntries(created.body.rain.id);
     expect(escrow).toEqual([{ type: 'admin_adjustment', amount: -250_000, user_id: ids.creator }]);
     assertLedgerMatchesWallet(ids.creator!);
+
+    // The creator already funded the pool; joining would pay part of it back.
+    const selfJoin = await agents.creator!.post('/api/rain/join').set(CSRF).send({});
+    expectStatus(selfJoin, 409);
+    expect(selfJoin.body.error.code).toBe('RAIN_SELF_JOIN');
+    expect(walletBalance(ids.creator!)).toBe(before - 250_000);
 
     // Another user cannot start a second rain while this one is live.
     const secondBefore = walletBalance(ids.alpha!);
@@ -400,6 +408,28 @@ describe('concurrency and authorization', () => {
     expect(settled.body.rain.payoutPerParticipant).toBe(100_000);
     expect(walletBalance(ids.beta!)).toBe(betaBefore + 100_000);
     assertLedgerMatchesWallet(ids.beta!);
+  });
+
+  it('repairs a database that applied the original rain migration without the refund column', () => {
+    const drifted = createDatabase(':memory:');
+    try {
+      drifted.exec('ALTER TABLE rain_events DROP COLUMN refunded_amount');
+      drifted.prepare('DELETE FROM schema_migrations WHERE version = 17').run();
+      expect(
+        (drifted.prepare('PRAGMA table_info(rain_events)').all() as { name: string }[]).map((column) => column.name),
+      ).not.toContain('refunded_amount');
+
+      migrate(drifted);
+
+      expect(
+        (drifted.prepare('PRAGMA table_info(rain_events)').all() as { name: string }[]).map((column) => column.name),
+      ).toContain('refunded_amount');
+      expect(
+        drifted.prepare('SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 17').get(),
+      ).toEqual({ count: 1 });
+    } finally {
+      drifted.close();
+    }
   });
 
   it('exposes history to rain managers only and keeps a read-only record', async () => {

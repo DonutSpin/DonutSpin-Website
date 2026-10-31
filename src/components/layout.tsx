@@ -44,7 +44,7 @@ import { ROLE_LABELS, roleHasPermission, type NotificationItem, type Permission,
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api, errorMessage } from '../lib/api';
-import { money, timeAgo, titleCase } from '../lib/format';
+import { exactMoney, money, timeAgo, titleCase } from '../lib/format';
 import { MaintenanceBanner } from '../pages/maintenance';
 import { LegalDisclaimer, LegalFooterLinks } from './legal';
 import { BrandMark } from './BrandMark';
@@ -780,7 +780,7 @@ export function AppShell() {
             <Link
               to="/wallet"
               className="group flex h-9 items-center gap-2 rounded-xl border border-gold/22 bg-gradient-to-r from-gold/[0.11] to-gold/[0.03] px-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-all hover:border-gold/35 hover:from-gold/[0.16]"
-              title="Open wallet"
+              title={`${exactMoney(user.balance)} money — open wallet`}
             >
               <Coins className="h-4 w-4 text-gold" />
               <span className="font-display text-[13px] font-semibold text-gold-bright tnum">{money(user.balance)}</span>

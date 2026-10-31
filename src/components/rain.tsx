@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CloudRain, Coins, Sparkles, Timer, Users } from 'lucide-react';
-import type { RainStateResponse, RainView } from '../../shared/types';
+import type { RainCreateResponse, RainStateResponse, RainView } from '../../shared/types';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api, ApiRequestError, errorMessage } from '../lib/api';
-import { money } from '../lib/format';
+import { exactMoney, money } from '../lib/format';
 import { AmountInput, Badge, Button, Card, Field, Select, cn } from './ui';
 
 const COUNTDOWN_PRESETS = [15, 30, 60, 120, 300];
@@ -22,7 +22,7 @@ function durationOf(rain: RainView): number {
 }
 
 export function RainWidget() {
-  const { user } = useAuth();
+  const { user, updateBalance } = useAuth();
   const { success, error: toastError } = useToast();
   const [rain, setRain] = useState<RainView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,14 +140,21 @@ export function RainWidget() {
     setBusy('create');
     setBehaviorError(null);
     try {
-      const response = await api.post<{ rain: RainView }>('/rain', {
+      const response = await api.post<RainCreateResponse>('/rain', {
         amount: amountValue,
         countdownSeconds: countdown,
       });
       setRain(response.rain);
+      // The server already took the pool out of the wallet. Publish that exact
+      // balance now instead of waiting for the next background sync, so a
+      // compact header such as "1B" can never make the payment look free.
+      updateBalance(response.balance);
       setCreateOpen(false);
       setAmount('');
-      success('Rain started', `${money(amountValue)} money is raining for ${countdown} seconds.`);
+      success(
+        'Rain funded',
+        `${exactMoney(amountValue)} money was deducted from your balance and is in escrow for ${countdown} seconds.`,
+      );
     } catch (error) {
       setBehaviorError(errorMessage(error));
       toastError('Could not start the rain', errorMessage(error));
@@ -264,7 +271,11 @@ export function RainWidget() {
                 )}
               </div>
 
-              {rain.joined ? (
+              {rain.isCreator ? (
+                <span className="rounded-lg border border-gold/20 bg-gold/[0.06] px-3 py-2 text-[11px] font-medium text-gold">
+                  You are funding this rain
+                </span>
+              ) : rain.joined ? (
                 <Button
                   variant="secondary"
                   loading={busy === 'leave'}
@@ -287,7 +298,8 @@ export function RainWidget() {
             </div>
             {rain.isCreator && (
               <p className="mt-3 text-[10.5px] text-faint">
-                You funded this pool. The full amount is held in escrow until the countdown ends.
+                You paid {exactMoney(rain.totalAmount)} money from your balance. The full pool is held in escrow until
+                the countdown ends.
               </p>
             )}
           </>
@@ -343,7 +355,7 @@ export function RainWidget() {
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_170px]">
               <Field
                 label="Prize pool"
-                hint={`Between ${money(limits.minAmount)} and ${money(limits.maxAmount)} money. Available: ${money(user?.balance ?? 0)}.`}
+                hint={`Between ${money(limits.minAmount)} and ${money(limits.maxAmount)} money. Available: ${exactMoney(user?.balance ?? 0)}.`}
               >
                 <AmountInput
                   min={limits.minAmount}
@@ -368,11 +380,25 @@ export function RainWidget() {
             {(amountTooLow || amountTooHigh || overBalance) && (
               <p className="mt-2 text-[10.5px] text-danger">
                 {overBalance
-                  ? 'The pool is larger than your available balance.'
+                  ? `The pool is larger than your available balance of ${exactMoney(user?.balance ?? 0)}.`
                   : `Use an amount between ${money(limits.minAmount)} and ${money(limits.maxAmount)}.`}
               </p>
             )}
             {behaviorError && <p className="mt-2 text-[10.5px] text-danger">{behaviorError}</p>}
+
+            {amountValid && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gold/20 bg-gold/[0.05] px-3 py-2">
+                <span className="text-[11px] text-muted">
+                  You pay <strong className="font-semibold text-ink tnum">{exactMoney(amountValue)}</strong> now
+                </span>
+                <span className="text-[11px] text-muted">
+                  Balance after{' '}
+                  <strong className="font-semibold text-gold-bright tnum">
+                    {exactMoney((user?.balance ?? 0) - amountValue)}
+                  </strong>
+                </span>
+              </div>
+            )}
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
               <p className="text-[10.5px] leading-relaxed text-faint">

@@ -19,6 +19,7 @@ import {
   RAIN_MIN_SETTING,
 } from '../lib/rain.ts';
 import { parse } from '../lib/validation.ts';
+import { balanceOf } from '../lib/wallet.ts';
 
 const createSchema = z.object({
   amount: amountSchema({ max: 1_000_000_000_000, label: 'rain' }),
@@ -59,7 +60,7 @@ export function createRainRouter(db: DB): Router {
     // Moving money out of a wallet follows the same hold rules as the cashier.
     assertNotOnHold(user);
     const body = parse(createSchema, req.body);
-    res.status(201).json({ rain: createRain(db, user, body) });
+    res.status(201).json({ rain: createRain(db, user, body), balance: balanceOf(db, user.id) });
   });
 
   router.post('/join', (req, res) => {

@@ -639,6 +639,12 @@ export interface RainStateResponse {
   rain: RainView | null;
 }
 
+/** Creation returns the debited wallet balance so the client can update instantly. */
+export interface RainCreateResponse {
+  rain: RainView;
+  balance: number;
+}
+
 export interface RainLimits {
   minAmount: number;
   maxAmount: number;

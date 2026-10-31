@@ -7,6 +7,14 @@ export function money(value: number): string {
   return compactAmount(Math.trunc(value));
 }
 
+/**
+ * Exact grouped money for points where a compact balance would hide a change
+ * (for example a 100K rain on a 1B balance still displays as "1B").
+ */
+export function exactMoney(value: number): string {
+  return numberFormatter.format(Math.trunc(value));
+}
+
 /** Non-money counters (users, tickets, rounds) stay exact and grouped. */
 export function count(value: number): string {
   return numberFormatter.format(Math.trunc(value));
