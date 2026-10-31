@@ -224,6 +224,26 @@ describe('rain creation and escrow', () => {
     for (const userId of [ids.creator!, ids.alpha!, ids.beta!]) assertLedgerMatchesWallet(userId);
   });
 
+  it('accepts any custom countdown inside the bounds, not only presets', async () => {
+    const first = await createRain(agents.alpha!, 100_000, 37);
+    expectStatus(first, 201);
+    expect(first.body.rain.secondsRemaining).toBeGreaterThan(0);
+    expect(first.body.rain.secondsRemaining).toBeLessThanOrEqual(37);
+    const endsAt = new Date(first.body.rain.countdownEndsAt).getTime();
+    const createdAt = new Date(first.body.rain.createdAt).getTime();
+    expect(Math.round((endsAt - createdAt) / 1000)).toBe(37);
+
+    forceRainEnded(first.body.rain.id);
+    const second = await createRain(agents.alpha!, 100_000, 137);
+    expectStatus(second, 201);
+    expect(
+      Math.round(
+        (new Date(second.body.rain.countdownEndsAt).getTime() - new Date(second.body.rain.createdAt).getTime()) / 1000,
+      ),
+    ).toBe(137);
+    forceRainEnded(second.body.rain.id);
+  });
+
   it('rejects amounts and countdowns outside the configured bounds', async () => {
     const alphaBefore = walletBalance(ids.alpha!);
     const tooSmall = await createRain(agents.alpha!, 9_999, 30);

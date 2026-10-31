@@ -673,6 +673,100 @@ CREATE INDEX rain_participants_user_idx ON rain_participants(user_id, joined_at 
     },
   },
   {
+    version: 19,
+    name: 'giveaways_and_claims',
+    // Giveaways keep their prize in escrow, reveal a commitment before the draw
+    // and store one unique winner row per entrant so a duplicate payout is
+    // impossible at the database level. Sponsor funding is deducted when staff
+    // approves the request, before a giveaway can be published.
+    sql: `
+CREATE TABLE giveaway_sponsorships (
+  id TEXT PRIMARY KEY,
+  ticket_id TEXT NOT NULL UNIQUE REFERENCES tickets(id) ON DELETE CASCADE,
+  sponsor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  prize_amount INTEGER NOT NULL CHECK (prize_amount > 0),
+  winner_count INTEGER NOT NULL CHECK (winner_count BETWEEN 1 AND 50),
+  duration_seconds INTEGER NOT NULL CHECK (duration_seconds BETWEEN 300 AND 2592000),
+  title TEXT,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','published','cancelled')),
+  reviewer_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  review_reason TEXT,
+  reviewed_at TEXT,
+  escrow_ledger_id TEXT REFERENCES ledger(id),
+  giveaway_id TEXT UNIQUE,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX giveaway_sponsorships_status_idx ON giveaway_sponsorships(status, created_at DESC);
+CREATE INDEX giveaway_sponsorships_sponsor_idx ON giveaway_sponsorships(sponsor_user_id, created_at DESC);
+
+CREATE TABLE giveaways (
+  id TEXT PRIMARY KEY,
+  reference TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  prize_amount INTEGER NOT NULL CHECK (prize_amount > 0),
+  winner_count INTEGER NOT NULL CHECK (winner_count BETWEEN 1 AND 50),
+  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','active','completed','cancelled')),
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  funded_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  sponsor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  funding_kind TEXT NOT NULL CHECK (funding_kind IN ('staff','sponsor')),
+  sponsorship_id TEXT UNIQUE REFERENCES giveaway_sponsorships(id) ON DELETE SET NULL,
+  escrow_ledger_id TEXT REFERENCES ledger(id),
+  refund_ledger_id TEXT REFERENCES ledger(id),
+  draw_commitment TEXT NOT NULL,
+  draw_seed TEXT NOT NULL,
+  drawn_at TEXT,
+  completed_at TEXT,
+  cancelled_at TEXT,
+  cancellation_reason TEXT,
+  created_at TEXT NOT NULL,
+  CHECK (ends_at > starts_at)
+);
+CREATE INDEX giveaways_status_idx ON giveaways(status, starts_at, ends_at);
+CREATE INDEX giveaways_created_idx ON giveaways(created_at DESC);
+CREATE INDEX giveaways_sponsor_idx ON giveaways(sponsor_user_id, created_at DESC);
+
+CREATE TABLE giveaway_entries (
+  giveaway_id TEXT NOT NULL REFERENCES giveaways(id) ON DELETE RESTRICT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  joined_at TEXT NOT NULL,
+  PRIMARY KEY (giveaway_id, user_id)
+);
+CREATE INDEX giveaway_entries_user_idx ON giveaway_entries(user_id, joined_at DESC);
+
+CREATE TABLE giveaway_winners (
+  id TEXT PRIMARY KEY,
+  giveaway_id TEXT NOT NULL REFERENCES giveaways(id) ON DELETE RESTRICT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  username_snapshot TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  payout_amount INTEGER NOT NULL CHECK (payout_amount > 0),
+  claim_status TEXT NOT NULL DEFAULT 'unclaimed' CHECK (claim_status IN ('unclaimed','pending','approved','rejected')),
+  claim_ticket_id TEXT REFERENCES tickets(id) ON DELETE SET NULL,
+  approved_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  approved_at TEXT,
+  rejected_at TEXT,
+  rejection_reason TEXT,
+  payout_ledger_id TEXT REFERENCES ledger(id),
+  selected_at TEXT NOT NULL,
+  UNIQUE (giveaway_id, user_id),
+  UNIQUE (giveaway_id, position)
+);
+CREATE INDEX giveaway_winners_user_idx ON giveaway_winners(user_id, selected_at DESC);
+CREATE INDEX giveaway_winners_claim_idx ON giveaway_winners(claim_status, selected_at DESC);
+
+INSERT INTO support_categories (key, label, description, enabled, default_priority, request_kinds, sort_order)
+VALUES
+  ('giveaway_claim', 'Giveaway claim', 'Claim a prize you won in a giveaway. Staff verify the win before paying it out.', 1, 'high', '[]', 80),
+  ('giveaway_sponsorship', 'Giveaway sponsorship', 'Fund a community giveaway from your balance. Staff review the request first.', 1, 'normal', '[]', 85)
+ON CONFLICT(key) DO NOTHING;
+`,
+  },
+  {
     version: 18,
     name: 'concurrent_rains_and_verified_chat',
     sql: `

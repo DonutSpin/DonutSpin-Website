@@ -68,6 +68,7 @@ describe('verified room chat', () => {
     expect(sent.body.message.body).toBe('hello room');
     expect(sent.body.message.username).toBe('chat_alice');
     expect(sent.body.message.userId).toBe(ids.alice);
+    expect(sent.body.message.role).toBe('user');
 
     const read = await agents.bob!.get('/api/chat');
     expectStatus(read, 200);
@@ -153,6 +154,25 @@ describe('verified room chat', () => {
     expect(after.body.activeRains).toEqual([]);
     expect(after.body.latestRain.id).toBe(rainId);
     expect(after.body.latestRain.status).toBe('settled');
+  });
+
+  it('reports the current server-side role and updates it when permissions change', async () => {
+    const sent = await agents.alice!.post('/api/chat/messages').set(CSRF).send({ body: 'role check' });
+    expectStatus(sent, 201);
+    expect(sent.body.message.role).toBe('user');
+
+    db.prepare("UPDATE users SET role = 'moderator' WHERE id = ?").run(ids.alice);
+
+    const read = await agents.bob!.get('/api/chat');
+    expectStatus(read, 200);
+    const updated = read.body.messages.find((message: { id: string }) => message.id === sent.body.message.id);
+    expect(updated.role).toBe('moderator');
+
+    const promotedSend = await agents.alice!.post('/api/chat/messages').set(CSRF).send({ body: 'promoted' });
+    expectStatus(promotedSend, 201);
+    expect(promotedSend.body.message.role).toBe('moderator');
+
+    db.prepare("UPDATE users SET role = 'user' WHERE id = ?").run(ids.alice);
   });
 
   it('anonymizes chat history when an account is deleted', async () => {

@@ -19,6 +19,7 @@ import { money, signedCredits, timeAgo } from '../lib/format';
 import { PageHeader } from '../components/layout';
 import { GameCard } from '../components/GameArt';
 import { ChatPanel } from '../components/chat';
+import { GiveawayWidget } from '../components/giveaway-widget';
 import {
   Alert,
   Button,
@@ -185,6 +186,8 @@ export function HomePage() {
         />
       </div>
 
+      <GiveawayWidget />
+
       <section>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -335,7 +338,9 @@ export function HomePage() {
         </div>
       </div>
       </div>
-      <ChatPanel />
+      <div className="hidden xl:block">
+        <ChatPanel />
+      </div>
     </div>
   );
 }

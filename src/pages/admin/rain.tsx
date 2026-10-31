@@ -166,8 +166,8 @@ export function AdminRainPage() {
             {error && <Alert tone="error">{error}</Alert>}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-[10.5px] leading-relaxed text-faint">
-                Countdowns stay fixed at 10–300 seconds. Limits never change an existing rain; its pool was already
-                escrowed when it started.
+                Creators can set any countdown between 10 and 300 seconds. Limits never change an existing rain; its
+                pool was already escrowed when it started.
               </p>
               <Button variant="primary" loading={busy} onClick={() => void save()}>
                 Save limits

@@ -18,6 +18,8 @@ export type EmailTemplate =
   | 'announcement'
   | 'cashier-decision'
   | 'account-deletion'
+  | 'giveaway-winner'
+  | 'giveaway-sponsor'
   | 'test';
 
 export interface EmailConfig {
@@ -544,6 +546,78 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           footerText(email),
         ].join('\n'),
       };
+    case 'giveaway-winner': {
+      const payout = Number(payload.payoutAmount ?? amount);
+      return {
+        subject: `You won ${compactAmount(payout)} money in ${email.appName}`,
+        html: layout(email, {
+          title: 'You won a giveaway',
+          kicker: 'Giveaway result',
+          preheader: `${textValue(payload, 'title', 'A giveaway')} · claim your prize`,
+          content: [
+            paragraph(
+              `Congratulations, ${escapeHtml(username)}. Your entry was drawn in <strong style="color:#f6f4ef;">${escapeHtml(
+                textValue(payload, 'title', 'a giveaway'),
+              )}</strong>.`,
+            ),
+            detailRows([
+              ['Prize', `${compactAmount(payout)} money`],
+              ['Giveaway', textValue(payload, 'reference', '—')],
+              ['Winners', String(Number(payload.winners ?? 1))],
+              ['Pool', `${compactAmount(Number(payload.prizeAmount ?? payout))} money`],
+            ]),
+            paragraph('To receive the prize, open a Giveaway Claim ticket from the Giveaways page. Staff verify the win before releasing the escrow.'),
+            cta('Claim my prize', textValue(payload, 'claimUrl', '/giveaways')),
+            callout('The prize stays in escrow until staff approve your claim. Keep your claim ticket reference for updates.', 'success'),
+            signoff,
+          ].join(''),
+        }),
+        text: [
+          `Congratulations, ${username}. You won ${compactAmount(payout)} money in ${textValue(payload, 'title', 'a giveaway')}.`,
+          `Giveaway: ${textValue(payload, 'reference', '—')}`,
+          `Winners: ${Number(payload.winners ?? 1)}`,
+          `Claim your prize: ${safeUrl(email, textValue(payload, 'claimUrl', '/giveaways'))}`,
+          'Open a Giveaway Claim ticket so staff can verify the win and release the prize.',
+          footerText(email),
+        ].join('\n'),
+      };
+    }
+    case 'giveaway-sponsor': {
+      const startsAt = textValue(payload, 'startsAt');
+      const endsAt = textValue(payload, 'endsAt');
+      return {
+        subject: `Your sponsored giveaway is live: ${compactAmount(amount)} money`,
+        html: layout(email, {
+          title: 'Your giveaway is live',
+          kicker: 'Sponsorship published',
+          preheader: `${textValue(payload, 'title', 'Community giveaway')} · ${compactAmount(amount)} money`,
+          content: [
+            paragraph(`Thanks for sponsoring a community giveaway, ${escapeHtml(username)}. Staff published it and the prize is held in escrow.`),
+            detailRows([
+              ['Giveaway', textValue(payload, 'title', 'Community giveaway')],
+              ['Reference', textValue(payload, 'reference', '—')],
+              ['Prize pool', `${compactAmount(amount)} money`],
+              ['Winners', String(Number(payload.winners ?? 1))],
+              ['Starts', formatDateTime(startsAt)],
+              ['Ends', formatDateTime(endsAt)],
+            ]),
+            cta('View the giveaway', textValue(payload, 'giveawayUrl', '/giveaways')),
+            callout('Winners are drawn with a committed random seed when the timer ends. Payouts are released after a staff-verified claim.', 'gold'),
+            signoff,
+          ].join(''),
+        }),
+        text: [
+          `Your sponsored giveaway is live: ${textValue(payload, 'title', 'Community giveaway')}.`,
+          `Reference: ${textValue(payload, 'reference', '—')}`,
+          `Prize pool: ${compactAmount(amount)} money`,
+          `Winners: ${Number(payload.winners ?? 1)}`,
+          `Starts: ${formatDateTime(startsAt)}`,
+          `Ends: ${formatDateTime(endsAt)}`,
+          safeUrl(email, textValue(payload, 'giveawayUrl', '/giveaways')),
+          footerText(email),
+        ].join('\n'),
+      };
+    }
     case 'test':
     default:
       return {

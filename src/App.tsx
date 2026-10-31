@@ -8,6 +8,8 @@ import { MaintenancePage } from './pages/maintenance';
 import { ForgotPasswordPage, LoginPage, RegisterPage, ResetPasswordPage } from './pages/auth';
 import { HomePage } from './pages/home';
 import { RainsPage } from './pages/rains';
+import { GiveawaysPage } from './pages/giveaways';
+import { GiveawayAdminPage } from './pages/giveaway-admin';
 import { RewardsPage } from './pages/rewards';
 import { VerifyEmailPage } from './pages/verify-email';
 import { DeleteAccountPage } from './pages/delete-account';
@@ -105,6 +107,7 @@ function App() {
         <Route element={<RequireAuth><AppShell /></RequireAuth>}>
           <Route index element={<HomePage />} />
           <Route path="rains" element={<RainsPage />} />
+          <Route path="giveaways" element={<GiveawaysPage />} />
           <Route path="games" element={<GamesPage />} />
           <Route path="rewards" element={<RewardsPage />} />
           <Route path="games/coinflip" element={<CoinflipPage />} />
@@ -208,6 +211,14 @@ function App() {
             element={
               <RequirePermission permission="staff.access">
                 <StaffActivityPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="staff/giveaways"
+            element={
+              <RequirePermission permission="giveaways.manage">
+                <GiveawayAdminPage />
               </RequirePermission>
             }
           />
@@ -337,6 +348,14 @@ function App() {
             element={
               <RequirePermission permission="rain.manage">
                 <AdminRainPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="admin/giveaways"
+            element={
+              <RequirePermission permission="giveaways.manage">
+                <GiveawayAdminPage />
               </RequirePermission>
             }
           />

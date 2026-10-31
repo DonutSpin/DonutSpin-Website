@@ -32,6 +32,7 @@ import {
   ShieldX,
   SlidersHorizontal,
   Sparkles,
+  Trophy,
   TrendingUp,
   UserCheck,
   Users,
@@ -46,6 +47,7 @@ import { useToast } from '../context/ToastContext';
 import { api, errorMessage } from '../lib/api';
 import { exactMoney, money, timeAgo, titleCase } from '../lib/format';
 import { MaintenanceBanner } from '../pages/maintenance';
+import { MobileChatDock } from './chat';
 import { LegalDisclaimer, LegalFooterLinks } from './legal';
 import { BrandMark } from './BrandMark';
 import { Avatar, Badge, Button, Modal, RoleBadge, Spinner, cn } from './ui';
@@ -152,6 +154,7 @@ function playerNav(): NavGroup[] {
       items: [
         { label: 'Home', to: '/', icon: LayoutDashboard, end: true },
         { label: 'Games', to: '/games', icon: Gamepad2 },
+        { label: 'Giveaways', to: '/giveaways', icon: Trophy },
         { label: 'Rains', to: '/rains', icon: CloudRain },
         { label: 'Rewards', to: '/rewards', icon: Gift },
         { label: 'Wallet', to: '/wallet', icon: Wallet },
@@ -192,6 +195,7 @@ function staffNav(role: Role): NavGroup[] {
       title: 'Insights',
       items: [
         { label: 'Game statistics', to: '/staff/games', icon: ChartNoAxesCombined },
+        { label: 'Giveaways', to: '/staff/giveaways', icon: Trophy, permission: 'giveaways.manage' },
         { label: 'My activity', to: '/staff/activity', icon: Activity },
       ],
     },
@@ -232,6 +236,7 @@ function adminNav(role: Role): NavGroup[] {
       items: [
         { label: 'Game configuration', to: '/admin/games', icon: Gamepad2, permission: 'games.manage' },
         { label: 'Game statistics', to: '/admin/game-stats', icon: ChartNoAxesCombined, permission: 'staff.access' },
+        { label: 'Giveaways', to: '/admin/giveaways', icon: Trophy, permission: 'giveaways.manage' },
         { label: 'Rain', to: '/admin/rain', icon: CloudRain, permission: 'rain.manage' },
         { label: 'Rewards', to: '/admin/rewards', icon: Gift, permission: 'settings.manage' },
         { label: 'Email', to: '/admin/email', icon: Mail, permission: 'settings.manage' },
@@ -667,7 +672,7 @@ function MobileBottomNav({ onMenu }: { onMenu: () => void }) {
   const items = [
     { label: 'Home', to: '/', icon: Home, end: true },
     { label: 'Games', to: '/games', icon: Gamepad2 },
-    { label: 'Rains', to: '/rains', icon: CloudRain },
+    { label: 'Giveaways', to: '/giveaways', icon: Trophy },
     { label: 'Rewards', to: '/rewards', icon: Gift, badge: true },
     { label: 'Wallet', to: '/wallet', icon: Wallet },
   ];
@@ -756,6 +761,7 @@ export function AppShell() {
       )}
 
       {isPlayerArea && <MobileBottomNav onMenu={() => setMobileOpen(true)} />}
+      {isPlayerArea && <MobileChatDock />}
 
       <div className="lg:pl-[272px]">
         <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between gap-2 border-b border-line/70 bg-surface-0/72 px-3 backdrop-blur-xl sm:px-6">

@@ -1,13 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { CloudRain, Coins, Sparkles, Timer, Users } from 'lucide-react';
 import type { RainCreateResponse, RainLimits, RainView } from '../../shared/types';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api, errorMessage } from '../lib/api';
 import { exactMoney, money } from '../lib/format';
-import { AmountInput, Badge, Button, Card, CardHeader, Field, Select, cn } from './ui';
+import { AmountInput, Badge, Button, Card, CardHeader, Field, Input, cn } from './ui';
 
-const COUNTDOWN_PRESETS = [15, 30, 60, 120, 300];
+const QUICK_COUNTDOWNS = [30, 60, 120, 300];
 
 export function rainSecondsLeft(rain: RainView, now = Date.now()): number {
   if (rain.status !== 'countdown') return 0;
@@ -227,16 +227,17 @@ export function RainCreateForm({
   onCancel: () => void;
 }) {
   const { error: toastError } = useToast();
-  const presets = useMemo(
-    () => COUNTDOWN_PRESETS.filter((value) => value >= limits.countdownMinSeconds && value <= limits.countdownMaxSeconds),
-    [limits.countdownMaxSeconds, limits.countdownMinSeconds],
-  );
   const [amount, setAmount] = useState<number | ''>(limits.minAmount);
-  const [countdown, setCountdown] = useState(presets.includes(30) ? 30 : (presets[0] ?? 30));
+  const [countdownText, setCountdownText] = useState('30');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const amountValue = amount === '' ? 0 : amount;
+  const countdownValue = /^\d+$/.test(countdownText.trim()) ? Number(countdownText.trim()) : NaN;
+  const countdownValid =
+    Number.isInteger(countdownValue) &&
+    countdownValue >= limits.countdownMinSeconds &&
+    countdownValue <= limits.countdownMaxSeconds;
   const amountTooLow = amountValue < limits.minAmount;
   const amountTooHigh = amountValue > limits.maxAmount;
   const overBalance = amountValue > balance;
@@ -248,10 +249,19 @@ export function RainCreateForm({
       setError('Enter an amount within the allowed rain limits.');
       return;
     }
+    if (!countdownValid) {
+      setError(
+        `Enter a whole number of seconds between ${limits.countdownMinSeconds} and ${limits.countdownMaxSeconds}.`,
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const response = await api.post<RainCreateResponse>('/rain', { amount: amountValue, countdownSeconds: countdown });
+      const response = await api.post<RainCreateResponse>('/rain', {
+        amount: amountValue,
+        countdownSeconds: countdownValue,
+      });
       onCreated(response);
     } catch (error) {
       setError(errorMessage(error));
@@ -267,7 +277,7 @@ export function RainCreateForm({
         title="Start a rain"
         description="The pool leaves your balance immediately. Everyone who joins before the countdown ends splits it equally."
       />
-      <div className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_170px]">
+      <div className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)]">
         <Field
           label="Prize pool"
           hint={`Between ${money(limits.minAmount)} and ${money(limits.maxAmount)} money. Available: ${exactMoney(balance)}.`}
@@ -282,14 +292,52 @@ export function RainCreateForm({
             autoFocus
           />
         </Field>
-        <Field label="Countdown">
-          <Select value={String(countdown)} onChange={(event) => setCountdown(Number(event.target.value))}>
-            {presets.map((value) => (
-              <option key={value} value={value}>
-                {value < 60 ? `${value} seconds` : `${value / 60} minute${value === 60 ? '' : 's'}`}
-              </option>
+        <Field
+          label="Countdown (seconds)"
+          hint={`Any duration from ${limits.countdownMinSeconds} to ${limits.countdownMaxSeconds} seconds.`}
+          error={
+            countdownText.trim() && !countdownValid
+              ? `Enter a whole number between ${limits.countdownMinSeconds} and ${limits.countdownMaxSeconds}.`
+              : undefined
+          }
+        >
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={limits.countdownMinSeconds}
+              max={limits.countdownMaxSeconds}
+              step={1}
+              value={countdownText}
+              onChange={(event) => setCountdownText(event.target.value)}
+              placeholder="e.g. 90"
+              invalid={Boolean(countdownText.trim()) && !countdownValid}
+              aria-label="Rain countdown in seconds"
+              className="h-11 min-w-0 flex-1"
+            />
+            <span className="grid h-11 min-w-[62px] shrink-0 place-items-center rounded-xl border border-line bg-surface-2/70 px-2 font-display text-[13px] font-semibold text-gold-bright tnum">
+              {countdownValid ? clock(countdownValue) : '—'}
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {QUICK_COUNTDOWNS.filter(
+              (value) => value >= limits.countdownMinSeconds && value <= limits.countdownMaxSeconds,
+            ).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setCountdownText(String(value))}
+                className={cn(
+                  'rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors',
+                  countdownValue === value
+                    ? 'border-gold/35 bg-gold/10 text-gold-bright'
+                    : 'border-line bg-surface-2/50 text-muted hover:border-line-strong hover:text-ink',
+                )}
+              >
+                {clock(value)}
+              </button>
             ))}
-          </Select>
+          </div>
         </Field>
       </div>
 
@@ -326,7 +374,7 @@ export function RainCreateForm({
             variant="primary"
             size="sm"
             loading={busy}
-            disabled={!amountValid || busy}
+            disabled={!amountValid || !countdownValid || busy}
             onClick={() => void create()}
           >
             Fund rain

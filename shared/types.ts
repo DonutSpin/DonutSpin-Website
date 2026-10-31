@@ -27,6 +27,19 @@ export const ROLE_LABELS: Record<Role, string> = {
   owner: 'Owner',
 };
 
+/**
+ * Chat uses a tighter label set than the rest of the product so a message line
+ * can show a role without pushing the username or timestamp out of view.
+ * Roles are resolved from the server on every read, never from the client.
+ */
+export const CHAT_ROLE_LABELS: Record<Role, string> = {
+  user: 'Member',
+  support: 'Staff',
+  moderator: 'Moderator',
+  admin: 'Admin',
+  owner: 'Owner',
+};
+
 export const TICKET_STATUSES: TicketStatus[] = [
   'new',
   'open',
@@ -109,6 +122,9 @@ export const PERMISSIONS = [
   'users.restrict',
   'accounts.review',
   'rain.manage',
+  'giveaways.join',
+  'giveaways.sponsor',
+  'giveaways.manage',
   'roles.manage',
   'staff.manage',
   'games.play',
@@ -128,6 +144,8 @@ const PLAYER_PERMISSIONS: Permission[] = [
   'tickets.read_own',
   'cashier.request',
   'games.play',
+  'giveaways.join',
+  'giveaways.sponsor',
 ];
 
 const SUPPORT_PERMISSIONS: Permission[] = [
@@ -141,6 +159,7 @@ const SUPPORT_PERMISSIONS: Permission[] = [
   'tickets.status',
   'tickets.priority',
   'tickets.reject',
+  'giveaways.manage',
 ];
 
 const MODERATOR_PERMISSIONS: Permission[] = [
@@ -664,6 +683,8 @@ export interface ChatMessage {
   id: string;
   userId: string | null;
   username: string;
+  /** Current server-side role; changes are reflected on the next poll. */
+  role: Role;
   body: string;
   createdAt: string;
 }
@@ -678,6 +699,170 @@ export interface ChatResponse {
 
 export interface ChatPostResponse {
   message: ChatMessage;
+}
+
+/* ------------------------------- giveaways ------------------------------- */
+
+export type GiveawayStatus = 'scheduled' | 'active' | 'completed' | 'cancelled';
+export type GiveawayFundingKind = 'staff' | 'sponsor';
+/**
+ * unclaimed → the winner has no claim ticket yet.
+ * pending   → a Giveaway Claim ticket is open and staff must review it.
+ * approved  → staff verified the claim and credited the prize exactly once.
+ * rejected  → staff declined the claim; no payout was made.
+ */
+export type GiveawayClaimStatus = 'unclaimed' | 'pending' | 'approved' | 'rejected';
+
+export const GIVEAWAY_MIN_AMOUNT = 10_000;
+export const GIVEAWAY_MAX_AMOUNT = 1_000_000_000_000;
+export const GIVEAWAY_MIN_WINNERS = 1;
+export const GIVEAWAY_MAX_WINNERS = 50;
+export const GIVEAWAY_MIN_DURATION_SECONDS = 300;
+export const GIVEAWAY_MAX_DURATION_SECONDS = 30 * 24 * 60 * 60;
+export const GIVEAWAY_MIN_SCHEDULE_LEAD_SECONDS = 60;
+
+export const GIVEAWAY_STATUS_LABELS: Record<GiveawayStatus, string> = {
+  scheduled: 'Upcoming',
+  active: 'Active',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
+export const GIVEAWAY_CLAIM_STATUS_LABELS: Record<GiveawayClaimStatus, string> = {
+  unclaimed: 'Awaiting claim',
+  pending: 'Pending review',
+  approved: 'Approved & paid',
+  rejected: 'Claim rejected',
+};
+
+export interface GiveawayLimits {
+  minAmount: number;
+  maxAmount: number;
+  minWinners: number;
+  maxWinners: number;
+  minDurationSeconds: number;
+  maxDurationSeconds: number;
+  minScheduleLeadSeconds: number;
+}
+
+export interface GiveawayWinnerView {
+  id: string;
+  userId: string;
+  username: string;
+  position: number;
+  payoutAmount: number;
+  claimStatus: GiveawayClaimStatus;
+  claimTicketId: string | null;
+  selectedAt: string;
+  approvedAt: string | null;
+}
+
+export interface GiveawayParticipantView {
+  userId: string;
+  username: string;
+  joinedAt: string;
+}
+
+export interface GiveawayView {
+  id: string;
+  reference: string;
+  title: string;
+  description: string;
+  status: GiveawayStatus;
+  fundingKind: GiveawayFundingKind;
+  creator: { id: string; username: string } | null;
+  sponsor: { id: string; username: string } | null;
+  prizeAmount: number;
+  winnerCount: number;
+  participantCount: number;
+  joined: boolean;
+  isCreator: boolean;
+  /** True for the wallet that paid the prize; funders cannot enter their own draw. */
+  isFunder: boolean;
+  startsAt: string;
+  endsAt: string;
+  createdAt: string;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  cancellationReason: string | null;
+  secondsRemaining: number;
+  secondsUntilStart: number;
+  participants: GiveawayParticipantView[];
+  winners: GiveawayWinnerView[];
+  /** Hash published while the giveaway is open; the seed is revealed after the draw. */
+  drawCommitment: string;
+  drawSeed: string | null;
+  drawAlgorithm: string;
+  yourWin: GiveawayWinnerView | null;
+}
+
+export interface GiveawayClaimView {
+  id: string;
+  giveawayId: string;
+  giveawayReference: string;
+  giveawayTitle: string;
+  userId: string;
+  username: string;
+  payoutAmount: number;
+  claimStatus: GiveawayClaimStatus;
+  ticketReference: string | null;
+  ticketId: string | null;
+  selectedAt: string;
+  approvedAt: string | null;
+  rejectionReason: string | null;
+}
+
+export interface GiveawaySponsorshipView {
+  id: string;
+  ticketId: string;
+  ticketReference: string;
+  sponsor: { id: string; username: string };
+  prizeAmount: number;
+  winnerCount: number;
+  durationSeconds: number;
+  title: string | null;
+  description: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'published' | 'cancelled';
+  reviewer: { id: string; username: string } | null;
+  reviewReason: string | null;
+  reviewedAt: string | null;
+  giveawayId: string | null;
+  giveawayReference: string | null;
+  createdAt: string;
+}
+
+export interface GiveawayOverviewResponse {
+  serverTime: string;
+  active: GiveawayView[];
+  upcoming: GiveawayView[];
+  completed: GiveawayView[];
+  myClaims: GiveawayClaimView[];
+  canManage: boolean;
+  limits: GiveawayLimits;
+}
+
+export interface GiveawayFeaturedResponse {
+  serverTime: string;
+  active: GiveawayView[];
+  upcoming: GiveawayView | null;
+  latest: GiveawayView | null;
+}
+
+export interface GiveawayJoinResponse {
+  giveaway: GiveawayView;
+}
+
+export interface GiveawayClaimTicketResponse {
+  ticketReference: string;
+  claim: GiveawayClaimView;
+}
+
+export interface GiveawayManageResponse {
+  serverTime: string;
+  giveaways: GiveawayView[];
+  claims: GiveawayClaimView[];
+  sponsorships: GiveawaySponsorshipView[];
+  limits: GiveawayLimits;
 }
 
 /* -------------------------------- rewards -------------------------------- */

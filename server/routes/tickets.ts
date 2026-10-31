@@ -251,6 +251,20 @@ export function createTicketsRouter(db: DB): Router {
         { fields: { category: 'Use the Cashier for every money request.' } },
       );
     }
+    if (body.category === 'giveaway_claim') {
+      throw badRequest(
+        'Open a claim from the Giveaways page so the win can be verified automatically.',
+        'USE_GIVEAWAY_CLAIM',
+        { fields: { category: 'Use the Claim prize button on the Giveaways page.' } },
+      );
+    }
+    if (body.category === 'giveaway_sponsorship') {
+      throw badRequest(
+        'Sponsorship requests are created from the Giveaways page.',
+        'USE_GIVEAWAY_SPONSORSHIP',
+        { fields: { category: 'Use the Sponsor a giveaway form on the Giveaways page.' } },
+      );
+    }
     const categories = loadSupportCategories(db, true);
     const category = categories.find((entry) => entry.key === body.category);
     if (!category) {

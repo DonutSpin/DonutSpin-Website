@@ -108,7 +108,11 @@ export function NewTicketPage() {
   const { success, error: toastError } = useToast();
   const { config } = useAuth();
   const categoriesQuery = useApiQuery<{ categories: SupportCategory[] }>('/tickets/categories');
-  const categories = categoriesQuery.data?.categories ?? [];
+  // Giveaway claims and sponsorships have dedicated flows so the correct
+  // giveaway and winner record are verified server-side.
+  const categories = (categoriesQuery.data?.categories ?? []).filter(
+    (entry) => entry.key !== 'giveaway_claim' && entry.key !== 'giveaway_sponsorship',
+  );
 
   const [subject, setSubject] = useState('');
   const [categoryKey, setCategoryKey] = useState('');

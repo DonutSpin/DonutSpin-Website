@@ -4,6 +4,7 @@ import { assertProductionDatabaseAvailable, config, ensureDataDir } from './conf
 import { assertProductionSecrets } from './lib/crypto.ts';
 import { processEmailQueue } from './lib/email.ts';
 import { settleDueRain } from './lib/rain.ts';
+import { settleDueGiveaways } from './lib/giveaways.ts';
 import { ensureBootstrapOwner } from './lib/owner-bootstrap.ts';
 import { isSharedRateLimitStoreEnabled } from './lib/rate-limit.ts';
 
@@ -75,6 +76,23 @@ const rainTimer = setInterval(() => {
 }, 1000);
 rainTimer.unref();
 
+// Giveaway end times are server-owned too. This activates scheduled draws and
+// settles expired ones even when every browser is closed. Settlement is
+// idempotent, so overlapping ticks cannot select or pay twice.
+try {
+  settleDueGiveaways(db);
+} catch (error) {
+  console.warn('[giveaways] startup settlement skipped:', error instanceof Error ? error.message : error);
+}
+const giveawayTimer = setInterval(() => {
+  try {
+    settleDueGiveaways(db);
+  } catch (error) {
+    console.warn('[giveaways] settlement tick failed:', error instanceof Error ? error.message : error);
+  }
+}, 5000);
+giveawayTimer.unref();
+
 const app = createApp(db);
 const server = app.listen(config.port, () => {
   console.info(`[donutcash] API listening on http://localhost:${config.port}`);
@@ -117,6 +135,7 @@ function shutdown(signal: string): void {
   console.info(`[donutcash] ${signal} received, closing server`);
   clearInterval(emailTimer);
   clearInterval(rainTimer);
+  clearInterval(giveawayTimer);
   server.close(() => {
     closeDatabase();
     process.exit(0);

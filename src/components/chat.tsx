@@ -1,18 +1,94 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { CloudRain, MessageCircle, Send, ShieldAlert } from 'lucide-react';
-import type { ChatPostResponse, ChatResponse } from '../../shared/types';
-import { CHAT_MESSAGE_MAX_LENGTH } from '../../shared/types';
+import { CloudRain, Crown, MessageCircle, Send, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import type { ChatPostResponse, ChatResponse, Role } from '../../shared/types';
+import { CHAT_MESSAGE_MAX_LENGTH, CHAT_ROLE_LABELS } from '../../shared/types';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api, errorMessage } from '../lib/api';
 import { timeAgo } from '../lib/format';
 import { RainCard } from './rain';
-import { Badge, Button, Card, Input, cn } from './ui';
+import { Badge, Button, Card, Input, cn, type Tone } from './ui';
 
 const POLL_MS = 4000;
 
-export function ChatPanel({ className }: { className?: string }) {
+const CHAT_ROLE_TONES: Record<Role, Tone> = {
+  user: 'neutral',
+  support: 'info',
+  moderator: 'violet',
+  admin: 'gold',
+  owner: 'gold',
+};
+
+/** Compact role label; `Member` is shown for every normal player. */
+export function ChatRoleBadge({ role }: { role: Role }) {
+  return (
+    <Badge tone={CHAT_ROLE_TONES[role]} className="gap-1 px-1.5 py-0.5 text-[9px] tracking-[0.02em]">
+      {role === 'owner' && <Crown className="h-2.5 w-2.5" />}
+      {role === 'admin' && <ShieldCheck className="h-2.5 w-2.5" />}
+      {CHAT_ROLE_LABELS[role]}
+    </Badge>
+  );
+}
+
+export function MobileChatDock() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="fixed bottom-[calc(env(safe-area-inset-bottom)+9.5rem)] right-4 z-30 flex h-11 items-center gap-2 rounded-full border border-gold/30 bg-gradient-to-r from-gold/[0.18] via-surface-1 to-surface-1 px-3.5 text-[12px] font-semibold text-gold-bright shadow-[0_16px_38px_-16px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-all hover:border-gold/50 active:scale-[0.98] lg:bottom-6 xl:hidden"
+        aria-label="Open room chat"
+      >
+        <span className="relative grid h-7 w-7 place-items-center rounded-full bg-gold/12">
+          <MessageCircle className="h-4 w-4" />
+          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+        </span>
+        Chat
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-[70] xl:hidden" role="dialog" aria-modal="true" aria-label="Room chat">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-fade-in"
+            onClick={() => setOpen(false)}
+            aria-hidden
+          />
+          <div className="absolute inset-y-0 right-0 w-full max-w-[420px] border-l border-line-strong/60 bg-surface-1 shadow-[-30px_0_80px_-30px_rgba(0,0,0,0.95)] animate-slide-in-right">
+            <ChatPanel variant="drawer" onClose={() => setOpen(false)} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export function ChatPanel({
+  className,
+  variant = 'inline',
+  onClose,
+}: {
+  className?: string;
+  variant?: 'inline' | 'drawer';
+  onClose?: () => void;
+}) {
+  const drawer = variant === 'drawer';
   const { user } = useAuth();
   const { error: toastError } = useToast();
   const [data, setData] = useState<ChatResponse | null>(null);
@@ -107,8 +183,9 @@ export function ChatPanel({ className }: { className?: string }) {
   return (
     <Card
       className={cn(
-        'flex h-[calc(100vh-8.5rem)] min-h-[540px] max-h-[820px] flex-col overflow-hidden border-line/90 bg-surface-1/80',
-        'xl:sticky xl:top-6',
+        drawer
+          ? 'flex h-full min-h-0 flex-col overflow-hidden rounded-none border-0 bg-surface-1'
+          : 'flex h-[calc(100vh-8.5rem)] min-h-[540px] max-h-[820px] flex-col overflow-hidden border-line/90 bg-surface-1/80 xl:sticky xl:top-6',
         className,
       )}
     >
@@ -122,9 +199,21 @@ export function ChatPanel({ className }: { className?: string }) {
             <p className="text-[9.5px] text-faint">Verified players only</p>
           </div>
         </div>
-        <Badge tone={verified ? 'success' : 'neutral'} dot={verified}>
-          {verified ? 'Live' : 'Locked'}
-        </Badge>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Badge tone={verified ? 'success' : 'neutral'} dot={verified}>
+            {verified ? 'Live' : 'Locked'}
+          </Badge>
+          {drawer && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface-2 text-muted transition-colors hover:text-ink"
+              aria-label="Close chat"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="shrink-0 border-b border-line/70 bg-gold/[0.03] p-3">
@@ -202,9 +291,12 @@ export function ChatPanel({ className }: { className?: string }) {
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className={cn('truncate text-[10.5px] font-semibold', own ? 'text-gold-bright' : 'text-gold')}>
-                    @{message.username}
-                  </span>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className={cn('truncate text-[10.5px] font-semibold', own ? 'text-gold-bright' : 'text-gold')}>
+                      @{message.username}
+                    </span>
+                    <ChatRoleBadge role={message.role} />
+                  </div>
                   <span className="shrink-0 text-[9px] text-faint">{timeAgo(message.createdAt)}</span>
                 </div>
                 <p className="mt-1 break-words text-[11.5px] leading-relaxed text-ink/90">{message.body}</p>
