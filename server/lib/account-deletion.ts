@@ -111,6 +111,7 @@ export function deleteAccount(db: DB, userId: string, ip: string | null = null):
     db.prepare('UPDATE cashier_requests SET reviewer_id = NULL WHERE reviewer_id = ?').run(userId);
     db.prepare('UPDATE cashier_messages SET author_id = NULL WHERE author_id = ?').run(userId);
     db.prepare('UPDATE notifications SET actor_id = NULL WHERE actor_id = ?').run(userId);
+    db.prepare("UPDATE chat_messages SET user_id = NULL, username = 'Deleted account' WHERE user_id = ?").run(userId);
     db.prepare('UPDATE account_reviews SET reviewed_by = NULL WHERE reviewed_by = ?').run(userId);
     db.prepare('UPDATE account_review_events SET actor_id = NULL WHERE actor_id = ?').run(userId);
     db.prepare('UPDATE announcements SET created_by = NULL WHERE created_by = ?').run(userId);
@@ -121,11 +122,12 @@ export function deleteAccount(db: DB, userId: string, ip: string | null = null):
     db.prepare(
       'DELETE FROM audit_logs WHERE actor_id = ? OR target_id = ? OR target_label = ? OR target_label = ?',
     ).run(userId, userId, target.username, target.email);
-    db.prepare('DELETE FROM rate_limits WHERE key IN (?, ?, ?, ?)').run(
+    db.prepare('DELETE FROM rate_limits WHERE key IN (?, ?, ?, ?, ?)').run(
       `login:${target.username.toLowerCase()}`,
       `login:${target.email.toLowerCase()}`,
       `forgot-email:${target.email.toLowerCase()}`,
       `verify:${userId}`,
+      `chat:user:${userId}`,
     );
 
     db.prepare(

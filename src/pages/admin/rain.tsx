@@ -31,7 +31,7 @@ export function AdminRainPage() {
   const { success, error: toastError } = useToast();
   const settingsQuery = useApiQuery<RainLimits>('/rain/settings');
   const historyQuery = useApiQuery<{ items: RainView[] }>('/rain/history?limit=10');
-  const [rain, setRain] = useState<RainView | null>(null);
+  const [overview, setOverview] = useState<RainStateResponse | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [minAmount, setMinAmount] = useState<number | ''>('');
   const [maxAmount, setMaxAmount] = useState<number | ''>('');
@@ -44,7 +44,7 @@ export function AdminRainPage() {
     const load = async () => {
       try {
         const response = await api.get<RainStateResponse>('/rain');
-        if (active) setRain(response.rain);
+        if (active) setOverview(response);
       } catch {
         /* The settings and history panels stay usable if a poll fails. */
       }
@@ -99,9 +99,14 @@ export function AdminRainPage() {
   if (settingsQuery.loading) return <LoadingBlock label="Loading rain controls" />;
   if (settingsQuery.error) return <Alert tone="error">{settingsQuery.error}</Alert>;
 
-  const secondsLeft =
-    rain?.status === 'countdown' ? Math.max(0, Math.ceil((new Date(rain.countdownEndsAt).getTime() - now) / 1000)) : 0;
-  const active = rain?.status === 'countdown';
+  const activeRains = overview?.active ?? [];
+  const latest = overview?.latest ?? null;
+  const rain = activeRains[0] ?? latest;
+  const active = activeRains.length > 0;
+  const secondsLeft = (target: RainView | null): number =>
+    target?.status === 'countdown'
+      ? Math.max(0, Math.ceil((new Date(target.countdownEndsAt).getTime() - now) / 1000))
+      : 0;
 
   return (
     <div>
@@ -173,11 +178,26 @@ export function AdminRainPage() {
 
         <Card>
           <CardHeader
-            title={active ? 'Live rain' : 'Rain status'}
-            description={active ? 'The homepage updates itself from this state.' : 'The most recent rain is shown when none is running.'}
+            title={active ? (activeRains.length === 1 ? 'Live rain' : `${activeRains.length} live rains`) : 'Rain status'}
+            description={active ? 'The homepage chat and rains page use this state.' : 'The most recent rain is shown when none is running.'}
             action={active ? <Badge tone="success" dot>Live</Badge> : <Badge tone="neutral">Idle</Badge>}
           />
           <div className="p-4">
+            {activeRains.length > 1 && (
+              <div className="mb-4 space-y-2">
+                {activeRains.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface-2/50 px-3 py-2 text-[11px]"
+                  >
+                    <span className="font-medium text-ink">@{entry.creator.username}</span>
+                    <span className="text-gold-bright tnum">{money(entry.totalAmount)}</span>
+                    <span className="text-muted tnum">{clock(secondsLeft(entry))}</span>
+                    <span className="text-faint">{entry.participantCount} joined</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {!rain ? (
               <EmptyState
                 icon={<CloudRain className="h-5 w-5" />}
@@ -208,8 +228,8 @@ export function AdminRainPage() {
                   />
                   <StatCard
                     label={active ? 'Countdown' : 'Settled'}
-                    value={active ? clock(secondsLeft) : 'done'}
-                    hint={active ? `${secondsLeft}s remaining` : timeAgo(rain.settledAt)}
+                    value={active ? clock(secondsLeft(rain)) : 'done'}
+                    hint={active ? `${secondsLeft(rain)}s remaining` : timeAgo(rain.settledAt)}
                     icon={<Timer className="h-4 w-4" />}
                     tone={active ? 'info' : 'success'}
                   />

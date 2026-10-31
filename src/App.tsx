@@ -7,6 +7,7 @@ import { useAuth } from './context/AuthContext';
 import { MaintenancePage } from './pages/maintenance';
 import { ForgotPasswordPage, LoginPage, RegisterPage, ResetPasswordPage } from './pages/auth';
 import { HomePage } from './pages/home';
+import { RainsPage } from './pages/rains';
 import { RewardsPage } from './pages/rewards';
 import { VerifyEmailPage } from './pages/verify-email';
 import { DeleteAccountPage } from './pages/delete-account';
@@ -103,6 +104,7 @@ function App() {
 
         <Route element={<RequireAuth><AppShell /></RequireAuth>}>
           <Route index element={<HomePage />} />
+          <Route path="rains" element={<RainsPage />} />
           <Route path="games" element={<GamesPage />} />
           <Route path="rewards" element={<RewardsPage />} />
           <Route path="games/coinflip" element={<CoinflipPage />} />

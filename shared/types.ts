@@ -636,7 +636,11 @@ export interface RainView {
 }
 
 export interface RainStateResponse {
+  /** The soonest-ending active rain, otherwise the most recent settled rain. */
   rain: RainView | null;
+  active: RainView[];
+  latest: RainView | null;
+  limits: RainLimits;
 }
 
 /** Creation returns the debited wallet balance so the client can update instantly. */
@@ -650,6 +654,30 @@ export interface RainLimits {
   maxAmount: number;
   countdownMinSeconds: number;
   countdownMaxSeconds: number;
+}
+
+/* --------------------------------- chat ---------------------------------- */
+
+export const CHAT_MESSAGE_MAX_LENGTH = 500;
+
+export interface ChatMessage {
+  id: string;
+  userId: string | null;
+  username: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface ChatResponse {
+  /** Chat is readable and writable only after the account email is verified. */
+  verified: boolean;
+  messages: ChatMessage[];
+  activeRains: RainView[];
+  latestRain: RainView | null;
+}
+
+export interface ChatPostResponse {
+  message: ChatMessage;
 }
 
 /* -------------------------------- rewards -------------------------------- */

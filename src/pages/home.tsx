@@ -18,7 +18,7 @@ import { useApiQuery } from '../lib/useApi';
 import { money, signedCredits, timeAgo } from '../lib/format';
 import { PageHeader } from '../components/layout';
 import { GameCard } from '../components/GameArt';
-import { RainWidget } from '../components/rain';
+import { ChatPanel } from '../components/chat';
 import {
   Alert,
   Button,
@@ -93,7 +93,8 @@ export function HomePage() {
   }
 
   return (
-    <div className="space-y-7">
+    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="min-w-0 space-y-7">
       <div className="relative overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-surface-2 via-surface-1 to-surface-1">
         <div className="absolute inset-0 surface-grid opacity-30" />
         <div className="absolute -right-24 -top-32 h-80 w-80 rounded-full bg-gold/10 blur-[100px]" />
@@ -152,8 +153,6 @@ export function HomePage() {
           </div>
         </div>
       </div>
-
-      <RainWidget />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -335,6 +334,8 @@ export function HomePage() {
           </Card>
         </div>
       </div>
+      </div>
+      <ChatPanel />
     </div>
   );
 }

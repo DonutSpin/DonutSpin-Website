@@ -140,3 +140,4 @@ export const resetLimiter = new RateLimiter(6, 60 * 60_000);
 export const mutationLimiter = new RateLimiter(240, 60_000);
 export const ticketCreateLimiter = new RateLimiter(10, 60 * 60_000);
 export const cashierRequestLimiter = new RateLimiter(10, 60 * 60_000);
+export const chatMessageLimiter = new RateLimiter(12, 60_000);

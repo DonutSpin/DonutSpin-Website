@@ -672,6 +672,25 @@ CREATE INDEX rain_participants_user_idx ON rain_participants(user_id, joined_at 
       db.exec('ALTER TABLE rain_events ADD COLUMN refunded_amount INTEGER NOT NULL DEFAULT 0');
     },
   },
+  {
+    version: 18,
+    name: 'concurrent_rains_and_verified_chat',
+    sql: `
+-- Every active rain is independent now, so the single-active unique index
+-- would reject a second creator. The active lookup keeps an index of its own.
+DROP INDEX IF EXISTS rain_events_one_active_idx;
+CREATE INDEX rain_events_active_idx ON rain_events(status, ends_at) WHERE status = 'countdown';
+
+CREATE TABLE chat_messages (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  username TEXT NOT NULL,
+  body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 500),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX chat_messages_created_idx ON chat_messages(created_at DESC);
+`,
+  },
 ];
 
 export function pendingMigrations(db: Database): { version: number; name: string }[] {

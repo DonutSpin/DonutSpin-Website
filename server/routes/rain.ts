@@ -14,7 +14,7 @@ import {
   leaveRain,
   rainHistory,
   rainLimits,
-  rainState,
+  rainOverview,
   RAIN_MAX_SETTING,
   RAIN_MIN_SETTING,
 } from '../lib/rain.ts';
@@ -52,7 +52,7 @@ export function createRainRouter(db: DB): Router {
   router.get('/', (req, res) => {
     const user = requireAuth(req);
     res.set('Cache-Control', 'no-store');
-    res.json({ rain: rainState(db, user.id) });
+    res.json(rainOverview(db, user.id));
   });
 
   router.post('/', (req, res) => {
@@ -63,6 +63,8 @@ export function createRainRouter(db: DB): Router {
     res.status(201).json({ rain: createRain(db, user, body), balance: balanceOf(db, user.id) });
   });
 
+  // Keep the legacy id-less routes for tabs that were open before the
+  // multi-rain release. New clients always pass the rain id.
   router.post('/join', (req, res) => {
     const user = requireActive(req);
     res.json({ rain: joinRain(db, user) });
@@ -71,6 +73,16 @@ export function createRainRouter(db: DB): Router {
   router.post('/leave', (req, res) => {
     const user = requireActive(req);
     res.json({ rain: leaveRain(db, user) });
+  });
+
+  router.post('/:id/join', (req, res) => {
+    const user = requireActive(req);
+    res.json({ rain: joinRain(db, user, req.params.id) });
+  });
+
+  router.post('/:id/leave', (req, res) => {
+    const user = requireActive(req);
+    res.json({ rain: leaveRain(db, user, req.params.id) });
   });
 
   router.get('/history', (req, res) => {

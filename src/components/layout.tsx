@@ -152,6 +152,7 @@ function playerNav(): NavGroup[] {
       items: [
         { label: 'Home', to: '/', icon: LayoutDashboard, end: true },
         { label: 'Games', to: '/games', icon: Gamepad2 },
+        { label: 'Rains', to: '/rains', icon: CloudRain },
         { label: 'Rewards', to: '/rewards', icon: Gift },
         { label: 'Wallet', to: '/wallet', icon: Wallet },
         { label: 'Cashier', to: '/cashier', icon: Landmark },
@@ -666,6 +667,7 @@ function MobileBottomNav({ onMenu }: { onMenu: () => void }) {
   const items = [
     { label: 'Home', to: '/', icon: Home, end: true },
     { label: 'Games', to: '/games', icon: Gamepad2 },
+    { label: 'Rains', to: '/rains', icon: CloudRain },
     { label: 'Rewards', to: '/rewards', icon: Gift, badge: true },
     { label: 'Wallet', to: '/wallet', icon: Wallet },
   ];

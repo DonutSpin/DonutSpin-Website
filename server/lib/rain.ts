@@ -1,5 +1,5 @@
 import type { DB } from '../db/index.ts';
-import type { RainLimits, RainParticipantView, RainView } from '../../shared/types.ts';
+import type { RainLimits, RainParticipantView, RainStateResponse, RainView } from '../../shared/types.ts';
 import { RAIN_COUNTDOWN_MAX_SECONDS, RAIN_COUNTDOWN_MIN_SECONDS } from '../../shared/types.ts';
 import { getSetting } from '../db/index.ts';
 import { applyLedger } from './wallet.ts';
@@ -48,15 +48,23 @@ export function rainLimits(db: DB): RainLimits {
   };
 }
 
-export function getActiveRainRow(db: DB): RainRow | undefined {
+export function getActiveRainRows(db: DB): RainRow[] {
   return db
-    .prepare("SELECT * FROM rain_events WHERE status = 'countdown' ORDER BY created_at ASC LIMIT 1")
-    .get() as RainRow | undefined;
+    .prepare("SELECT * FROM rain_events WHERE status = 'countdown' ORDER BY ends_at ASC, created_at ASC")
+    .all() as RainRow[];
+}
+
+function getActiveRainRow(db: DB, id: string): RainRow | undefined {
+  return db
+    .prepare("SELECT * FROM rain_events WHERE id = ? AND status = 'countdown'")
+    .get(id) as RainRow | undefined;
 }
 
 function getLatestRainRow(db: DB): RainRow | undefined {
   return db
-    .prepare('SELECT * FROM rain_events ORDER BY created_at DESC, rowid DESC LIMIT 1')
+    .prepare(
+      "SELECT * FROM rain_events WHERE status = 'settled' ORDER BY settled_at DESC, created_at DESC LIMIT 1",
+    )
     .get() as RainRow | undefined;
 }
 
@@ -259,26 +267,34 @@ function settleRainRow(db: DB, row: RainRow, now: number): RainRow {
 
 /** Runs inside an existing write transaction. */
 function settleDueInside(db: DB, now: number): void {
-  const active = getActiveRainRow(db);
-  if (!active) return;
-  if (new Date(active.ends_at).getTime() > now) return;
-  settleRainRow(db, active, now);
+  for (const active of getActiveRainRows(db)) {
+    if (new Date(active.ends_at).getTime() > now) continue;
+    settleRainRow(db, active, now);
+  }
 }
 
 /**
  * Lazy settlement used by every read and mutation and by the background timer.
- * It is safe to call when nothing is due.
+ * It is safe to call when nothing is due, and settles every expired rain.
  */
 export function settleDueRain(db: DB, now = Date.now()): void {
-  const active = getActiveRainRow(db);
-  if (!active || new Date(active.ends_at).getTime() > now) return;
+  const due = getActiveRainRows(db).some((row) => new Date(row.ends_at).getTime() <= now);
+  if (!due) return;
   inTransaction(db, () => settleDueInside(db, now));
 }
 
-export function rainState(db: DB, viewerId: string): RainView | null {
+/** Current live rains plus the most recent one, for the rain page and chat. */
+export function rainOverview(db: DB, viewerId: string): RainStateResponse {
   settleDueRain(db);
-  const row = getActiveRainRow(db) ?? getLatestRainRow(db);
-  return row ? mapRain(db, row, viewerId) : null;
+  const active = getActiveRainRows(db).map((row) => mapRain(db, row, viewerId));
+  const latestRow = getLatestRainRow(db);
+  const latest = latestRow ? mapRain(db, latestRow, viewerId) : null;
+  return {
+    rain: active[0] ?? latest,
+    active,
+    latest,
+    limits: rainLimits(db),
+  };
 }
 
 export function rainHistory(db: DB, viewerId: string, limit = 10): RainView[] {
@@ -330,11 +346,6 @@ export function createRain(db: DB, user: { id: string; username: string }, input
   settleDueRain(db, now);
 
   inTransaction(db, () => {
-    const active = getActiveRainRow(db);
-    if (active) {
-      throw conflict('A rain is already running. Join it or wait for it to settle.', 'RAIN_ACTIVE');
-    }
-
     applyLedger(db, {
       userId: user.id,
       amount: -input.amount,
@@ -369,12 +380,29 @@ export function createRain(db: DB, user: { id: string; username: string }, input
   return mapRain(db, row, user.id);
 }
 
-export function joinRain(db: DB, user: { id: string; username: string }): RainView {
+/** Chooses an active rain when an older client does not send an id. */
+function joinableRainRow(db: DB, rainId?: string): RainRow | undefined {
+  if (rainId) return getActiveRainRow(db, rainId);
+  return db
+    .prepare(
+      `SELECT * FROM rain_events
+        WHERE status = 'countdown'
+        ORDER BY ends_at ASC, created_at ASC LIMIT 1`,
+    )
+    .get() as RainRow | undefined;
+}
+
+export function joinRain(db: DB, user: { id: string; username: string }, rainId?: string): RainView {
   const now = Date.now();
   settleDueRain(db, now);
   const row = inTransaction(db, () => {
-    const active = getActiveRainRow(db);
-    if (!active) throw conflict('There is no rain to join right now.', 'NO_ACTIVE_RAIN');
+    const active = joinableRainRow(db, rainId);
+    if (!active) {
+      if (rainId && getRainRow(db, rainId)?.status === 'settled') {
+        throw conflict('This rain has already ended.', 'RAIN_ENDED');
+      }
+      throw conflict('There is no rain to join right now.', 'NO_ACTIVE_RAIN');
+    }
     if (new Date(active.ends_at).getTime() <= now) {
       throw conflict('This rain has already ended.', 'RAIN_ENDED');
     }
@@ -391,12 +419,26 @@ export function joinRain(db: DB, user: { id: string; username: string }): RainVi
   return mapRain(db, row, user.id);
 }
 
-export function leaveRain(db: DB, user: { id: string }): RainView {
+export function leaveRain(db: DB, user: { id: string }, rainId?: string): RainView {
   const now = Date.now();
   settleDueRain(db, now);
   const row = inTransaction(db, () => {
-    const active = getActiveRainRow(db);
-    if (!active) throw conflict('There is no active rain to leave.', 'NO_ACTIVE_RAIN');
+    const active = rainId
+      ? getActiveRainRow(db, rainId)
+      : (db
+          .prepare(
+            `SELECT r.* FROM rain_events r
+              JOIN rain_participants p ON p.rain_id = r.id
+             WHERE r.status = 'countdown' AND p.user_id = ?
+             ORDER BY r.ends_at ASC LIMIT 1`,
+          )
+          .get(user.id) as RainRow | undefined);
+    if (!active) {
+      if (rainId && getRainRow(db, rainId)?.status === 'settled') {
+        throw conflict('This rain has already ended.', 'RAIN_ENDED');
+      }
+      throw conflict('There is no active rain to leave.', 'NO_ACTIVE_RAIN');
+    }
     if (new Date(active.ends_at).getTime() <= now) {
       throw conflict('This rain has already ended.', 'RAIN_ENDED');
     }
