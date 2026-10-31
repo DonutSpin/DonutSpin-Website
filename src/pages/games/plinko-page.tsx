@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { errorMessage, requestId } from '../../lib/api';
 import { acknowledgeRound, playGame, sleep } from '../../lib/games';
 import { useRestoreActiveRound } from '../../lib/useActiveRound';
+import { useRoundBalance } from '../../lib/useRoundBalance';
 import { money } from '../../lib/format';
 import {
   BalanceRow,
@@ -31,7 +32,8 @@ const ROWS = 12;
 
 export function PlinkoPage() {
   const { game, loading, error, refetch, maintenance, maxPayout } = useGameConfig('plinko');
-  const { user, updateBalance } = useAuth();
+  const { user } = useAuth();
+  const { hold, reveal, release } = useRoundBalance();
   const { error: toastError, success } = useToast();
   const [bet, setBet] = useState(100);
   const [risk, setRisk] = useState<Risk>('medium');
@@ -73,7 +75,7 @@ export function PlinkoPage() {
     setBall({ x: CENTER + (restored.slot - 6) * STEP_X * 2, y: 296 });
     setLanded(true);
     setDropped((value) => value + 1);
-    updateBalance(restored.balance);
+    reveal(restored.balance);
     void acknowledgeRound(restored.session.id);
   });
 
@@ -91,10 +93,11 @@ export function PlinkoPage() {
     setLanded(false);
     setView(null);
     setBall({ x: CENTER, y: 16 });
+    // The drop is settled on the server before the ball moves. Hold the
+    // balance and the result until the ball reaches its slot.
+    hold();
     try {
       const response = await playGame<PlinkoView>(game.slug, { requestId: requestId(), bet, risk });
-      updateBalance(response.balance);
-      setView(response);
       let rights = 0;
       for (let step = 0; step < response.path.length; step += 1) {
         if (response.path[step] === 'right') rights += 1;
@@ -105,13 +108,16 @@ export function PlinkoPage() {
       }
       setBall({ x: CENTER + (response.slot - 6) * STEP_X * 2, y: 296 });
       await sleep(220);
+      setView(response);
       setLanded(true);
       setDropped((value) => value + 1);
+      reveal(response.balance);
       void acknowledgeRound(response.session.id);
       if (response.session.payout >= response.session.bet) {
         success('Landing pays', `${money(response.session.payout)} money · ${response.multiplier.toFixed(2)}×`);
       }
     } catch (err) {
+      release();
       setActionError(errorMessage(err));
       toastError('Drop failed', errorMessage(err));
     } finally {

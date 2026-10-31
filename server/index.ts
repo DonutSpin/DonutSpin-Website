@@ -3,6 +3,7 @@ import { getDatabase, closeDatabase } from './db/index.ts';
 import { assertProductionDatabaseAvailable, config, ensureDataDir } from './config.ts';
 import { assertProductionSecrets } from './lib/crypto.ts';
 import { processEmailQueue } from './lib/email.ts';
+import { settleDueRain } from './lib/rain.ts';
 import { ensureBootstrapOwner } from './lib/owner-bootstrap.ts';
 import { isSharedRateLimitStoreEnabled } from './lib/rate-limit.ts';
 
@@ -57,6 +58,23 @@ setTimeout(() => {
   void processEmailQueue(db, 10).catch(() => undefined);
 }, 4_000).unref();
 
+// Rain countdowns belong to the server, not the creator's browser. This tick
+// settles an expired rain even when every tab is closed. Settlement is
+// idempotent, so overlapping ticks or workers cannot pay twice.
+try {
+  settleDueRain(db);
+} catch (error) {
+  console.warn('[rain] startup settlement skipped:', error instanceof Error ? error.message : error);
+}
+const rainTimer = setInterval(() => {
+  try {
+    settleDueRain(db);
+  } catch (error) {
+    console.warn('[rain] settlement tick failed:', error instanceof Error ? error.message : error);
+  }
+}, 1000);
+rainTimer.unref();
+
 const app = createApp(db);
 const server = app.listen(config.port, () => {
   console.info(`[donutcash] API listening on http://localhost:${config.port}`);
@@ -98,6 +116,7 @@ process.on('unhandledRejection', (reason) => {
 function shutdown(signal: string): void {
   console.info(`[donutcash] ${signal} received, closing server`);
   clearInterval(emailTimer);
+  clearInterval(rainTimer);
   server.close(() => {
     closeDatabase();
     process.exit(0);

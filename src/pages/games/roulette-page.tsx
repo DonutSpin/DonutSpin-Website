@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { api, errorMessage, requestId } from '../../lib/api';
 import { acknowledgeRound, playGame, sleep } from '../../lib/games';
 import { useRestoreActiveRound } from '../../lib/useActiveRound';
+import { useRoundBalance } from '../../lib/useRoundBalance';
 import { money } from '../../lib/format';
 import { compactAmount, parseAmount } from '../../lib/amount';
 import {
@@ -67,7 +68,8 @@ function landingRotation(winningNumber: number, current: number): number {
 
 export function RoulettePage() {
   const { game, loading, error, refetch, maintenance, maxPayout } = useGameConfig('roulette');
-  const { user, updateBalance } = useAuth();
+  const { user } = useAuth();
+  const { hold, reveal, release } = useRoundBalance();
   const { error: toastError } = useToast();
   const [chipValue, setChipValue] = useState(DEFAULT_CHIP_VALUE);
   const [customChip, setCustomChip] = useState<number | ''>(DEFAULT_CHIP_VALUE);
@@ -115,7 +117,7 @@ export function RoulettePage() {
     setCustomChip(restoredChipValue);
     setBallRotation((current) => landingRotation(restored.winningNumber, current));
     setView(restored);
-    updateBalance(restored.balance);
+    reveal(restored.balance);
     void acknowledgeRound(restored.session.id);
   });
 
@@ -206,6 +208,9 @@ export function RoulettePage() {
     setActionError(null);
     setBusy(true);
     setView(null);
+    // The wheel settles on the server immediately, but the result and the
+    // balance stay hidden until the ball has reached its pocket.
+    hold();
     try {
       const response = await playGame<RouletteView>(game.slug, {
         requestId: requestId(),
@@ -220,11 +225,12 @@ export function RoulettePage() {
       // The server already settled this spin. Derive the landing angle only from
       // that result; the static wheel and the ball can never disagree with it.
       setBallRotation((current) => landingRotation(response.winningNumber, current));
-      updateBalance(response.balance);
       await sleep(SPIN_MS + 120);
       setView(response);
+      reveal(response.balance);
       void acknowledgeRound(response.session.id);
     } catch (err) {
+      release();
       setActionError(errorMessage(err));
       toastError('Spin failed', errorMessage(err));
     } finally {

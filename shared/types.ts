@@ -108,6 +108,7 @@ export const PERMISSIONS = [
   'users.manage',
   'users.restrict',
   'accounts.review',
+  'rain.manage',
   'roles.manage',
   'staff.manage',
   'games.play',
@@ -148,6 +149,7 @@ const MODERATOR_PERMISSIONS: Permission[] = [
   'tickets.manage',
   'users.read',
   'users.restrict',
+  'rain.manage',
 ];
 
 const ADMIN_PERMISSIONS: Permission[] = [
@@ -371,6 +373,8 @@ export interface GameStatsResponse {
   range: GameStatsRange;
   from: string | null;
   to: string;
+  /** Statistics start after this reset; financial records are unaffected. */
+  statsSince: string | null;
   generatedAt: string;
   minimumSample: number;
   warningCount: number;
@@ -408,6 +412,7 @@ export interface GameStatsDetailResponse {
   range: GameStatsRange;
   from: string | null;
   to: string;
+  statsSince: string | null;
   generatedAt: string;
   minimumSample: number;
   game: GameStatsRow;
@@ -590,6 +595,55 @@ export interface TicketDetail {
   canReply: boolean;
   canNote: boolean;
   canAssign: boolean;
+}
+
+/* --------------------------------- rain ---------------------------------- */
+
+export const RAIN_COUNTDOWN_MIN_SECONDS = 10;
+export const RAIN_COUNTDOWN_MAX_SECONDS = 300;
+
+export interface RainParticipantView {
+  id: string;
+  username: string;
+  joinedAt: string;
+  payout: number | null;
+}
+
+export interface RainView {
+  id: string;
+  status: 'countdown' | 'settled';
+  creator: { id: string; username: string };
+  totalAmount: number;
+  participantCount: number;
+  countdownEndsAt: string;
+  /** Seconds left, computed server-side; the widget also ticks locally. */
+  secondsRemaining: number;
+  joined: boolean;
+  isCreator: boolean;
+  /** Estimated during the countdown, actual once settled. */
+  payoutPerParticipant: number | null;
+  /** This viewer's settled payout; null when they did not participate. */
+  yourPayout: number | null;
+  /** Units distributed on top of the base payout to make the split exact. */
+  remainder: number;
+  participants: RainParticipantView[];
+  createdAt: string;
+  settledAt: string | null;
+  minAmount: number;
+  maxAmount: number;
+  countdownMinSeconds: number;
+  countdownMaxSeconds: number;
+}
+
+export interface RainStateResponse {
+  rain: RainView | null;
+}
+
+export interface RainLimits {
+  minAmount: number;
+  maxAmount: number;
+  countdownMinSeconds: number;
+  countdownMaxSeconds: number;
 }
 
 /* -------------------------------- rewards -------------------------------- */

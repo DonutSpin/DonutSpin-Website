@@ -616,6 +616,40 @@ CREATE TABLE game_preferences (
 );
 `,
   },
+  {
+    version: 16,
+    name: 'money_rain',
+    sql: `
+CREATE TABLE rain_events (
+  id TEXT PRIMARY KEY,
+  creator_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  total_amount INTEGER NOT NULL CHECK (total_amount > 0),
+  status TEXT NOT NULL DEFAULT 'countdown' CHECK (status IN ('countdown','settled')),
+  duration_seconds INTEGER NOT NULL CHECK (duration_seconds BETWEEN 1 AND 3600),
+  ends_at TEXT NOT NULL,
+  settled_at TEXT,
+  participant_count INTEGER NOT NULL DEFAULT 0,
+  payout_per_participant INTEGER NOT NULL DEFAULT 0,
+  remainder_distributed INTEGER NOT NULL DEFAULT 0,
+  refunded_amount INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+-- The partial index is the database-level guarantee that only one joinable
+-- rain can exist at a time, even if two creators race past the API check.
+CREATE UNIQUE INDEX rain_events_one_active_idx ON rain_events(status) WHERE status = 'countdown';
+CREATE INDEX rain_events_created_idx ON rain_events(created_at DESC);
+
+CREATE TABLE rain_participants (
+  rain_id TEXT NOT NULL REFERENCES rain_events(id) ON DELETE RESTRICT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  joined_at TEXT NOT NULL,
+  payout INTEGER,
+  payout_ledger_id TEXT REFERENCES ledger(id),
+  PRIMARY KEY (rain_id, user_id)
+);
+CREATE INDEX rain_participants_user_idx ON rain_participants(user_id, joined_at DESC);
+`,
+  },
 ];
 
 export function pendingMigrations(db: Database): { version: number; name: string }[] {
@@ -729,6 +763,8 @@ export function seed(db: Database, options: { appName: string; startingCredits: 
       'economy.starting_credits': options.startingCredits,
       'economy.max_payout': 1_000_000_000_000,
       'economy.cashier_request_limit': 5_000_000_000,
+      'rain.min_amount': 10_000,
+      'rain.max_amount': 5_000_000,
       'security.session_days': options.sessionDays,
       'security.accounts_per_ip': 3,
       'notifications.email_enabled': false,

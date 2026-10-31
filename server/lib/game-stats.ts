@@ -13,7 +13,14 @@ import type {
 } from '../../shared/types.ts';
 import { GAME_WIN_CHANCE_INFO } from '../../shared/types.ts';
 import { newId, notFound, nowIso, parseJson } from './core.ts';
+import { getSetting } from '../db/index.ts';
 import { defaultWinChance } from '../games/config.ts';
+
+/**
+ * The last statistics reset. Sessions settled at or before this instant stay
+ * in the financial tables but no longer contribute to the statistics view.
+ */
+export const STATS_RESET_SETTING = 'game_stats.reset_at';
 
 /** A warning needs enough settled rounds to make a 3-sigma test meaningful. */
 export const MIN_WARNING_SAMPLE = 50;
@@ -101,6 +108,17 @@ function bucketLabel(key: string, bucket: Bucket): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
+export function statsResetAt(db: DB): string | null {
+  const value = getSetting<string | null>(db, STATS_RESET_SETTING, null);
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function laterIso(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return a > b ? a : b;
+}
+
 function earliestSettledAt(db: DB): string | null {
   const row = db
     .prepare(
@@ -116,9 +134,13 @@ export function buildRangeWindow(
   db: DB,
   range: GameStatsRange,
   now = new Date(),
+  floor: string | null = null,
 ): RangeWindow {
   if (range === 'all') {
-    const earliest = earliestSettledAt(db);
+    const rawEarliest = laterIso(earliestSettledAt(db), floor);
+    // A reset timestamp in the future would otherwise generate a chart that
+    // starts after today and cannot be drawn.
+    const earliest = rawEarliest && rawEarliest > now.toISOString() ? now.toISOString() : rawEarliest;
     if (!earliest) {
       return { range, from: null, to: now.toISOString(), bucket: 'month', buckets: [] };
     }
@@ -380,8 +402,12 @@ export function getGameStats(
   input: { range: GameStatsRange; search?: string; sort?: GameStatsSort; direction?: 'asc' | 'desc' },
   now = new Date(),
 ): GameStatsResponse {
-  const window = buildRangeWindow(db, input.range, now);
-  let rows = buildRows(db, window.from);
+  const resetAt = statsResetAt(db);
+  const window = buildRangeWindow(db, input.range, now, resetAt);
+  // Only rounds settled after the reset are counted. Nothing is deleted: the
+  // ledger and game_sessions remain untouched for financial auditing.
+  const effectiveFrom = laterIso(window.from, resetAt);
+  let rows = buildRows(db, effectiveFrom);
   const search = input.search?.trim().toLowerCase();
   if (search) {
     rows = rows.filter(
@@ -407,6 +433,7 @@ export function getGameStats(
     range: input.range,
     from: window.from,
     to: window.to,
+    statsSince: resetAt,
     generatedAt: nowIso(),
     minimumSample: MIN_WARNING_SAMPLE,
     warningCount: totals.warningCount,
@@ -415,15 +442,21 @@ export function getGameStats(
   };
 }
 
-function trendFor(db: DB, slug: string, window: RangeWindow): GameStatsTrendPoint[] {
+function trendFor(
+  db: DB,
+  slug: string,
+  window: RangeWindow,
+  fromOverride: string | null = null,
+): GameStatsTrendPoint[] {
   if (window.buckets.length === 0) return [];
   const format =
     window.bucket === 'hour' ? '%Y-%m-%dT%H:00' : window.bucket === 'month' ? '%Y-%m' : '%Y-%m-%d';
   const where = ["game_id = ?", "status IN ('won','lost','push')"];
   const params: unknown[] = [slug];
-  if (window.from) {
+  const from = fromOverride ?? window.from;
+  if (from) {
     where.push('COALESCE(ended_at, created_at) >= ?');
-    params.push(window.from);
+    params.push(from);
   }
   const rows = db
     .prepare(
@@ -482,18 +515,21 @@ export function getGameStatsDetail(
   range: GameStatsRange,
   now = new Date(),
 ): GameStatsDetailResponse {
-  const window = buildRangeWindow(db, range, now);
-  const rows = buildRows(db, window.from);
+  const resetAt = statsResetAt(db);
+  const window = buildRangeWindow(db, range, now, resetAt);
+  const effectiveFrom = laterIso(window.from, resetAt);
+  const rows = buildRows(db, effectiveFrom);
   const game = rows.find((row) => row.slug === slug);
   if (!game) throw notFound('Game not found.');
   return {
     range,
     from: window.from,
     to: window.to,
+    statsSince: resetAt,
     generatedAt: nowIso(),
     minimumSample: MIN_WARNING_SAMPLE,
     game,
-    trend: trendFor(db, slug, window),
+    trend: trendFor(db, slug, window, effectiveFrom),
     history: listGameConfigHistory(db, slug, HISTORY_LIMIT),
   };
 }

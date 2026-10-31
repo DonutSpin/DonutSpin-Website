@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { errorMessage, requestId } from '../../lib/api';
 import { acknowledgeRound, gameAction, playGame } from '../../lib/games';
 import { useRestoreActiveRound } from '../../lib/useActiveRound';
+import { TABLE_REVEAL_MS, useRoundBalance } from '../../lib/useRoundBalance';
 import { money, multiplier } from '../../lib/format';
 import {
   BalanceRow,
@@ -23,11 +24,13 @@ import { Alert, Badge, Button, Card, cn } from '../../components/ui';
 
 export function TowersPage() {
   const { game, loading, error, refetch, maintenance, maxPayout } = useGameConfig('towers');
-  const { user, updateBalance } = useAuth();
+  const { user } = useAuth();
+  const { hold, reveal, release } = useRoundBalance();
   const { error: toastError, success } = useToast();
   const [bet, setBet] = useState(100);
   const [view, setView] = useState<TowersView | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resultRevealed, setResultRevealed] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const initialized = useRef(false);
 
@@ -42,7 +45,8 @@ export function TowersPage() {
     const restored = round.view as TowersView;
     setBet(restored.session.bet);
     setView(restored);
-    updateBalance(restored.balance);
+    setResultRevealed(restored.session.status !== 'active');
+    reveal(restored.balance);
     if (restored.session.status !== 'active') void acknowledgeRound(restored.session.id);
   });
 
@@ -58,11 +62,14 @@ export function TowersPage() {
   const start = async () => {
     setActionError(null);
     setBusy(true);
+    setResultRevealed(false);
+    hold();
     try {
       const response = await playGame<TowersView>(game.slug, { requestId: requestId(), bet });
       setView(response);
-      updateBalance(response.balance);
+      reveal(response.balance, { delay: TABLE_REVEAL_MS });
     } catch (err) {
+      release();
       setActionError(errorMessage(err));
       toastError('Could not start the climb', errorMessage(err));
     } finally {
@@ -70,23 +77,31 @@ export function TowersPage() {
     }
   };
 
-  const reveal = async (tile: number) => {
+  const revealTile = async (tile: number) => {
     if (!view || !active || busy) return;
     setActionError(null);
     setBusy(true);
+    setResultRevealed(false);
+    hold();
     try {
       const response = await gameAction<TowersView>(view.session.id, {
         action: 'reveal',
         tile,
         requestId: requestId(),
       });
+      const ended = response.session.status !== 'active';
       setView(response);
-      updateBalance(response.balance);
-      if (response.session.status !== 'active') {
-        if (response.session.status === 'won') success('Tower cleared', `${money(response.session.payout)} money paid out.`);
-        else toastError('A trap on that floor', 'The climb ends here. Start a new ascent.');
-      }
+      reveal(response.balance, {
+        delay: TABLE_REVEAL_MS,
+        onRevealed: () => {
+          if (!ended) return;
+          setResultRevealed(true);
+          if (response.session.status === 'won') success('Tower cleared', `${money(response.session.payout)} money paid out.`);
+          else toastError('A trap on that floor', 'The climb ends here. Start a new ascent.');
+        },
+      });
     } catch (err) {
+      release();
       setActionError(errorMessage(err));
       toastError('Reveal failed', errorMessage(err));
     } finally {
@@ -98,15 +113,23 @@ export function TowersPage() {
     if (!view || !active || busy || view.level === 0) return;
     setActionError(null);
     setBusy(true);
+    setResultRevealed(false);
+    hold();
     try {
       const response = await gameAction<TowersView>(view.session.id, {
         action: 'cashout',
         requestId: requestId(),
       });
       setView(response);
-      updateBalance(response.balance);
-      success('Cashed out', `${money(response.session.payout)} money returned.`);
+      reveal(response.balance, {
+        delay: TABLE_REVEAL_MS,
+        onRevealed: () => {
+          setResultRevealed(true);
+          success('Cashed out', `${money(response.session.payout)} money returned.`);
+        },
+      });
     } catch (err) {
+      release();
       setActionError(errorMessage(err));
       toastError('Cash-out failed', errorMessage(err));
     } finally {
@@ -144,7 +167,7 @@ export function TowersPage() {
           }
         >
           <div className="space-y-4">
-            {ended && view && (
+            {ended && view && resultRevealed && (
               <ResultBanner
                 tone={won ? 'win' : 'lose'}
                 title={won ? (view.level === levels ? 'Top floor reached!' : 'You cashed out safely.') : 'A trap caught you.'}
@@ -191,7 +214,7 @@ export function TowersPage() {
                             key={tile}
                             type="button"
                             disabled={!isCurrent || busy}
-                            onClick={() => void reveal(tile)}
+                            onClick={() => void revealTile(tile)}
                             className={cn(
                               'relative flex h-9 items-center justify-center rounded-lg border text-[10px] transition-all',
                               isCurrent && 'border-line-strong bg-surface-2 hover:-translate-y-0.5 hover:border-gold/50 hover:bg-surface-3',

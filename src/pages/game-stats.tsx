@@ -14,6 +14,7 @@ import {
   Landmark,
   Percent,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldCheck,
   TrendingUp,
@@ -32,6 +33,8 @@ import {
 } from '../../shared/types';
 import { useApiQuery } from '../lib/useApi';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { api, errorMessage } from '../lib/api';
 import { count, dateTime, money, timeAgo, titleCase } from '../lib/format';
 import { PageHeader } from '../components/layout';
 import {
@@ -40,6 +43,7 @@ import {
   Button,
   Card,
   CardHeader,
+  ConfirmDialog,
   EmptyState,
   Field,
   Input,
@@ -359,6 +363,7 @@ function HouseProfitChart({ points }: { points: GameStatsTrendPoint[] }) {
 
 export function GameStatsPage() {
   const { user } = useAuth();
+  const { success, error: toastError } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
   const inAdmin = location.pathname.startsWith('/admin');
@@ -368,6 +373,8 @@ export function GameStatsPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<GameStatsSort>('wagered');
   const [direction, setDirection] = useState<'asc' | 'desc'>('desc');
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(searchInput.trim()), 320);
@@ -384,6 +391,20 @@ export function GameStatsPage() {
   const selectSort = (next: GameStatsSort) => {
     setSort(next);
     setDirection(next === 'name' ? 'asc' : 'desc');
+  };
+
+  const resetStatistics = async () => {
+    setResetting(true);
+    try {
+      await api.post('/staff/game-stats/reset');
+      success('Statistics reset', 'Tracking starts from now. Balances, transactions and game history were not changed.');
+      setResetOpen(false);
+      query.refetch();
+    } catch (err) {
+      toastError('Could not reset statistics', errorMessage(err));
+    } finally {
+      setResetting(false);
+    }
   };
 
   if (query.loading && !data) {
@@ -426,6 +447,15 @@ export function GameStatsPage() {
                 </Button>
               </Link>
             )}
+            {user && roleHasPermission(user.role, 'games.manage') && (
+              <Button
+                variant="secondary"
+                leftIcon={<RotateCcw className="h-4 w-4" />}
+                onClick={() => setResetOpen(true)}
+              >
+                Reset statistics
+              </Button>
+            )}
             <Button variant="secondary" onClick={query.refetch} leftIcon={<RefreshCw className="h-4 w-4" />}>
               Refresh
             </Button>
@@ -434,6 +464,13 @@ export function GameStatsPage() {
       />
 
       {query.error && <Alert tone="error" className="mb-4">{query.error}</Alert>}
+
+      {data?.statsSince && (
+        <Alert tone="info" className="mb-4" title="Statistics tracking restarted">
+          Only rounds settled after {dateTime(data.statsSince)} are included. Wallets, balances, transactions and game
+          history are unchanged; the reset only moves the reporting cutoff.
+        </Alert>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
@@ -658,6 +695,23 @@ export function GameStatsPage() {
         payout above the wager; pushes are excluded from win rates. Configured chances come from each round's saved
         snapshot, so old bets are never judged against newer settings.
       </p>
+
+      <ConfirmDialog
+        open={resetOpen}
+        onClose={() => setResetOpen(false)}
+        onConfirm={() => void resetStatistics()}
+        title="Reset game statistics?"
+        description="This starts a fresh reporting window. Financial records are not deleted or changed."
+        confirmLabel="Reset statistics"
+        tone="danger"
+        loading={resetting}
+      >
+        <Alert tone="warning">
+          Balances, wallets, ledger entries and every settled game session are preserved. Only the statistics shown on
+          this page restart from zero; previous rounds can be restored only by clearing the stored reset marker in the
+          database.
+        </Alert>
+      </ConfirmDialog>
     </div>
   );
 }

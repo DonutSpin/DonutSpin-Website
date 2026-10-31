@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { errorMessage, requestId } from '../../lib/api';
 import { acknowledgeRound, gameAction, playGame } from '../../lib/games';
 import { useRestoreActiveRound } from '../../lib/useActiveRound';
+import { useRoundBalance } from '../../lib/useRoundBalance';
 import { money } from '../../lib/format';
 import {
   BalanceRow,
@@ -22,13 +23,26 @@ import {
 } from '../../components/game';
 import { Alert, Badge, Button, Card, cn } from '../../components/ui';
 
+// Cards animate in with the shared 0.45s deal keyframe and a 90ms stagger, so
+// the settled balance must wait for the last card instead of the shorter
+// table-reveal window used by tile games.
+const CARD_DEAL_MS = 450;
+const CARD_STAGGER_MS = 90;
+
+function cardRevealDelay(view: BlackjackView): number {
+  const cards = Math.max(1, view.dealerCards.length, view.playerCards.length);
+  return CARD_DEAL_MS + (cards - 1) * CARD_STAGGER_MS;
+}
+
 export function BlackjackPage() {
   const { game, loading, error, refetch, maintenance, maxPayout } = useGameConfig('blackjack');
-  const { user, updateBalance } = useAuth();
+  const { user } = useAuth();
+  const { hold, reveal, release } = useRoundBalance();
   const { error: toastError } = useToast();
   const [bet, setBet] = useState(100);
   const [view, setView] = useState<BlackjackView | null>(null);
   const [busy, setBusy] = useState<'deal' | 'hit' | 'stand' | 'double' | null>(null);
+  const [resultRevealed, setResultRevealed] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const initialized = useRef(false);
 
@@ -43,7 +57,8 @@ export function BlackjackPage() {
     const restored = round.view as BlackjackView;
     setBet(restored.session.bet);
     setView(restored);
-    updateBalance(restored.balance);
+    setResultRevealed(restored.session.status !== 'active');
+    reveal(restored.balance);
     if (restored.session.status !== 'active') void acknowledgeRound(restored.session.id);
   });
 
@@ -59,11 +74,18 @@ export function BlackjackPage() {
   const deal = async () => {
     setActionError(null);
     setBusy('deal');
+    setResultRevealed(false);
+    hold();
     try {
       const response = await playGame<BlackjackView>(game.slug, { requestId: requestId(), bet });
+      const ended = response.session.status !== 'active';
       setView(response);
-      updateBalance(response.balance);
+      reveal(response.balance, {
+        delay: cardRevealDelay(response),
+        onRevealed: () => setResultRevealed(ended),
+      });
     } catch (err) {
+      release();
       setActionError(errorMessage(err));
       toastError('Could not deal', errorMessage(err));
     } finally {
@@ -75,11 +97,18 @@ export function BlackjackPage() {
     if (!view || !active || busy) return;
     setActionError(null);
     setBusy(action);
+    setResultRevealed(false);
+    hold();
     try {
       const response = await gameAction<BlackjackView>(view.session.id, { action, requestId: requestId() });
+      const ended = response.session.status !== 'active';
       setView(response);
-      updateBalance(response.balance);
+      reveal(response.balance, {
+        delay: cardRevealDelay(response),
+        onRevealed: () => setResultRevealed(ended),
+      });
     } catch (err) {
+      release();
       setActionError(errorMessage(err));
       toastError('Action failed', errorMessage(err));
     } finally {
@@ -112,7 +141,7 @@ export function BlackjackPage() {
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-faint">Blackjack table</span>
               {active && <Badge tone="gold" dot>In play</Badge>}
-              {ended && <Badge tone="neutral">Round complete</Badge>}
+              {ended && resultRevealed && <Badge tone="neutral">Round complete</Badge>}
             </div>
           }
         >
@@ -172,7 +201,7 @@ export function BlackjackPage() {
               </div>
             </div>
 
-            {ended && view && (
+            {ended && view && resultRevealed && (
               <div className="mt-5">
                 <ResultBanner
                   tone={resultTone}
@@ -265,7 +294,7 @@ export function BlackjackPage() {
               </>
             )}
 
-            {ended && view && (
+            {ended && view && resultRevealed && (
               <div className="space-y-2">
                 <Button variant="primary" size="lg" className="w-full" onClick={() => setView(null)} leftIcon={<RotateCcw className="h-4 w-4" />}>
                   New round

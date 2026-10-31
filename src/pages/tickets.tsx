@@ -70,6 +70,10 @@ export function TicketsPage() {
           </Link>
         }
       />
+      <Alert tone="info" className="mb-4" title="Response times">
+        Responding to a ticket can take up to 2 days. Include the reference and every relevant detail so the team can
+        help in one reply.
+      </Alert>
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         {[
           { icon: Ticket, title: 'Permanent reference', text: 'Use TKT-YYYY-NNNNNN when talking to support.' },
@@ -167,6 +171,11 @@ export function NewTicketPage() {
           Ticket creation is paused while maintenance is underway.
         </Alert>
       )}
+
+      <Alert tone="info" className="mb-5" title="Response times">
+        Responding to a ticket can take up to 2 days. Add every relevant detail up front so support can help in one
+        reply.
+      </Alert>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="p-5 sm:p-6">
@@ -590,6 +599,12 @@ export function TicketDetailPage({ mode = 'user' }: { mode?: 'user' | 'staff' | 
       {actionError && (
         <Alert tone="error" className="mb-4">
           {actionError}
+        </Alert>
+      )}
+
+      {mode === 'user' && ticket.canReply && (
+        <Alert tone="info" className="mb-4" title="Response times">
+          Responding to a ticket can take up to 2 days. Replies and status changes appear in this thread; check back later if you are waiting on support.
         </Alert>
       )}
 

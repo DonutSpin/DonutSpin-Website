@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { errorMessage, requestId } from '../../lib/api';
 import { acknowledgeRound, gameAction, playGame } from '../../lib/games';
 import { useRestoreActiveRound } from '../../lib/useActiveRound';
+import { TABLE_REVEAL_MS, useRoundBalance } from '../../lib/useRoundBalance';
 import { money, multiplier } from '../../lib/format';
 import {
   BalanceRow,
@@ -24,12 +25,14 @@ import { Alert, Badge, Button, Card, cn } from '../../components/ui';
 
 export function MinesPage() {
   const { game, loading, error, refetch, maintenance, maxPayout } = useGameConfig('mines');
-  const { user, updateBalance } = useAuth();
+  const { user } = useAuth();
+  const { hold, reveal, release } = useRoundBalance();
   const { error: toastError, success } = useToast();
   const [bet, setBet] = useState(100);
   const [mineCount, setMineCount] = useState(3);
   const [view, setView] = useState<MinesView | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resultRevealed, setResultRevealed] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const initialized = useRef(false);
 
@@ -47,7 +50,8 @@ export function MinesPage() {
     setBet(restored.session.bet);
     setMineCount(restored.mines);
     setView(restored);
-    updateBalance(restored.balance);
+    setResultRevealed(restored.session.status !== 'active');
+    reveal(restored.balance);
     if (restored.session.status !== 'active') void acknowledgeRound(restored.session.id);
   });
 
@@ -67,6 +71,8 @@ export function MinesPage() {
   const start = async () => {
     setActionError(null);
     setBusy(true);
+    setResultRevealed(false);
+    hold();
     try {
       const response = await playGame<MinesView>(game.slug, {
         requestId: requestId(),
@@ -74,8 +80,9 @@ export function MinesPage() {
         mines: mineCount,
       });
       setView(response);
-      updateBalance(response.balance);
+      reveal(response.balance, { delay: TABLE_REVEAL_MS });
     } catch (err) {
+      release();
       setActionError(errorMessage(err));
       toastError('Could not start the round', errorMessage(err));
     } finally {
@@ -83,23 +90,31 @@ export function MinesPage() {
     }
   };
 
-  const reveal = async (tile: number) => {
+  const revealTile = async (tile: number) => {
     if (!view || !active || busy || revealed.has(tile)) return;
     setActionError(null);
     setBusy(true);
+    setResultRevealed(false);
+    hold();
     try {
       const response = await gameAction<MinesView>(view.session.id, {
         action: 'reveal',
         tile,
         requestId: requestId(),
       });
+      const ended = response.session.status !== 'active';
       setView(response);
-      updateBalance(response.balance);
-      if (response.session.status !== 'active') {
-        if (response.session.status === 'won') success('Grid cleared', `${money(response.session.payout)} money paid out.`);
-        else toastError('Mine hit', 'The round is over. Start a new grid to try again.');
-      }
+      reveal(response.balance, {
+        delay: TABLE_REVEAL_MS,
+        onRevealed: () => {
+          if (!ended) return;
+          setResultRevealed(true);
+          if (response.session.status === 'won') success('Grid cleared', `${money(response.session.payout)} money paid out.`);
+          else toastError('Mine hit', 'The round is over. Start a new grid to try again.');
+        },
+      });
     } catch (err) {
+      release();
       setActionError(errorMessage(err));
       toastError('Reveal failed', errorMessage(err));
     } finally {
@@ -111,15 +126,23 @@ export function MinesPage() {
     if (!view || !active || busy || view.revealed.length === 0) return;
     setActionError(null);
     setBusy(true);
+    setResultRevealed(false);
+    hold();
     try {
       const response = await gameAction<MinesView>(view.session.id, {
         action: 'cashout',
         requestId: requestId(),
       });
       setView(response);
-      updateBalance(response.balance);
-      success('Cashed out', `${money(response.session.payout)} money returned to your wallet.`);
+      reveal(response.balance, {
+        delay: TABLE_REVEAL_MS,
+        onRevealed: () => {
+          setResultRevealed(true);
+          success('Cashed out', `${money(response.session.payout)} money returned to your wallet.`);
+        },
+      });
     } catch (err) {
+      release();
       setActionError(errorMessage(err));
       toastError('Cash-out failed', errorMessage(err));
     } finally {
@@ -154,7 +177,7 @@ export function MinesPage() {
           }
         >
           <div className="mx-auto w-full max-w-[460px]">
-            {ended && view && (
+            {ended && view && resultRevealed && (
               <div className="mb-4">
                 <ResultBanner
                   tone={endedWin ? 'win' : 'lose'}
@@ -183,7 +206,7 @@ export function MinesPage() {
                     key={tile}
                     type="button"
                     disabled={!clickable}
-                    onClick={() => void reveal(tile)}
+                    onClick={() => void revealTile(tile)}
                     className={cn(
                       'relative aspect-square rounded-lg border text-center transition-all duration-200 sm:rounded-xl',
                       !view && 'border-line bg-surface-2 hover:border-line-strong',

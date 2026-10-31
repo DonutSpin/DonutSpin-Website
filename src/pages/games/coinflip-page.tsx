@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { acknowledgeRound, playGame, type CoinflipView as CoinflipViewType } from '../../lib/games';
 import { faceDegrees, landingDegrees, normalizeDegrees, type CoinSide } from '../../lib/coin';
 import { useRestoreActiveRound } from '../../lib/useActiveRound';
+import { useRoundBalance } from '../../lib/useRoundBalance';
 import { api, errorMessage, requestId } from '../../lib/api';
 import { money } from '../../lib/format';
 import { payoutFor } from '../../../shared/payout';
@@ -231,7 +232,8 @@ function SideGlyph({ side }: { side: 'heads' | 'tails' }) {
 
 export function CoinflipPage() {
   const { game, loading, error, refetch, maintenance, maxPayout } = useGameConfig('coinflip');
-  const { user, updateBalance, setBalanceSyncPaused } = useAuth();
+  const { user } = useAuth();
+  const { hold, reveal, release } = useRoundBalance();
   const { error: toastError } = useToast();
   const sound = useCoinSound();
   const [pick, setPick] = useState<'heads' | 'tails'>('heads');
@@ -259,10 +261,8 @@ export function CoinflipPage() {
     return () => {
       if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
       if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
-      // Never leave background balance sync paused after this page unmounts.
-      setBalanceSyncPaused(false);
     };
-  }, [setBalanceSyncPaused]);
+  }, []);
 
   /**
    * Reveals a settled round. The final coin angle is derived from the server
@@ -281,8 +281,7 @@ export function CoinflipPage() {
         setBusy(false);
         setView(result);
         setRevealed(true);
-        updateBalance(result.balance);
-        setBalanceSyncPaused(false);
+        reveal(result.balance);
         sound.playLanding(result.won);
         void acknowledgeRound(result.session.id);
       };
@@ -295,8 +294,7 @@ export function CoinflipPage() {
         setBusy(false);
         setView(result);
         setRevealed(true);
-        updateBalance(result.balance);
-        setBalanceSyncPaused(false);
+        reveal(result.balance);
         sound.playLanding(result.won);
         void acknowledgeRound(result.session.id);
         return;
@@ -318,7 +316,7 @@ export function CoinflipPage() {
       });
       timeoutRef.current = window.setTimeout(finish, TOSS_MS + 120);
     },
-    [reduced, setBalanceSyncPaused, sound, updateBalance],
+    [reduced, reveal, sound],
   );
 
   // A result can be settled before its animation finishes. Restore it after a
@@ -350,7 +348,7 @@ export function CoinflipPage() {
     // The server settles immediately, but the balance must stay visually frozen
     // until the coin has finished landing. Pausing the background sync also
     // prevents a cashier refresh from leaking the result mid-animation.
-    setBalanceSyncPaused(true);
+    hold();
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
     try {
       const response = await playGame<CoinflipView>(game.slug, {
@@ -362,7 +360,7 @@ export function CoinflipPage() {
     } catch (err) {
       setBusy(false);
       setAnimating(false);
-      setBalanceSyncPaused(false);
+      release();
       setActionError(errorMessage(err));
       toastError('The coin could not be flipped', errorMessage(err));
     }

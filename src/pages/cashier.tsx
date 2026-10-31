@@ -113,6 +113,11 @@ export function CashierPage() {
         an owner or administrator here. Support tickets cannot grant or adjust money.
       </Alert>
 
+      <Alert tone="info" className="mb-5" title="Processing time">
+        Deposit and withdrawal requests usually take a maximum of 1 day to process. Your balance updates automatically
+        once a decision is made; you do not need to refresh the page.
+      </Alert>
+
       {config?.maintenance && (
         <Alert tone="warning" className="mb-5" title="Maintenance mode">
           New cashier requests are paused while maintenance is active.
@@ -373,7 +378,8 @@ function NewCashierRequestModal({
             {kind === 'deposit'
               ? 'If approved, this amount is added to your DonutSMP balance.'
               : 'If approved, this amount is removed from your DonutSMP balance.'}{' '}
-            You can send messages to the review team after submitting.
+            Requests usually take a maximum of 1 day to process. You can send messages to the review team after
+            submitting.
           </p>
         </div>
       </form>
@@ -447,6 +453,13 @@ export function CashierDetailPage() {
           </Link>
         }
       />
+
+      {request.status === 'pending' && (
+        <Alert tone="info" className="mb-5" title="Processing time">
+          Deposit and withdrawal requests usually take a maximum of 1 day to process. Your balance updates
+          automatically once a decision is made. You can keep this page open; no refresh is needed.
+        </Alert>
+      )}
 
       <Card className="mb-5 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-4 p-5">

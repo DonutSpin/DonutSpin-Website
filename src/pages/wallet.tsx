@@ -68,6 +68,17 @@ function ledgerLabel(type: string): string {
   return labels[type] ?? titleCase(type);
 }
 
+/** Ledger rows keep a shared type; rain metadata gives them a clearer label. */
+function ledgerDisplayLabel(entry: LedgerEntry): string {
+  if (entry.refType === 'rain') {
+    const kind = entry.metadata?.kind;
+    if (kind === 'rain_escrow') return 'Rain prize pool';
+    if (kind === 'rain_payout') return 'Rain payout';
+    if (kind === 'rain_refund') return 'Rain refund';
+  }
+  return ledgerLabel(entry.type);
+}
+
 export function TransactionTable({ entries, loading }: { entries: LedgerEntry[]; loading?: boolean }) {
   const [selected, setSelected] = useState<LedgerEntry | null>(null);
   if (loading) return <LoadingBlock label="Loading ledger" />;
@@ -91,7 +102,7 @@ export function TransactionTable({ entries, loading }: { entries: LedgerEntry[];
             className="flex w-full items-start justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-surface-2/60"
           >
             <div className="min-w-0">
-              <p className="text-[12.5px] font-medium text-ink">{ledgerLabel(entry.type)}</p>
+              <p className="text-[12.5px] font-medium text-ink">{ledgerDisplayLabel(entry)}</p>
               <p className="mt-0.5 truncate font-mono text-[10.5px] text-faint">{entry.id}</p>
               <p className="mt-1 text-[10.5px] text-faint">
                 {dateTime(entry.createdAt)} · balance {money(entry.balanceAfter)}
@@ -121,7 +132,7 @@ export function TransactionTable({ entries, loading }: { entries: LedgerEntry[];
             <Tr key={entry.id} onClick={() => setSelected(entry)}>
               <Td className="font-mono text-[11px] text-muted">{entry.id}</Td>
               <Td>
-                <span className="text-[12.5px] text-ink">{ledgerLabel(entry.type)}</span>
+                <span className="text-[12.5px] text-ink">{ledgerDisplayLabel(entry)}</span>
               </Td>
               <Td className="text-right">
                 <Money amount={entry.amount} signed size="sm" />
@@ -142,7 +153,7 @@ export function TransactionTable({ entries, loading }: { entries: LedgerEntry[];
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
         title="Transaction detail"
-        description={selected ? ledgerLabel(selected.type) : undefined}
+        description={selected ? ledgerDisplayLabel(selected) : undefined}
         size="md"
         footer={
           <Button variant="secondary" onClick={() => setSelected(null)}>
@@ -154,7 +165,7 @@ export function TransactionTable({ entries, loading }: { entries: LedgerEntry[];
           <dl className="space-y-3 text-[12.5px]">
             {[
               ['Transaction ID', <span className="font-mono text-[11px]">{selected.id}</span>],
-              ['Type', ledgerLabel(selected.type)],
+              ['Type', ledgerDisplayLabel(selected)],
               ['Amount', <Money amount={selected.amount} signed />],
               ['Balance before', `${money(selected.balanceBefore)} money`],
               ['Balance after', `${money(selected.balanceAfter)} money`],

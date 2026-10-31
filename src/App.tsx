@@ -31,6 +31,7 @@ import { AdminEconomyPage, AdminStaffPage, AdminTicketsPage, AdminTransactionsPa
 import { AdminCashierDetailPage, AdminCashierPage } from './pages/admin/cashier';
 import { AdminAnnouncementsPage, AdminAuditPage, AdminGamesPage, AdminSettingsPage } from './pages/admin/platform';
 import { AdminRewardsPage } from './pages/admin/rewards';
+import { AdminRainPage } from './pages/admin/rain';
 import { AdminEmailPage } from './pages/admin/email';
 import { LegalConsentPage, LegalPage } from './pages/legal';
 
@@ -326,6 +327,14 @@ function App() {
             element={
               <RequirePermission permission="staff.access">
                 <GameStatsDetailPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="admin/rain"
+            element={
+              <RequirePermission permission="rain.manage">
+                <AdminRainPage />
               </RequirePermission>
             }
           />

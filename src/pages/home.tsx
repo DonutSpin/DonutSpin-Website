@@ -18,6 +18,7 @@ import { useApiQuery } from '../lib/useApi';
 import { money, signedCredits, timeAgo } from '../lib/format';
 import { PageHeader } from '../components/layout';
 import { GameCard } from '../components/GameArt';
+import { RainWidget } from '../components/rain';
 import {
   Alert,
   Button,
@@ -70,6 +71,9 @@ export function HomePage() {
   const gamesQuery = useApiQuery<{ games: GameConfig[] }>('/games');
 
   const overview = overviewQuery.data;
+  // The shared auth balance is refreshed in the background, so cashier
+  // decisions and rain payouts appear without a second dashboard request.
+  const liveBalance = user?.balance ?? overview?.balance;
   const games = (gamesQuery.data?.games ?? [])
     .slice()
     .sort((a, b) => gameOrder.indexOf(a.slug) - gameOrder.indexOf(b.slug));
@@ -121,7 +125,7 @@ export function HomePage() {
           </h1>
           <div className="mt-3 flex items-end gap-2">
             <span className="font-display text-[44px] font-semibold leading-none tracking-tight text-gold-bright tnum">
-              {overview ? money(overview.balance) : '—'}
+              {liveBalance === undefined ? '—' : money(liveBalance)}
             </span>
             <span className="mb-1 text-[11px] font-medium uppercase tracking-[0.16em] text-gold-dim">money</span>
           </div>
@@ -149,10 +153,12 @@ export function HomePage() {
         </div>
       </div>
 
+      <RainWidget />
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Balance"
-          value={overview ? `${money(overview.balance)}` : '—'}
+          value={liveBalance === undefined ? '—' : `${money(liveBalance)}`}
           hint="Available DonutSMP money"
           icon={<Coins className="h-4 w-4" />}
           tone="gold"
