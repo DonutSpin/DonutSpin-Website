@@ -83,6 +83,7 @@ function EditGiveawayModal({
   const { success, error: toastError } = useToast();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [bannerUrl, setBannerUrl] = useState('');
   const [prize, setPrize] = useState<number | ''>('');
   const [winners, setWinners] = useState('1');
   const [endsAt, setEndsAt] = useState('');
@@ -94,6 +95,7 @@ function EditGiveawayModal({
     if (!giveaway || !open) return;
     setTitle(giveaway.title);
     setDescription(giveaway.description);
+    setBannerUrl(giveaway.bannerUrl ?? '');
     setPrize(giveaway.prizeAmount);
     setWinners(String(giveaway.winnerCount));
     setEndsAt(toLocalInput(new Date(giveaway.endsAt)));
@@ -123,6 +125,7 @@ function EditGiveawayModal({
       await api.patch(`/giveaways/${encodeURIComponent(giveaway.id)}`, {
         title,
         description,
+        bannerUrl: bannerUrl.trim() || null,
         ...(locked ? {} : { prizeAmount: prizeValue, winnerCount: winnerValue }),
         endsAt: endIso,
       });
@@ -167,6 +170,9 @@ function EditGiveawayModal({
         </Field>
         <Field label="Description" error={fields.description}>
           <Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={2000} />
+        </Field>
+        <Field label="Banner image" error={fields.bannerUrl} hint="Optional public HTTPS image used on the website and in Discord.">
+          <Input value={bannerUrl} onChange={(event) => setBannerUrl(event.target.value)} placeholder="https://…" maxLength={500} />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Prize" error={fields.prizeAmount} hint={locked ? 'Locked while the giveaway is active.' : undefined}>

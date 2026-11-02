@@ -94,6 +94,20 @@ function GiveawayCard({
 
   return (
     <Card className={cn('relative overflow-hidden', active ? 'border-gold/30' : 'border-line/90')}>
+      {giveaway.bannerUrl && (
+        <div className="relative aspect-[3/1] overflow-hidden border-b border-line/70 bg-surface-2">
+          <img
+            src={giveaway.bannerUrl}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+            onError={(event) => {
+              event.currentTarget.parentElement?.remove();
+            }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-surface-1/80 to-transparent" />
+        </div>
+      )}
       {active && (
         <>
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-gold/[0.09] via-violet/[0.035] to-transparent" />
@@ -288,6 +302,7 @@ function CreateGiveawayModal({
   const { success, error: toastError } = useToast();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [bannerUrl, setBannerUrl] = useState('');
   const [prize, setPrize] = useState<number | ''>(overview.limits.minAmount);
   const [winners, setWinners] = useState('1');
   const [startsAt, setStartsAt] = useState(() => toLocalInput(new Date()));
@@ -326,6 +341,7 @@ function CreateGiveawayModal({
       await api.post('/giveaways', {
         title,
         description,
+        bannerUrl: bannerUrl.trim() || null,
         prizeAmount: prizeValue,
         winnerCount: winnerValue,
         startsAt: startIso,
@@ -380,6 +396,15 @@ function CreateGiveawayModal({
             rows={3}
             maxLength={2000}
             placeholder="A community prize pool for the weekend."
+          />
+        </Field>
+        <Field label="Banner image" error={fields.bannerUrl} hint="Optional public HTTPS image used on the website and in Discord.">
+          <Input
+            value={bannerUrl}
+            onChange={(event) => setBannerUrl(event.target.value)}
+            placeholder="https://…"
+            maxLength={500}
+            invalid={Boolean(fields.bannerUrl)}
           />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">

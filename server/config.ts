@@ -443,6 +443,12 @@ export const config = {
   allowedOrigins: isProduction
     ? [appUrl]
     : [appUrl, 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4000', 'http://127.0.0.1:4000'],
+  /**
+   * Shared secret for the separately hosted Discord bot. The bot never opens
+   * the SQLite file directly; it authenticates to `/api/bot` with this key.
+   * Empty disables the bot API entirely.
+   */
+  discordBotApiKey: (process.env.DISCORD_BOT_API_KEY || '').trim(),
   /** The Vite build output. `npm run build` writes `index.html` and `assets/` here. */
   clientDist: path.join(root, 'dist'),
   mail: {

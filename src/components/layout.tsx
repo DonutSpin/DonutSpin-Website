@@ -5,6 +5,7 @@ import {
   Archive,
   ArrowLeftRight,
   Bell,
+  Bot,
   ChartNoAxesCombined,
   ChevronDown,
   ChevronRight,
@@ -32,6 +33,7 @@ import {
   ShieldX,
   SlidersHorizontal,
   Sparkles,
+  TicketPercent,
   Trophy,
   TrendingUp,
   UserCheck,
@@ -157,6 +159,7 @@ function playerNav(): NavGroup[] {
         { label: 'Giveaways', to: '/giveaways', icon: Trophy },
         { label: 'Rains', to: '/rains', icon: CloudRain },
         { label: 'Rewards', to: '/rewards', icon: Gift },
+        { label: 'Reward codes', to: '/codes', icon: TicketPercent },
         { label: 'Wallet', to: '/wallet', icon: Wallet },
         { label: 'Cashier', to: '/cashier', icon: Landmark },
         { label: 'Transactions', to: '/transactions', icon: ArrowLeftRight },
@@ -237,6 +240,7 @@ function adminNav(role: Role): NavGroup[] {
         { label: 'Game configuration', to: '/admin/games', icon: Gamepad2, permission: 'games.manage' },
         { label: 'Game statistics', to: '/admin/game-stats', icon: ChartNoAxesCombined, permission: 'staff.access' },
         { label: 'Giveaways', to: '/admin/giveaways', icon: Trophy, permission: 'giveaways.manage' },
+        { label: 'Discord bot', to: '/admin/discord', icon: Bot, permission: 'discord.manage' },
         { label: 'Rain', to: '/admin/rain', icon: CloudRain, permission: 'rain.manage' },
         { label: 'Rewards', to: '/admin/rewards', icon: Gift, permission: 'settings.manage' },
         { label: 'Email', to: '/admin/email', icon: Mail, permission: 'settings.manage' },
@@ -388,16 +392,29 @@ function NotificationMenu() {
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
+    let active = true;
+    // Only show the spinner on the first load; a background refresh triggered
+    // by a new notification should update the list in place.
+    if (items.length === 0) setLoading(true);
     api
       .get<{ items: NotificationItem[]; unread: number }>('/me/notifications?pageSize=6')
       .then((data) => {
+        if (!active) return;
         setItems(data.items);
         setUnread(data.unread);
       })
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  }, [open, setUnread]);
+      .catch(() => {
+        if (active) setItems([]);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+    // `unread` changes whenever the background poll sees a new notification, so
+    // an already-open menu refreshes without being closed and reopened.
+   }, [open, unread, setUnread]);
 
   useEffect(() => {
     if (!open) return;

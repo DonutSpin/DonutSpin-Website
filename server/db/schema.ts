@@ -785,6 +785,201 @@ CREATE TABLE chat_messages (
 CREATE INDEX chat_messages_created_idx ON chat_messages(created_at DESC);
 `,
   },
+  {
+    version: 20,
+    name: 'discord_integration',
+    // The bot is a separate process on another host. It reaches this database
+    // only through the authenticated bot API, so every link, invite, vouch,
+    // code, announcement and outbox row lives here with the website data.
+    sql: `
+ALTER TABLE giveaways ADD COLUMN banner_url TEXT;
+ALTER TABLE giveaways ADD COLUMN discord_message_id TEXT;
+ALTER TABLE giveaways ADD COLUMN discord_channel_id TEXT;
+ALTER TABLE giveaways ADD COLUMN discord_guild_id TEXT;
+
+CREATE TABLE discord_guilds (
+  guild_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  icon_url TEXT,
+  member_count INTEGER NOT NULL DEFAULT 0,
+  owner_discord_id TEXT,
+  primary_guild INTEGER NOT NULL DEFAULT 0,
+  bot_version TEXT,
+  latency_ms INTEGER,
+  last_seen_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX discord_guilds_primary_idx ON discord_guilds(primary_guild) WHERE primary_guild = 1;
+
+CREATE TABLE discord_guild_config (
+  guild_id TEXT PRIMARY KEY REFERENCES discord_guilds(guild_id) ON DELETE CASCADE,
+  welcome_channel_id TEXT,
+  vouch_channel_id TEXT,
+  scam_vouch_channel_id TEXT,
+  codes_channel_id TEXT,
+  giveaway_channel_id TEXT,
+  news_channel_id TEXT,
+  changelog_channel_id TEXT,
+  logs_channel_id TEXT,
+  owner_role_ids TEXT NOT NULL DEFAULT '[]',
+  admin_role_ids TEXT NOT NULL DEFAULT '[]',
+  staff_role_ids TEXT NOT NULL DEFAULT '[]',
+  moderator_role_ids TEXT NOT NULL DEFAULT '[]',
+  invite_rewards_enabled INTEGER NOT NULL DEFAULT 1,
+  invite_reward_every INTEGER NOT NULL DEFAULT 3,
+  invite_reward_amount INTEGER NOT NULL DEFAULT 5000000,
+  announcement_everyone INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT,
+  updated_by TEXT REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE discord_links (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  discord_user_id TEXT NOT NULL UNIQUE,
+  discord_username TEXT NOT NULL,
+  linked_at TEXT NOT NULL
+);
+CREATE INDEX discord_links_discord_idx ON discord_links(discord_user_id);
+
+CREATE TABLE discord_link_codes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX discord_link_codes_user_idx ON discord_link_codes(user_id, created_at DESC);
+
+CREATE TABLE discord_invite_joins (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  discord_user_id TEXT NOT NULL,
+  username TEXT NOT NULL,
+  inviter_discord_id TEXT,
+  inviter_username TEXT,
+  invite_code TEXT,
+  counted INTEGER NOT NULL DEFAULT 1,
+  joined_at TEXT NOT NULL,
+  UNIQUE (guild_id, discord_user_id)
+);
+CREATE INDEX discord_invite_joins_inviter_idx ON discord_invite_joins(guild_id, inviter_discord_id, joined_at DESC);
+
+CREATE TABLE discord_invite_rewards (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  inviter_discord_id TEXT NOT NULL,
+  inviter_username TEXT,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  threshold_count INTEGER NOT NULL,
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','void')),
+  ledger_id TEXT REFERENCES ledger(id),
+  created_at TEXT NOT NULL,
+  paid_at TEXT,
+  UNIQUE (guild_id, inviter_discord_id, threshold_count)
+);
+CREATE INDEX discord_invite_rewards_user_idx ON discord_invite_rewards(user_id, created_at DESC);
+
+CREATE TABLE discord_vouches (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  voucher_discord_id TEXT NOT NULL,
+  voucher_username TEXT NOT NULL,
+  target_discord_id TEXT NOT NULL,
+  target_username TEXT NOT NULL,
+  target_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  type TEXT NOT NULL CHECK (type IN ('positive','scam')),
+  reason TEXT NOT NULL,
+  message_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX discord_vouches_target_idx ON discord_vouches(guild_id, target_discord_id, created_at DESC);
+CREATE INDEX discord_vouches_voucher_idx ON discord_vouches(guild_id, voucher_discord_id, target_discord_id, type, created_at DESC);
+
+CREATE TABLE reward_codes (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  name TEXT NOT NULL,
+  description TEXT,
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  max_redemptions INTEGER NOT NULL CHECK (max_redemptions BETWEEN 1 AND 100000),
+  redeemed_count INTEGER NOT NULL DEFAULT 0 CHECK (redeemed_count >= 0),
+  expires_at TEXT,
+  disabled_at TEXT,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_via TEXT NOT NULL DEFAULT 'web' CHECK (created_via IN ('web','discord')),
+  announcement_message_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX reward_codes_created_idx ON reward_codes(created_at DESC);
+
+CREATE TABLE reward_code_redemptions (
+  id TEXT PRIMARY KEY,
+  code_id TEXT NOT NULL REFERENCES reward_codes(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  ledger_id TEXT REFERENCES ledger(id),
+  source TEXT NOT NULL CHECK (source IN ('web','discord')),
+  redeemed_at TEXT NOT NULL,
+  UNIQUE (code_id, user_id)
+);
+CREATE INDEX reward_code_redemptions_user_idx ON reward_code_redemptions(user_id, redeemed_at DESC);
+
+CREATE TABLE discord_announcements (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('news','changelog')),
+  title TEXT NOT NULL,
+  body TEXT,
+  sections TEXT,
+  image_url TEXT,
+  thumbnail_url TEXT,
+  footer TEXT,
+  author TEXT,
+  color TEXT,
+  emoji TEXT,
+  mention_everyone INTEGER NOT NULL DEFAULT 0,
+  channel_id TEXT,
+  message_id TEXT,
+  status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('published','deleted')),
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX discord_announcements_kind_idx ON discord_announcements(guild_id, kind, created_at DESC);
+
+CREATE TABLE discord_outbox (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT,
+  event_type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  dedupe_key TEXT UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','sent','failed','skipped')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  available_at TEXT NOT NULL,
+  locked_until TEXT,
+  message_id TEXT,
+  created_at TEXT NOT NULL,
+  sent_at TEXT
+);
+CREATE INDEX discord_outbox_pending_idx ON discord_outbox(status, available_at);
+
+CREATE TABLE discord_activity (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT,
+  actor_discord_id TEXT,
+  actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  metadata TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX discord_activity_created_idx ON discord_activity(created_at DESC);
+`,
+  },
 ];
 
 export function pendingMigrations(db: Database): { version: number; name: string }[] {

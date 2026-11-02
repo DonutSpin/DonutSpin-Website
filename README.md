@@ -413,6 +413,65 @@ If `OWNER_EMAIL`/`OWNER_PASSWORD` are unset and the database has no owner at all
 
 In both cases the new owner must accept the current Terms of Service and Privacy Policy on first sign-in before the admin panel unlocks. That gate is intentional and applies to every account.
 
+## Discord bot (separate repository and host)
+
+The bot is a second, standalone project rooted at `bot/`. That directory is its own Git repository and is ignored by this website repository, so the site can be built and deployed without the bot. It never opens `app.db`: every read and write goes through the authenticated `/api/bot/*` API. That is what keeps balances, codes, giveaways, invite rewards, vouches, and announcements in one database instead of two systems that can drift apart.
+
+### 1. Configure the website
+
+Generate one strong secret (32+ characters) and set it on the website host:
+
+```bash
+DISCORD_BOT_API_KEY=<the same secret>
+```
+
+The key is disabled when blank. The website mounts the bot API before the browser CSRF gate because the bot authenticates with a bearer key, not a session cookie. Every administrative bot call still resolves the linked website account and re-checks its live role.
+
+### 2. Start the bot on its own machine
+
+The bot repository is checked out at `bot/` in the local workspace and must be cloned or copied separately on the bot host.
+
+```bash
+cd bot
+cp .env.example .env
+# fill DISCORD_TOKEN, DONUTCASH_API_URL, DONUTCASH_BOT_API_KEY
+npm ci
+npm run build
+npm start
+```
+
+`DONUTCASH_API_URL` must be the public HTTPS origin of the website (for example `https://donutcash.runasp.net`). `http://localhost:4000` is accepted only for local development; a production bot on another provider must use HTTPS. `DISCORD_GUILD_ID` is optional and registers slash commands instantly while developing; leave it blank for global registration.
+
+In the Discord Developer Portal, enable the **Server Members** and **Server Invites** intents. Message Content is not required. Keep one bot gateway process online: the outbox safely leases events, but invite attribution assumes one gateway observer per server.
+
+### 3. Connect the server
+
+1. Invite the bot and send a heartbeat (start the process).
+2. Sign in to the website as an owner/admin and open **Admin → Discord bot**.
+3. Confirm the bot is online and set channels and staff roles there, or run `/setup` in Discord.
+4. Link your own Discord account in **Settings → Discord** before using staff commands.
+
+Configuration, codes, announcements, invite rewards, and the primary guild live in SQLite and survive bot restarts. Website-created giveaways are queued to the configured guild/channel; Discord-created giveaways use the same `giveaways` table, entry rows, escrow, committed draw, winners, and claim tickets as the website.
+
+### Commands
+
+| Command | Purpose |
+| --- | --- |
+| `/link code:<code>` | Connect one Discord account to the website account |
+| `/balance [user]` | Synchronized wallet balance |
+| `/redeem code:<code>` | Redeem a shared reward code |
+| `/invites [user]`, `/inviteleaderboard` | Invite count, rewards, next milestone, and ranking |
+| `/vouch`, `/scamvouch`, `/vouches [user]` | Reputation with cooldown and published embeds |
+| `/createcode` | Staff code creation, published with an `@everyone` announcement |
+| `/giveaway create`, `list`, `end`, `reroll`, `cancel` | Shared giveaway management |
+| `/news create`, `manage`, `/changelog create`, `manage` | Announcement builders and editing |
+| `/setup` | Channel, role, invite-reward, and announcement settings |
+| `/help` | Command guide |
+
+Default invite reward: every **3** first joins pays **5,000,000** money at 3, 6, 9, 12, and so on. Joins are unique per guild/member, self-invites are ignored, duplicate reward thresholds are rejected by a unique constraint, and an unlinked inviter's reward is settled when they link.
+
+Giveaway winners receive a Discord DM when linked and a public result message. The DM and embed link to the website, where the winner must open a **Giveaway Claim** ticket; staff verification and payout still go through the existing ticket and ledger flow.
+
 ## Legal, consent and self-exclusion
 
 The legal pages live at `/terms`, `/privacy`, and `/responsible-gambling`, with a `?lang=nl` Dutch version. The published text is maintained in [`src/content/legal.ts`](src/content/legal.ts); contact is handled through the in-app support desk, and the governing law is the Netherlands. Edit that file directly when the documents change.
@@ -423,7 +482,7 @@ The self-exclusion endpoint is `POST /api/me/self-exclusion` with `{ duration: '
 
 ## Tests
 
-The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, archived legacy money-request records, cashier deposits/withdrawals and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, and maintenance blocking.
+The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, archived legacy money-request records, cashier deposits/withdrawals and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, maintenance blocking, and the shared Discord bot API (linking, invite rewards, vouches, codes, giveaways, announcements, outbox leases, and permission gates). The Discord tests use the real bot HTTP surface but do not connect to Discord itself; live gateway behaviour is verified against a development server.
 
 ```bash
 npm run typecheck
@@ -444,6 +503,9 @@ src/                 React client
   pages/games/       Six game screens
 server/              Express API
   db/                SQLite connection, schema migrations, seeds, pre-migration safety
+  lib/discord/       Bot API domain services: links, invites, vouches, codes, giveaways, outbox
+  routes/bot.ts      Bearer-key bot API consumed by the separately hosted process
+  routes/discord.ts  Player linking, code redemption, and website Discord dashboard
   games/             Server-authoritative game modules and validated game configs
   lib/               Auth helpers, wallet ledger, tickets, cashier, rewards, email queue/templates, game statistics, audit, maintenance guard, active-round lock
   routes/            Public, auth, player, game, ticket, cashier, rewards, staff, admin APIs

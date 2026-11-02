@@ -36,6 +36,8 @@ import { AdminAnnouncementsPage, AdminAuditPage, AdminGamesPage, AdminSettingsPa
 import { AdminRewardsPage } from './pages/admin/rewards';
 import { AdminRainPage } from './pages/admin/rain';
 import { AdminEmailPage } from './pages/admin/email';
+import { AdminDiscordPage } from './pages/admin/discord';
+import { CodesPage } from './pages/codes';
 import { LegalConsentPage, LegalPage } from './pages/legal';
 
 function ScrollToTop() {
@@ -110,6 +112,7 @@ function App() {
           <Route path="giveaways" element={<GiveawaysPage />} />
           <Route path="games" element={<GamesPage />} />
           <Route path="rewards" element={<RewardsPage />} />
+          <Route path="codes" element={<CodesPage />} />
           <Route path="games/coinflip" element={<CoinflipPage />} />
           <Route path="games/mines" element={<MinesPage />} />
           <Route path="games/blackjack" element={<BlackjackPage />} />
@@ -356,6 +359,14 @@ function App() {
             element={
               <RequirePermission permission="giveaways.manage">
                 <GiveawayAdminPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="admin/discord"
+            element={
+              <RequirePermission permission="discord.manage">
+                <AdminDiscordPage />
               </RequirePermission>
             }
           />

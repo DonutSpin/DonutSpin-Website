@@ -2,8 +2,12 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   BadgeCheck,
+  Bot,
+  CheckCircle2,
+  Copy,
   HeartHandshake,
   KeyRound,
+  Link2,
   LifeBuoy,
   Lock,
   LogOut,
@@ -15,7 +19,7 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-react';
-import type { SessionUser } from '../../shared/types';
+import type { DiscordLinkCodeResponse, DiscordLinkStatus, SessionUser } from '../../shared/types';
 import { SELF_EXCLUSION_DURATIONS, type SelfExclusionDuration } from '../../shared/legal';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -31,6 +35,7 @@ import {
   Button,
   Card,
   CardHeader,
+  ConfirmDialog,
   Field,
   Input,
   LoadingBlock,
@@ -66,7 +71,9 @@ export function SettingsPage() {
   const { success, error: toastError } = useToast();
   const [params] = useSearchParams();
   const initialTab = params.get('tab');
-  const [tab, setTab] = useState(initialTab === 'responsible' || initialTab === 'security' ? initialTab : 'profile');
+  const [tab, setTab] = useState(
+    initialTab === 'responsible' || initialTab === 'security' || initialTab === 'discord' ? initialTab : 'profile',
+  );
   const [username, setUsername] = useState(user?.username ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [emailNotifications, setEmailNotifications] = useState(user?.emailNotifications ?? true);
@@ -98,6 +105,12 @@ export function SettingsPage() {
   const [exclusionError, setExclusionError] = useState<string | null>(null);
 
   const sessionsQuery = useApiQuery<{ items: SessionItem[] }>('/me/sessions');
+  const discordQuery = useApiQuery<{ link: DiscordLinkStatus; botConfigured: boolean }>('/me/discord');
+  const [discordCode, setDiscordCode] = useState<DiscordLinkCodeResponse | null>(null);
+  const [discordBusy, setDiscordBusy] = useState(false);
+  const [discordError, setDiscordError] = useState<string | null>(null);
+  const [unlinkOpen, setUnlinkOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -106,6 +119,10 @@ export function SettingsPage() {
       setEmailNotifications(user.emailNotifications);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (window.location.hash === '#discord') setTab('discord');
+  }, []);
 
   if (!user) return null;
 
@@ -218,6 +235,50 @@ export function SettingsPage() {
     }
   };
 
+  const generateDiscordCode = async () => {
+    setDiscordBusy(true);
+    setDiscordError(null);
+    try {
+      const result = await api.post<DiscordLinkCodeResponse>('/me/discord/code');
+      setDiscordCode(result);
+      setCopied(false);
+      success('Link code ready', 'Run the shown command in Discord within 15 minutes.');
+    } catch (err) {
+      setDiscordError(errorMessage(err));
+      toastError('Could not create a link code', errorMessage(err));
+    } finally {
+      setDiscordBusy(false);
+    }
+  };
+
+  const copyDiscordCommand = async () => {
+    if (!discordCode) return;
+    try {
+      await navigator.clipboard.writeText(discordCode.command);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setDiscordError('Your browser blocked clipboard access. Select the command and copy it manually.');
+    }
+  };
+
+  const unlinkDiscordAccount = async () => {
+    setDiscordBusy(true);
+    setDiscordError(null);
+    try {
+      await api.delete('/me/discord');
+      setDiscordCode(null);
+      setUnlinkOpen(false);
+      discordQuery.refetch();
+      success('Discord disconnected', 'Your website account and balance are unchanged.');
+    } catch (err) {
+      setDiscordError(errorMessage(err));
+      toastError('Could not unlink Discord', errorMessage(err));
+    } finally {
+      setDiscordBusy(false);
+    }
+  };
+
   const startSelfExclusion = async () => {
     if (!exclusionConfirmed) return;
     setExclusionError(null);
@@ -244,6 +305,7 @@ export function SettingsPage() {
             items={[
               { key: 'profile', label: 'Profile' },
               { key: 'security', label: 'Security' },
+              { key: 'discord', label: 'Discord' },
               { key: 'responsible', label: 'Responsible play' },
               { key: 'sessions', label: 'Sessions' },
             ]}
@@ -334,6 +396,105 @@ export function SettingsPage() {
                 </Button>
               </div>
             </form>
+          )}
+
+          {tab === 'discord' && (
+            <div id="discord" className="scroll-mt-24 space-y-5 p-5">
+              <div className="flex items-start gap-3 rounded-xl border border-line bg-surface-2/50 p-4">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-gold/25 bg-gold/10 text-gold">
+                  <Bot className="h-5 w-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-display text-[15px] font-semibold text-ink">DonutCash Discord</p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-muted">
+                    Link one Discord account to this website account. The same wallet, giveaways, codes, invites, and
+                    reputation are used on both platforms.
+                  </p>
+                </div>
+                {discordQuery.data?.link.linked ? <Badge tone="success">Connected</Badge> : <Badge tone="neutral">Not connected</Badge>}
+              </div>
+
+              {discordError && <Alert tone="error">{discordError}</Alert>}
+              {!discordQuery.data?.botConfigured && (
+                <Alert tone="warning" title="Discord bot is not configured on this site yet">
+                  An administrator must set <code className="rounded bg-black/20 px-1">DISCORD_BOT_API_KEY</code> before
+                  linking can complete.
+                </Alert>
+              )}
+
+              {discordQuery.loading ? (
+                <LoadingBlock label="Checking Discord link" />
+              ) : discordQuery.data?.link.linked ? (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-success/25 bg-success/[0.05] p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-success" />
+                      <p className="text-[13px] font-semibold text-ink">{discordQuery.data.link.discordUsername}</p>
+                      <Badge tone="success">Verified link</Badge>
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted">
+                      Connected {discordQuery.data.link.linkedAt ? dateTime(discordQuery.data.link.linkedAt) : 'recently'}.
+                      Commands such as /balance, /invites, /vouches, and giveaway entries use @{user.username}.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface-2/45 p-3.5">
+                    <div>
+                      <p className="text-[12.5px] font-semibold text-ink">Disconnect Discord</p>
+                      <p className="mt-0.5 text-[11px] text-muted">
+                        This only removes the link. Your balance, ledger, wins, and invites stay on your account.
+                      </p>
+                    </div>
+                    <Button variant="danger" size="sm" onClick={() => setUnlinkOpen(true)}>
+                      Unlink
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {[
+                      { step: '1', title: 'Generate a code', body: 'Create a single-use code below. It expires in 15 minutes.' },
+                      { step: '2', title: 'Open Discord', body: 'Join the DonutCash server and run the /link command.' },
+                      { step: '3', title: 'Enter the code', body: 'The bot confirms the link and your website username.' },
+                    ].map((item) => (
+                      <div key={item.step} className="rounded-xl border border-line/80 bg-surface-2/45 p-3.5">
+                        <span className="grid h-6 w-6 place-items-center rounded-full bg-gold/10 text-[11px] font-bold text-gold">
+                          {item.step}
+                        </span>
+                        <p className="mt-2 text-[12px] font-semibold text-ink">{item.title}</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-muted">{item.body}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-xl border border-line/80 bg-surface-2/45 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[12.5px] font-semibold text-ink">Your one-time link code</p>
+                        <p className="mt-0.5 text-[11px] text-muted">Never share this code. It can connect your website account once.</p>
+                      </div>
+                      <Button variant="primary" loading={discordBusy} leftIcon={<Link2 className="h-4 w-4" />} onClick={() => void generateDiscordCode()}>
+                        {discordCode ? 'Generate another' : 'Generate link code'}
+                      </Button>
+                    </div>
+                    {discordCode && (
+                      <div className="mt-4 rounded-xl border border-gold/25 bg-gold/[0.05] p-4">
+                        <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-gold-dim">Run this in Discord</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <code className="rounded-lg border border-line/80 bg-surface-0/70 px-3 py-2 font-mono text-[13px] text-ink">
+                            {discordCode.command}
+                          </code>
+                          <Button size="sm" variant="secondary" leftIcon={<Copy className="h-3.5 w-3.5" />} onClick={() => void copyDiscordCommand()}>
+                            {copied ? 'Copied' : 'Copy command'}
+                          </Button>
+                        </div>
+                        <p className="mt-2 text-[10.5px] text-faint">Expires {dateTime(discordCode.expiresAt)}.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {tab === 'security' && (
@@ -672,6 +833,17 @@ export function SettingsPage() {
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={unlinkOpen}
+        onClose={() => setUnlinkOpen(false)}
+        onConfirm={() => void unlinkDiscordAccount()}
+        title="Disconnect Discord?"
+        description="Your wallet, ledger, giveaway wins, and invite history stay on your DonutCash account. You can link a Discord account again later."
+        confirmLabel="Disconnect"
+        tone="danger"
+        loading={discordBusy}
+      />
     </div>
   );
 }

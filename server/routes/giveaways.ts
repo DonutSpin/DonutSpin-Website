@@ -50,6 +50,7 @@ const createSchema = z.object({
     .max(GIVEAWAY_MAX_WINNERS, `Choose at most ${GIVEAWAY_MAX_WINNERS} winners.`),
   startsAt: isoDate,
   endsAt: isoDate,
+  bannerUrl: z.string().trim().max(500).nullable().optional(),
 });
 
 const updateSchema = z.object({
@@ -59,6 +60,7 @@ const updateSchema = z.object({
   winnerCount: z.number().int().min(GIVEAWAY_MIN_WINNERS).max(GIVEAWAY_MAX_WINNERS).optional(),
   startsAt: isoDate.optional(),
   endsAt: isoDate.optional(),
+  bannerUrl: z.string().trim().max(500).nullable().optional(),
 });
 
 const reasonSchema = z.object({

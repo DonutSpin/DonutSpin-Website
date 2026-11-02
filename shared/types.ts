@@ -125,6 +125,8 @@ export const PERMISSIONS = [
   'giveaways.join',
   'giveaways.sponsor',
   'giveaways.manage',
+  'codes.manage',
+  'discord.manage',
   'roles.manage',
   'staff.manage',
   'games.play',
@@ -160,6 +162,7 @@ const SUPPORT_PERMISSIONS: Permission[] = [
   'tickets.priority',
   'tickets.reject',
   'giveaways.manage',
+  'codes.manage',
 ];
 
 const MODERATOR_PERMISSIONS: Permission[] = [
@@ -183,6 +186,7 @@ const ADMIN_PERMISSIONS: Permission[] = [
   'audit.read',
   'economy.read',
   'notifications.broadcast',
+  'discord.manage',
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -794,6 +798,8 @@ export interface GiveawayView {
   drawSeed: string | null;
   drawAlgorithm: string;
   yourWin: GiveawayWinnerView | null;
+  /** Optional banner shown on the website and in the Discord announcement. */
+  bannerUrl: string | null;
 }
 
 export interface GiveawayClaimView {
@@ -863,6 +869,232 @@ export interface GiveawayManageResponse {
   claims: GiveawayClaimView[];
   sponsorships: GiveawaySponsorshipView[];
   limits: GiveawayLimits;
+}
+
+/* --------------------------- Discord integration ------------------------- */
+
+/**
+ * The Discord bot runs as its own process on a separate host and talks to the
+ * website through the authenticated `/api/bot` API. All persistent state stays
+ * in this database, so the website and bot can never hold separate balances.
+ */
+export type DiscordAnnouncementKind = 'news' | 'changelog';
+export type DiscordVouchType = 'positive' | 'scam';
+export type RewardCodeStatus = 'active' | 'scheduled' | 'expired' | 'disabled' | 'exhausted';
+
+export interface DiscordChannelConfig {
+  welcome: string | null;
+  vouches: string | null;
+  scamVouches: string | null;
+  codes: string | null;
+  giveaways: string | null;
+  news: string | null;
+  changelog: string | null;
+  logs: string | null;
+}
+
+export interface DiscordRoleConfig {
+  owner: string[];
+  admin: string[];
+  staff: string[];
+  moderator: string[];
+}
+
+export interface DiscordGuildConfig {
+  guildId: string;
+  channels: DiscordChannelConfig;
+  roles: DiscordRoleConfig;
+  inviteRewardsEnabled: boolean;
+  inviteRewardEvery: number;
+  inviteRewardAmount: number;
+  announcementEveryone: boolean;
+  updatedAt: string | null;
+  updatedBy: { id: string; username: string } | null;
+}
+
+export interface DiscordGuildSummary {
+  id: string;
+  name: string;
+  iconUrl: string | null;
+  memberCount: number;
+  ownerDiscordId: string | null;
+  primary: boolean;
+  lastSeenAt: string | null;
+  botVersion: string | null;
+  latencyMs: number | null;
+}
+
+export interface DiscordBotStatus {
+  connected: boolean;
+  guild: DiscordGuildSummary | null;
+  guildCount: number;
+  lastSeenAt: string | null;
+}
+
+export interface DiscordLinkStatus {
+  linked: boolean;
+  discordUserId: string | null;
+  discordUsername: string | null;
+  linkedAt: string | null;
+}
+
+export interface DiscordLinkCodeResponse {
+  code: string;
+  expiresAt: string;
+  command: string;
+}
+
+export interface DiscordActivityView {
+  id: string;
+  action: string;
+  summary: string;
+  actor: { userId: string | null; username: string | null; discordUserId: string | null } | null;
+  createdAt: string;
+}
+
+export interface DiscordInviteStats {
+  discordUserId: string;
+  username: string | null;
+  websiteUsername: string | null;
+  linked: boolean;
+  totalInvites: number;
+  rewardsEarned: number;
+  rewardsPending: number;
+  rewardEvery: number;
+  rewardAmount: number;
+  nextRewardIn: number;
+  progress: number;
+  leaderboardPosition: number | null;
+  totalTrackedInvites: number;
+}
+
+export interface DiscordInviteLeaderboardEntry {
+  rank: number;
+  discordUserId: string;
+  username: string;
+  websiteUsername: string | null;
+  invites: number;
+  rewards: number;
+}
+
+export interface DiscordVouchView {
+  id: string;
+  type: DiscordVouchType;
+  voucherDiscordId: string;
+  voucherUsername: string;
+  targetDiscordId: string;
+  targetUsername: string;
+  targetWebsiteUsername: string | null;
+  reason: string;
+  messageId: string | null;
+  createdAt: string;
+}
+
+export interface DiscordVouchStats {
+  discordUserId: string;
+  username: string | null;
+  websiteUsername: string | null;
+  positive: number;
+  scam: number;
+  reputation: 'positive' | 'neutral' | 'negative';
+  recent: DiscordVouchView[];
+}
+
+export interface DiscordChangelogSections {
+  features: string[];
+  improvements: string[];
+  fixes: string[];
+  removed: string[];
+  other: string[];
+}
+
+export interface DiscordAnnouncementView {
+  id: string;
+  kind: DiscordAnnouncementKind;
+  title: string;
+  body: string | null;
+  sections: DiscordChangelogSections | null;
+  imageUrl: string | null;
+  thumbnailUrl: string | null;
+  footer: string | null;
+  author: string | null;
+  color: string | null;
+  emoji: string | null;
+  mentionEveryone: boolean;
+  channelId: string | null;
+  messageId: string | null;
+  status: 'published' | 'deleted';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RewardCodeView {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  amount: number;
+  maxRedemptions: number;
+  redeemedCount: number;
+  remaining: number;
+  expiresAt: string | null;
+  disabledAt: string | null;
+  createdAt: string;
+  createdVia: 'web' | 'discord';
+  createdBy: string | null;
+  status: RewardCodeStatus;
+  announcementMessageId: string | null;
+}
+
+export interface RewardCodeRedemptionResponse {
+  code: RewardCodeView;
+  amount: number;
+  balance: number;
+  redeemedAt: string;
+}
+
+export interface DiscordGiveawaySyncItem {
+  id: string;
+  reference: string;
+  title: string;
+  description: string;
+  bannerUrl: string | null;
+  status: GiveawayStatus;
+  prizeAmount: number;
+  winnerCount: number;
+  participantCount: number;
+  startsAt: string;
+  endsAt: string;
+  secondsRemaining: number;
+  winners: { username: string; payoutAmount: number; claimStatus: GiveawayClaimStatus }[];
+  discordMessageId: string | null;
+  discordChannelId: string | null;
+}
+
+export interface DiscordOverviewResponse {
+  status: DiscordBotStatus;
+  config: DiscordGuildConfig | null;
+  guilds: DiscordGuildSummary[];
+  stats: {
+    linkedAccounts: number;
+    trackedInvites: number;
+    inviteRewardsPaid: number;
+    inviteRewardsPending: number;
+    inviteRewardsAmount: number;
+    positiveVouches: number;
+    scamVouches: number;
+    activeGiveaways: number;
+    activeCodes: number;
+    codeRedemptions: number;
+    announcements: number;
+    pendingOutbox: number;
+    failedOutbox: number;
+  };
+  recentActivity: DiscordActivityView[];
+  announcements: DiscordAnnouncementView[];
+  codes: RewardCodeView[];
+  inviteLeaderboard: DiscordInviteLeaderboardEntry[];
+  recentVouches: DiscordVouchView[];
 }
 
 /* -------------------------------- rewards -------------------------------- */

@@ -17,7 +17,7 @@ import { parse, emailSchema, passwordSchema, usernameSchema } from '../lib/valid
 import { getSetting } from '../db/index.ts';
 import { createWallet } from '../lib/wallet.ts';
 import { recordAudit } from '../lib/audit.ts';
-import { notify } from '../lib/notifications.ts';
+import { notify, unreadNotificationCount } from '../lib/notifications.ts';
 import { enqueueEmail, getEmailConfig } from '../lib/email.ts';
 import { createEmailVerification, verifyEmailToken } from '../lib/email-verification.ts';
 import {
@@ -311,7 +311,13 @@ export function createAuthRouter(
   });
 
   router.get('/me', (req, res) => {
-    res.json({ user: req.user ?? null });
+    // The client polls this endpoint for balance changes. Returning the unread
+    // count here lets the bell badge update on the same tick instead of waiting
+    // for a reload or for the notification menu to be opened.
+    res.json({
+      user: req.user ?? null,
+      unreadNotifications: req.user ? unreadNotificationCount(db, req.user.id) : 0,
+    });
   });
 
   router.post('/forgot-password', async (req, res) => {

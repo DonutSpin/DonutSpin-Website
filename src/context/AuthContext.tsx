@@ -45,21 +45,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBootError(null);
     try {
       const [me, publicConfig] = await Promise.all([
-        api.get<{ user: SessionUser | null }>('/auth/me'),
+        api.get<{ user: SessionUser | null; unreadNotifications: number }>('/auth/me'),
         api.get<PublicConfig>('/public/config'),
       ]);
       setUser(me.user);
       setConfig(publicConfig);
-      if (me.user && !me.user.legalAcceptanceRequired) {
-        try {
-          const notifications = await api.get<{ unread: number }>('/me/notifications?pageSize=1&filter=unread');
-          setUnread(notifications.unread);
-        } catch {
-          setUnread(0);
-        }
-      } else {
-        setUnread(0);
-      }
+      setUnread(me.user && !me.user.legalAcceptanceRequired ? me.unreadNotifications : 0);
     } catch (error) {
       setBootError(error instanceof ApiRequestError ? error.message : 'Cannot reach the Donutcash server.');
     } finally {
@@ -152,6 +143,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (wasPaused && !paused) window.setTimeout(() => syncBalanceNow.current(), 0);
   }, []);
 
+  // Notifications can be created by another session (a staff reply, a cashier
+  // decision, a reward) while this tab is already open. Poll the unread count on
+  // its own timer so the bell badge updates without a reload, even while a game
+  // has paused balance synchronization for an animation.
+  useEffect(() => {
+    if (!user?.id) return;
+    let active = true;
+    let timer: number | null = null;
+
+    const syncUnread = async () => {
+      if (!active || document.visibilityState !== 'visible') return;
+      try {
+        const result = await api.get<{ unreadNotifications: number }>('/auth/me');
+        if (active) setUnread(result.unreadNotifications);
+      } catch {
+        /* Keep the last known badge; the next tick can recover. */
+      }
+    };
+
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        void syncUnread().finally(() => {
+          if (active) schedule();
+        });
+      }, 10_000);
+    };
+
+    const syncNow = () => {
+      if (document.visibilityState === 'visible') void syncUnread();
+    };
+
+    // Cover the gap between login/navigation and the first scheduled tick.
+    void syncUnread();
+    schedule();
+    document.addEventListener('visibilitychange', syncNow);
+    window.addEventListener('focus', syncNow);
+    return () => {
+      active = false;
+      if (timer !== null) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', syncNow);
+      window.removeEventListener('focus', syncNow);
+    };
+  }, [user?.id]);
+
   // Cashier decisions happen in another session, so the player's open page
   // learns about them through a cheap authenticated balance check. The timer
   // stops while hidden and is paused by animated games, which must not have
@@ -164,10 +199,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const syncBalance = async () => {
       if (!active || balanceSyncPaused.current || document.visibilityState !== 'visible') return;
       try {
-        const result = await api.get<{ user: SessionUser | null }>('/auth/me');
+        const result = await api.get<{ user: SessionUser | null; unreadNotifications: number }>('/auth/me');
         if (active && result.user && !balanceSyncPaused.current) {
           updateBalance(result.user.balance);
         }
+        if (active) setUnread(result.unreadNotifications);
       } catch {
         /* Keep the last known balance; the next tick can recover. */
       }

@@ -22,6 +22,7 @@ import {
   type GiveawayStatus,
   type GiveawayView,
   type GiveawayWinnerView,
+  type DiscordGiveawaySyncItem,
   type SessionUser,
 } from '../../shared/types.ts';
 import { badRequest, conflict, forbidden, inTransaction, newId, nowIso, notFound } from './core.ts';
@@ -31,6 +32,13 @@ import { applyLedger, balanceOf } from './wallet.ts';
 import { notify } from './notifications.ts';
 import { enqueueEmail } from './email.ts';
 import { addTicketEvent, addTicketMessage, generateTicketReference, touchTicket } from './tickets.ts';
+import {
+  queueGiveawayCancel,
+  queueGiveawayPost,
+  queueGiveawayReroll,
+  queueGiveawayResult,
+} from './discord/events.ts';
+import { getGuildConfig, getPrimaryGuild } from './discord/core.ts';
 
 const DRAW_ALGORITHM = 'HMAC-SHA-256 Fisher–Yates (commit–reveal)';
 const PARTICIPANT_PREVIEW = 12;
@@ -70,6 +78,10 @@ interface GiveawayRow {
   cancelled_at: string | null;
   cancellation_reason: string | null;
   created_at: string;
+  banner_url: string | null;
+  discord_message_id: string | null;
+  discord_channel_id: string | null;
+  discord_guild_id: string | null;
 }
 
 interface WinnerRow {
@@ -227,6 +239,7 @@ export function mapGiveaway(db: DB, row: GiveawayRow, viewerId: string | null, n
     drawSeed: row.status === 'completed' ? row.draw_seed : null,
     drawAlgorithm: DRAW_ALGORITHM,
     yourWin,
+    bannerUrl: row.banner_url,
   };
 }
 
@@ -440,7 +453,15 @@ function settleGiveawayRow(db: DB, row: GiveawayRow, now: number): GiveawayRow {
       targetLabel: fresh.reference,
       metadata: { prizeAmount: fresh.prize_amount, winners: 0, refunded: true },
     });
-    return getGiveawayRow(db, fresh.id) ?? fresh;
+    const refunded = getGiveawayRow(db, fresh.id) ?? fresh;
+    queueGiveawayResult(
+      db,
+      mapGiveaway(db, refunded, null),
+      refunded.discord_guild_id,
+      refunded.discord_channel_id,
+      refunded.discord_message_id,
+    );
+    return refunded;
   }
 
   drawn.forEach((userId, index) => {
@@ -494,7 +515,15 @@ function settleGiveawayRow(db: DB, row: GiveawayRow, now: number): GiveawayRow {
     },
   });
 
-  return getGiveawayRow(db, fresh.id) ?? fresh;
+  const settled = getGiveawayRow(db, fresh.id) ?? fresh;
+  queueGiveawayResult(
+    db,
+    mapGiveaway(db, settled, null),
+    settled.discord_guild_id,
+    settled.discord_channel_id,
+    settled.discord_message_id,
+  );
+  return settled;
 }
 
 function settleDueInside(db: DB, now: number): void {
@@ -602,6 +631,45 @@ export function featuredGiveaways(db: DB, viewerId: string | null): GiveawayFeat
   };
 }
 
+/**
+ * Active and upcoming giveaways for the bot's message synchroniser. It returns
+ * the exact participant count and winner snapshots from the shared database so
+ * the Discord message and website can never disagree.
+ */
+export function listGiveawaySyncItems(db: DB, limit = 50): DiscordGiveawaySyncItem[] {
+  settleDueGiveaways(db);
+  const now = Date.now();
+  const rows = db
+    .prepare(
+      `SELECT * FROM giveaways
+        WHERE status IN ('scheduled','active')
+           OR (status IN ('completed','cancelled') AND completed_at IS NOT NULL AND completed_at >= ?)
+        ORDER BY created_at DESC LIMIT ?`,
+    )
+    .all(new Date(now - 24 * 60 * 60 * 1000).toISOString(), Math.min(100, Math.max(1, limit))) as GiveawayRow[];
+  return rows.map((row) => ({
+    id: row.id,
+    reference: row.reference,
+    title: row.title,
+    description: row.description,
+    bannerUrl: row.banner_url,
+    status: row.status,
+    prizeAmount: row.prize_amount,
+    winnerCount: row.winner_count,
+    participantCount: participantCount(db, row.id),
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    secondsRemaining: Math.max(0, Math.ceil((new Date(row.ends_at).getTime() - now) / 1000)),
+    winners: getWinnerRows(db, row.id).map((winner) => ({
+      username: winner.username_snapshot,
+      payoutAmount: winner.payout_amount,
+      claimStatus: winner.claim_status,
+    })),
+    discordMessageId: row.discord_message_id,
+    discordChannelId: row.discord_channel_id,
+  }));
+}
+
 export function manageGiveaways(db: DB, viewer: SessionUser): GiveawayManageResponse {
   settleDueGiveaways(db);
   const now = Date.now();
@@ -623,6 +691,25 @@ export interface CreateGiveawayInput {
   winnerCount: number;
   startsAt: string;
   endsAt: string;
+  bannerUrl?: string | null;
+}
+
+/** Banners are optional public HTTPS images; reject anything else. */
+function normalizeBannerUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+  if (trimmed.length > 500) throw badRequest('Keep the banner URL under 500 characters.', 'INVALID_BANNER', {
+    fields: { bannerUrl: 'Use a shorter URL.' },
+  });
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:') throw new Error('not https');
+  } catch {
+    throw badRequest('Banner links must be public HTTPS images.', 'INVALID_BANNER', {
+      fields: { bannerUrl: 'Use an https:// image URL.' },
+    });
+  }
+  return trimmed;
 }
 
 function validateWindow(input: { startsAt: string; endsAt: string }): { startsMs: number; endsMs: number } {
@@ -686,8 +773,8 @@ function insertGiveawayRow(
     `INSERT INTO giveaways
        (id, reference, title, description, prize_amount, winner_count, status, starts_at, ends_at,
         created_by, funded_by_user_id, sponsor_user_id, funding_kind, sponsorship_id, escrow_ledger_id,
-        draw_commitment, draw_seed, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        draw_commitment, draw_seed, created_at, banner_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     reference,
@@ -707,15 +794,22 @@ function insertGiveawayRow(
     commitment,
     seed,
     new Date(options.now).toISOString(),
+    input.bannerUrl ?? null,
   );
   const row = getGiveawayRow(db, id);
   if (!row) throw new Error('Giveaway disappeared after creation');
   return row;
 }
 
-export function createGiveaway(db: DB, actor: SessionUser, input: CreateGiveawayInput): GiveawayView {
+export function createGiveaway(
+  db: DB,
+  actor: SessionUser,
+  input: CreateGiveawayInput,
+  options: { guildId?: string | null; channelId?: string | null } = {},
+): GiveawayView {
   const now = Date.now();
   validatePrize(input.prizeAmount, input.winnerCount);
+  const bannerUrl = normalizeBannerUrl(input.bannerUrl);
   const { startsMs, endsMs } = validateWindow(input);
   if (startsMs > now && startsMs - now < GIVEAWAY_MIN_SCHEDULE_LEAD_SECONDS * 1000) {
     throw badRequest(
@@ -751,7 +845,7 @@ export function createGiveaway(db: DB, actor: SessionUser, input: CreateGiveaway
       db,
       id,
       reference,
-      { ...input, startsAt, endsAt },
+      { ...input, startsAt, endsAt, bannerUrl },
       {
         createdBy: actor.id,
         fundedBy: actor.id,
@@ -781,7 +875,23 @@ export function createGiveaway(db: DB, actor: SessionUser, input: CreateGiveaway
 
   const row = getGiveawayRow(db, id);
   if (!row) throw new Error('Giveaway disappeared after creation');
-  return mapGiveaway(db, row, actor.id);
+  const view = mapGiveaway(db, row, actor.id);
+  const guildId = options.guildId ?? row.discord_guild_id ?? getPrimaryGuild(db)?.guild_id ?? null;
+  const channelId =
+    options.channelId ??
+    row.discord_channel_id ??
+    (guildId ? getGuildConfig(db, guildId).channels.giveaways : null);
+  if (guildId) {
+    // Store the destination before the outbox delivers, so an early end or a
+    // reroll knows where to edit the original message even if delivery is slow.
+    db.prepare('UPDATE giveaways SET discord_guild_id = ?, discord_channel_id = ? WHERE id = ?').run(
+      guildId,
+      channelId,
+      id,
+    );
+  }
+  queueGiveawayPost(db, view, guildId, channelId);
+  return view;
 }
 
 /* --------------------------------- joining -------------------------------- */
@@ -1078,6 +1188,7 @@ export interface UpdateGiveawayInput {
   winnerCount?: number;
   startsAt?: string;
   endsAt?: string;
+  bannerUrl?: string | null;
 }
 
 export function updateGiveaway(
@@ -1096,6 +1207,7 @@ export function updateGiveaway(
     }
     const prizeAmount = input.prizeAmount ?? row.prize_amount;
     const winnerCount = input.winnerCount ?? row.winner_count;
+    const bannerUrl = input.bannerUrl === undefined ? row.banner_url : normalizeBannerUrl(input.bannerUrl);
     validatePrize(prizeAmount, winnerCount);
     const startsAt = input.startsAt ?? row.starts_at;
     const endsAt = input.endsAt ?? row.ends_at;
@@ -1144,7 +1256,7 @@ export function updateGiveaway(
       row.status === 'active' || nextStart.getTime() <= now ? 'active' : 'scheduled';
     db.prepare(
       `UPDATE giveaways SET title = ?, description = ?, prize_amount = ?, winner_count = ?,
-              starts_at = ?, ends_at = ?, status = ? WHERE id = ?`,
+              starts_at = ?, ends_at = ?, status = ?, banner_url = ? WHERE id = ?`,
     ).run(
       input.title ?? row.title,
       input.description ?? row.description,
@@ -1153,6 +1265,7 @@ export function updateGiveaway(
       startsAt,
       endsAt,
       status,
+      bannerUrl,
       row.id,
     );
     recordAudit(db, {
@@ -1169,6 +1282,7 @@ export function updateGiveaway(
         startsAt,
         endsAt,
         escrowAdjustment: difference,
+        bannerUrl,
       },
     });
   });
@@ -1231,10 +1345,140 @@ export function cancelGiveaway(
   });
   const row = getGiveawayRow(db, giveawayId);
   if (!row) throw notFound('Giveaway not found.');
+  const view = mapGiveaway(db, row, actor.id);
+  queueGiveawayCancel(db, view, row.discord_guild_id, row.discord_channel_id, row.discord_message_id);
+  return view;
+}
+
+/* ----------------------------- early end / reroll ------------------------- */
+
+/**
+ * Ends an active or scheduled giveaway now. The committed draw seed is still
+ * used, so ending early cannot change the selection algorithm or hide the proof.
+ */
+export function endGiveawayEarly(db: DB, actor: SessionUser, giveawayId: string): GiveawayView {
+  settleDueGiveaways(db);
+  const now = Date.now();
+  inTransaction(db, () => {
+    const row = getGiveawayRow(db, giveawayId);
+    if (!row) throw notFound('Giveaway not found.');
+    if (row.status !== 'active' && row.status !== 'scheduled') {
+      throw conflict('Only upcoming or active giveaways can be ended early.', 'GIVEAWAY_NOT_ACTIVE');
+    }
+    const startsAt = new Date(Math.min(new Date(row.starts_at).getTime(), now - 1000)).toISOString();
+    const endsAt = new Date(now).toISOString();
+    const updated = db
+      .prepare(
+        `UPDATE giveaways SET status = 'active', starts_at = ?, ends_at = ?
+          WHERE id = ? AND status IN ('scheduled','active')`,
+      )
+      .run(startsAt, endsAt, row.id);
+    if (updated.changes !== 1) throw conflict('This giveaway changed while it was ending.', 'GIVEAWAY_CONFLICT');
+    recordAudit(db, {
+      actorId: actor.id,
+      action: 'giveaway.end_early',
+      targetType: 'giveaway',
+      targetId: row.id,
+      targetLabel: row.reference,
+      metadata: { previousEndsAt: row.ends_at, endedAt: endsAt },
+    });
+  });
+  settleDueGiveaways(db, now + 1000);
+  const row = getGiveawayRow(db, giveawayId);
+  if (!row) throw notFound('Giveaway not found.');
   return mapGiveaway(db, row, actor.id);
 }
 
-/* ----------------------------- sponsorships ------------------------------- */
+/**
+ * Replaces one unclaimed winner with the next deterministic entrant. Winners
+ * who already opened a claim ticket are never silently removed: staff must
+ * reject that claim first, which keeps the payout ledger unambiguous.
+ */
+export function rerollGiveaway(db: DB, actor: SessionUser, giveawayId: string): GiveawayView {
+  settleDueGiveaways(db);
+  const now = Date.now();
+  const result = inTransaction(db, () => {
+    const row = getGiveawayRow(db, giveawayId);
+    if (!row) throw notFound('Giveaway not found.');
+    if (row.status !== 'completed') {
+      throw conflict('Only a completed giveaway can be rerolled.', 'GIVEAWAY_NOT_COMPLETED');
+    }
+    const winners = getWinnerRows(db, row.id);
+    if (winners.length === 0) throw conflict('This giveaway has no winners to reroll.', 'NO_WINNERS');
+    const oldWinner = winners.find((winner) => winner.claim_status === 'unclaimed' && !winner.claim_ticket_id);
+    if (!oldWinner) {
+      throw conflict(
+        'Every winner already has a pending or approved claim. Reject a pending claim before rerolling it.',
+        'CLAIM_ALREADY_OPEN',
+      );
+    }
+    const winnerIds = new Set(winners.map((winner) => winner.user_id));
+    const entries = db
+      .prepare(
+        `SELECT e.user_id, u.username
+           FROM giveaway_entries e JOIN users u ON u.id = e.user_id
+          WHERE e.giveaway_id = ?
+          ORDER BY e.joined_at ASC, e.user_id ASC`,
+      )
+      .all(row.id) as { user_id: string; username: string }[];
+    const candidates = entries.filter((entry) => !winnerIds.has(entry.user_id));
+    if (candidates.length === 0) {
+      throw conflict('There are no other entrants available for a reroll.', 'NO_REROLL_CANDIDATE');
+    }
+    const pickedId = drawOrder(
+      row.draw_seed,
+      `${row.id}:reroll:${oldWinner.id}`,
+      candidates.map((entry) => entry.user_id),
+      1,
+    )[0];
+    const picked = candidates.find((entry) => entry.user_id === pickedId);
+    if (!picked) throw conflict('The reroll could not pick a replacement.', 'REROLL_FAILED');
+    const updated = db
+      .prepare(
+        `UPDATE giveaway_winners
+            SET user_id = ?, username_snapshot = ?, claim_status = 'unclaimed', claim_ticket_id = NULL,
+                approved_by = NULL, approved_at = NULL, rejected_at = NULL, rejection_reason = NULL,
+                payout_ledger_id = NULL, selected_at = ?
+          WHERE id = ? AND claim_status = 'unclaimed' AND claim_ticket_id IS NULL`,
+      )
+      .run(picked.user_id, picked.username, nowIso(), oldWinner.id);
+    if (updated.changes !== 1) throw conflict('The winner changed while rerolling.', 'REROLL_CONFLICT');
+
+    notify(db, {
+      userId: oldWinner.user_id,
+      type: 'giveaway',
+      title: 'Giveaway selection updated',
+      body: `${row.reference} was rerolled before your claim was opened. You are no longer a winner.`,
+      link: '/giveaways',
+      actorId: actor.id,
+    });
+    notify(db, {
+      userId: picked.user_id,
+      type: 'giveaway',
+      title: `You won ${compactAmount(oldWinner.payout_amount)} money`,
+      body: `You are the rerolled winner of "${row.title}". Open a Giveaway Claim ticket to receive your prize.`,
+      link: `/giveaways?claim=${encodeURIComponent(row.id)}`,
+      actorId: actor.id,
+    });
+    recordAudit(db, {
+      actorId: actor.id,
+      action: 'giveaway.reroll',
+      targetType: 'giveaway',
+      targetId: row.id,
+      targetLabel: row.reference,
+      metadata: {
+        replacedWinnerId: oldWinner.id,
+        previousUserId: oldWinner.user_id,
+        newUserId: picked.user_id,
+        position: oldWinner.position,
+      },
+    });
+    return getGiveawayRow(db, row.id) ?? row;
+  });
+  const view = mapGiveaway(db, result, actor.id);
+  queueGiveawayReroll(db, view, result.discord_guild_id, result.discord_channel_id, result.discord_message_id);
+  return view;
+}
 
 export interface CreateSponsorshipInput {
   prizeAmount: number;

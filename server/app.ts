@@ -28,6 +28,8 @@ import { createAdminConfigRouter } from './routes/admin-config.ts';
 import { createRewardsRouter } from './routes/rewards.ts';
 import { createAdminRewardsRouter } from './routes/admin-rewards.ts';
 import { createAdminEmailRouter } from './routes/admin-email.ts';
+import { createBotRouter } from './routes/bot.ts';
+import { createCodesRouter, createDiscordAdminRouter, createDiscordMeRouter } from './routes/discord.ts';
 
 /**
  * A request is same-origin when the browser's Origin host matches the host the
@@ -98,7 +100,7 @@ export function createApp(db: DB, options: { turnstile?: TurnstileVerifier } = {
               defaultSrc: ["'self'"],
               scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
               styleSrc: ["'self'", "'unsafe-inline'"],
-              imgSrc: ["'self'", 'data:'],
+              imgSrc: ["'self'", 'data:', 'https:'],
               fontSrc: ["'self'", 'data:'],
               connectSrc: ["'self'"],
               frameSrc: ["'self'", 'https://challenges.cloudflare.com'],
@@ -114,6 +116,12 @@ export function createApp(db: DB, options: { turnstile?: TurnstileVerifier } = {
   );
   app.use(express.json({ limit: '128kb' }));
   app.use(cookieParser(config.sessionSecret || undefined));
+
+  // The Discord bot is a separate host and authenticates with a bearer key, not
+  // a browser session. It is mounted before CSRF and legal-consent gates, which
+  // are intentionally cookie-based. Its router validates every payload and
+  // re-checks the linked website account and role on every administrative call.
+  app.use('/api/bot', createBotRouter(db));
 
   // CSRF hardening: state-changing requests must come from the app, carry a
   // custom header, and not originate from another site.
@@ -167,6 +175,7 @@ export function createApp(db: DB, options: { turnstile?: TurnstileVerifier } = {
   app.use('/api/public', createPublicRouter(db));
   app.use('/api/auth', createAuthRouter(db, turnstile));
   app.use('/api/legal', createLegalRouter(db));
+  app.use('/api/me/discord', createDiscordMeRouter(db));
   app.use('/api/me', createMeRouter(db));
   app.use('/api/games', createGamesRouter(db));
   app.use('/api/rain', createRainRouter(db));
@@ -183,6 +192,8 @@ export function createApp(db: DB, options: { turnstile?: TurnstileVerifier } = {
   app.use('/api/admin', createAdminRewardsRouter(db));
   app.use('/api/admin', createAdminEmailRouter(db));
   app.use('/api/admin/cashier', createAdminCashierRouter(db));
+  app.use('/api/admin/discord', createDiscordAdminRouter(db));
+  app.use('/api/codes', createCodesRouter(db));
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'API endpoint not found.' } });
