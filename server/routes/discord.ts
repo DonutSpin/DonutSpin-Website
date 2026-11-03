@@ -37,6 +37,16 @@ import {
   updateGuildConfig,
   type DiscordGuildRow,
 } from '../lib/discord/core.ts';
+import {
+  createInfoChannel,
+  createPanel,
+  deleteInfoChannel,
+  deletePanel,
+  listInfoChannels,
+  listPanels,
+  updateInfoChannel,
+  updatePanel,
+} from '../lib/discord/panels.ts';
 import { getInviteLeaderboard } from '../lib/discord/invites.ts';
 import { listRecentVouches } from '../lib/discord/vouches.ts';
 import { recordAudit } from '../lib/audit.ts';
@@ -98,6 +108,30 @@ const announcementSchema = z.object({
 
 const announcementEditSchema = announcementSchema.omit({ kind: true });
 
+const infoChannelSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  category: z.string().trim().min(2).max(50),
+  channelId: snowflake,
+  description: z.string().trim().max(200).nullable().optional(),
+});
+
+const panelLinkSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  url: z.string().trim().max(500),
+});
+
+const panelSchema = z.object({
+  infoChannelId: z.string().trim().min(1).max(64),
+  title: z.string().trim().min(3).max(120),
+  body: z.string().trim().min(1).max(4000),
+  color: z.string().trim().max(10).nullable().optional(),
+  imageUrl: z.string().trim().max(500).nullable().optional(),
+  thumbnailUrl: z.string().trim().max(500).nullable().optional(),
+  footer: z.string().trim().max(200).nullable().optional(),
+  links: z.array(panelLinkSchema).max(4).optional(),
+  mentionEveryone: z.boolean().optional(),
+});
+
 const codeSchema = z.object({
   code: z.string().trim().min(3).max(32),
   name: z.string().trim().max(100).optional(),
@@ -127,6 +161,8 @@ export function createDiscordAdminRouter(db: DB): Router {
       stats: getDiscordStats(db),
       recentActivity: listDiscordActivity(db, 30),
       announcements: listAnnouncements(db, { limit: 25 }),
+      infoChannels: primary ? listInfoChannels(db, primary.guild_id) : [],
+      panels: primary ? listPanels(db, primary.guild_id) : [],
       codes: listRewardCodes(db, 25),
       inviteLeaderboard: primary ? getInviteLeaderboard(db, primary.guild_id, 10) : [],
       recentVouches: listRecentVouches(db, 10),
@@ -168,6 +204,40 @@ export function createDiscordAdminRouter(db: DB): Router {
     const existing = getAnnouncement(db, req.params.id ?? '');
     if (!existing) throw notFound('Announcement not found.');
     res.json({ announcement: deleteAnnouncement(db, user, existing.id) });
+  });
+
+  router.post('/info-channels', (req, res) => {
+    const user = requirePermission(req, 'discord.manage');
+    const body = parse(infoChannelSchema, req.body);
+    res.status(201).json({ channel: createInfoChannel(db, user, body) });
+  });
+
+  router.patch('/info-channels/:id', (req, res) => {
+    const user = requirePermission(req, 'discord.manage');
+    const body = parse(infoChannelSchema, req.body);
+    res.json({ channel: updateInfoChannel(db, user, req.params.id ?? '', body) });
+  });
+
+  router.delete('/info-channels/:id', (req, res) => {
+    const user = requirePermission(req, 'discord.manage');
+    res.json({ ok: true, ...deleteInfoChannel(db, user, req.params.id ?? '') });
+  });
+
+  router.post('/panels', (req, res) => {
+    const user = requirePermission(req, 'discord.manage');
+    const body = parse(panelSchema, req.body);
+    res.status(201).json({ panel: createPanel(db, user, body) });
+  });
+
+  router.patch('/panels/:id', (req, res) => {
+    const user = requirePermission(req, 'discord.manage');
+    const body = parse(panelSchema, req.body);
+    res.json({ panel: updatePanel(db, user, req.params.id ?? '', body) });
+  });
+
+  router.delete('/panels/:id', (req, res) => {
+    const user = requirePermission(req, 'discord.manage');
+    res.json({ panel: deletePanel(db, user, req.params.id ?? '') });
   });
 
   router.get('/codes', (req, res) => {

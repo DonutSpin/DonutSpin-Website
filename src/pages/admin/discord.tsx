@@ -25,7 +25,10 @@ import {
   type DiscordAnnouncementKind,
   type DiscordAnnouncementView,
   type DiscordGuildConfig,
+  type DiscordInfoChannelView,
   type DiscordOverviewResponse,
+  type DiscordPanelLink,
+  type DiscordPanelView,
   type RewardCodeView,
 } from '../../../shared/types';
 import { useToast } from '../../context/ToastContext';
@@ -47,6 +50,7 @@ import {
   LoadingBlock,
   Modal,
   Progress,
+  Select,
   StatCard,
   Tabs,
   Textarea,
@@ -54,7 +58,7 @@ import {
   cn,
 } from '../../components/ui';
 
-type TabKey = 'overview' | 'config' | 'announcements' | 'codes' | 'activity';
+type TabKey = 'overview' | 'config' | 'announcements' | 'panels' | 'codes' | 'activity';
 
 const CHANNEL_FIELDS: { key: keyof DiscordGuildConfig['channels']; label: string; hint: string }[] = [
   { key: 'welcome', label: 'Welcome channel', hint: 'Member welcomes and invite attribution.' },
@@ -423,6 +427,578 @@ function AnnouncementModal({
   );
 }
 
+function InfoChannelModal({
+  open,
+  onClose,
+  channel,
+  categories,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  channel: DiscordInfoChannelView | null;
+  categories: string[];
+  onSaved: () => void;
+}) {
+  const { success, error: toastError } = useToast();
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('');
+  const [channelId, setChannelId] = useState('');
+  const [description, setDescription] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(channel?.name ?? '');
+    setCategory(channel?.category ?? '');
+    setChannelId(channel?.channelId ?? '');
+    setDescription(channel?.description ?? '');
+    setError(null);
+  }, [open, channel]);
+
+  const valid = name.trim().length >= 2 && category.trim().length >= 2 && /^\d{15,22}$/.test(channelId.trim());
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = {
+        name: name.trim(),
+        category: category.trim(),
+        channelId: channelId.trim(),
+        description: description.trim() || null,
+      };
+      if (channel) await api.patch(`/admin/discord/info-channels/${channel.id}`, payload);
+      else await api.post('/admin/discord/info-channels', payload);
+      success(
+        channel ? 'Update channel saved' : 'Update channel added',
+        'Panels posted here are published and edited from this page.',
+      );
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(errorMessage(err));
+      toastError('Could not save update channel', errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={channel ? 'Edit update channel' : 'Add update channel'}
+      description="Register a Discord channel once, then publish any number of info panels there without changing code."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="primary" loading={busy} disabled={!valid} onClick={() => void submit()}>
+            {channel ? 'Save channel' : 'Add channel'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {error && <Alert tone="error">{error}</Alert>}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Channel name" required hint="The label shown on this page.">
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Dev updates"
+              maxLength={80}
+            />
+          </Field>
+          <Field label="Category" required hint="Groups channels together, for example Development.">
+            <Input
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              placeholder="Development"
+              maxLength={50}
+              list="info-channel-categories"
+            />
+            <datalist id="info-channel-categories">
+              {categories.map((entry) => (
+                <option key={entry} value={entry} />
+              ))}
+            </datalist>
+          </Field>
+        </div>
+        <Field label="Discord channel ID" required hint="Right-click the channel in Discord and choose Copy Channel ID.">
+          <Input
+            value={channelId}
+            onChange={(event) => setChannelId(event.target.value)}
+            placeholder="123456789012345678"
+            inputMode="numeric"
+            className="font-mono text-[12px]"
+          />
+        </Field>
+        <Field label="Description" hint="Optional. A short note for staff about what belongs here.">
+          <Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={2} maxLength={200} />
+        </Field>
+        <Alert tone="info">
+          Panels are posted by the bot. If the channel ID changes later, remove the published panels first so the bot can
+          move them cleanly.
+        </Alert>
+      </div>
+    </Modal>
+  );
+}
+
+function PanelModal({
+  open,
+  onClose,
+  panel,
+  channels,
+  defaultChannelId,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  panel: DiscordPanelView | null;
+  channels: DiscordInfoChannelView[];
+  defaultChannelId?: string;
+  onSaved: () => void;
+}) {
+  const { success, error: toastError } = useToast();
+  const [infoChannelId, setInfoChannelId] = useState('');
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [color, setColor] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [thumbnailUrl, setThumbnailUrl] = useState('');
+  const [footer, setFooter] = useState('');
+  const [links, setLinks] = useState<DiscordPanelLink[]>([]);
+  const [mentionEveryone, setMentionEveryone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setInfoChannelId(panel?.infoChannelId ?? defaultChannelId ?? channels[0]?.id ?? '');
+    setTitle(panel?.title ?? '');
+    setBody(panel?.body ?? '');
+    setColor(panel?.color ?? '');
+    setImageUrl(panel?.imageUrl ?? '');
+    setThumbnailUrl(panel?.thumbnailUrl ?? '');
+    setFooter(panel?.footer ?? '');
+    setLinks(panel?.links ?? []);
+    setMentionEveryone(panel?.mentionEveryone ?? false);
+    setError(null);
+    // `channels` refreshes on the page's poll, so it is deliberately excluded:
+    // including it would wipe unsaved edits every twenty seconds.
+  }, [open, panel, defaultChannelId]);
+
+  const categories = [...new Set(channels.map((channel) => channel.category))].sort((a, b) => a.localeCompare(b));
+  const valid = Boolean(infoChannelId) && title.trim().length >= 3 && body.trim().length >= 1;
+
+  const updateLink = (index: number, patch: Partial<DiscordPanelLink>) => {
+    setLinks((current) => current.map((link, i) => (i === index ? { ...link, ...patch } : link)));
+  };
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = {
+        infoChannelId,
+        title: title.trim(),
+        body: body.trim(),
+        color: color.trim() || null,
+        imageUrl: imageUrl.trim() || null,
+        thumbnailUrl: thumbnailUrl.trim() || null,
+        footer: footer.trim() || null,
+        links: links.map((link) => ({ label: link.label.trim(), url: link.url.trim() })).filter((link) => link.label && link.url),
+        mentionEveryone,
+      };
+      if (panel) await api.patch(`/admin/discord/panels/${panel.id}`, payload);
+      else await api.post('/admin/discord/panels', payload);
+      success(panel ? 'Panel updated' : 'Panel published', 'The bot applies the change within a few seconds.');
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(errorMessage(err));
+      toastError('Could not save panel', errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={panel ? 'Edit info panel' : 'New info panel'}
+      description="A branded Discord embed. Edit it here at any time and the bot updates the same message in place."
+      size="lg"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="primary" loading={busy} disabled={!valid} onClick={() => void submit()}>
+            {panel ? 'Save changes' : 'Publish panel'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {error && <Alert tone="error">{error}</Alert>}
+        <Field label="Update channel" required hint="The panel is posted in this Discord channel.">
+          <Select value={infoChannelId} onChange={(event) => setInfoChannelId(event.target.value)}>
+            <option value="">Choose a channel</option>
+            {categories.map((category) => (
+              <optgroup key={category} label={category}>
+                {channels
+                  .filter((channel) => channel.category === category)
+                  .map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Title" required hint="3-120 characters.">
+          <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} placeholder="Meet the DonutCash dev team" />
+        </Field>
+        <Field label="Message" required hint={`${body.length}/4,000 characters. Discord markdown is supported.`}>
+          <Textarea value={body} onChange={(event) => setBody(event.target.value)} rows={7} maxLength={4000} />
+        </Field>
+
+        <div className="rounded-xl border border-line/80 bg-surface-2/40 p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[12.5px] font-semibold text-ink">Link buttons</p>
+              <p className="mt-0.5 text-[11px] text-muted">Up to four HTTPS links under the panel.</p>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<Plus className="h-3.5 w-3.5" />}
+              disabled={links.length >= 4}
+              onClick={() => setLinks((current) => [...current, { label: '', url: '' }])}
+            >
+              Add button
+            </Button>
+          </div>
+          {links.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {links.map((link, index) => (
+                <div key={index} className="flex flex-wrap items-center gap-2">
+                  <Input
+                    value={link.label}
+                    onChange={(event) => updateLink(index, { label: event.target.value })}
+                    placeholder="Label"
+                    maxLength={80}
+                    className="min-w-32 flex-1"
+                  />
+                  <Input
+                    value={link.url}
+                    onChange={(event) => updateLink(index, { url: event.target.value })}
+                    placeholder="https://…"
+                    className="min-w-48 flex-[2]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setLinks((current) => current.filter((_, i) => i !== index))}
+                    className="rounded-lg p-2 text-faint transition-colors hover:bg-danger/10 hover:text-danger"
+                    aria-label="Remove link button"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Colour" hint="Six-digit hex, for example #5865F2.">
+            <Input value={color} onChange={(event) => setColor(event.target.value)} placeholder="#5865F2" />
+          </Field>
+          <Field label="Footer">
+            <Input value={footer} onChange={(event) => setFooter(event.target.value)} maxLength={200} />
+          </Field>
+          <Field label="Image URL" hint="Optional HTTPS banner.">
+            <Input value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https://…" />
+          </Field>
+          <Field label="Thumbnail URL" hint="Optional HTTPS thumbnail.">
+            <Input value={thumbnailUrl} onChange={(event) => setThumbnailUrl(event.target.value)} placeholder="https://…" />
+          </Field>
+        </div>
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-line/80 bg-surface-2/50 p-3.5">
+          <div>
+            <p className="text-[12.5px] font-semibold text-ink">Mention @everyone</p>
+            <p className="mt-0.5 text-[11px] text-muted">Only used when the panel is first published.</p>
+          </div>
+          <Toggle checked={mentionEveryone} onChange={setMentionEveryone} label="Mention everyone" />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function PanelsTab({ data, onChanged }: { data: DiscordOverviewResponse; onChanged: () => void }) {
+  const { success, error: toastError } = useToast();
+  const [channelModal, setChannelModal] = useState<{ open: boolean; item: DiscordInfoChannelView | null }>({
+    open: false,
+    item: null,
+  });
+  const [panelModal, setPanelModal] = useState<{ open: boolean; item: DiscordPanelView | null; channelId?: string }>({
+    open: false,
+    item: null,
+  });
+  const [deleteChannel, setDeleteChannel] = useState<DiscordInfoChannelView | null>(null);
+  const [deletePanel, setDeletePanel] = useState<DiscordPanelView | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const categories = [...new Set(data.infoChannels.map((channel) => channel.category))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const channelName = (id: string) => data.infoChannels.find((channel) => channel.id === id)?.name ?? 'Unknown channel';
+
+  const removeChannel = async () => {
+    if (!deleteChannel) return;
+    setBusy(true);
+    try {
+      const result = await api.delete<{ deletedPanels: number }>(`/admin/discord/info-channels/${deleteChannel.id}`);
+      success(
+        'Update channel removed',
+        result.deletedPanels > 0
+          ? `${result.deletedPanels} panel${result.deletedPanels === 1 ? '' : 's'} were removed from Discord.`
+          : 'No panels were attached to it.',
+      );
+      setDeleteChannel(null);
+      onChanged();
+    } catch (err) {
+      toastError('Could not remove update channel', errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removePanel = async () => {
+    if (!deletePanel) return;
+    setBusy(true);
+    try {
+      await api.delete(`/admin/discord/panels/${deletePanel.id}`);
+      success('Panel deleted', 'The Discord message is being removed.');
+      setDeletePanel(null);
+      onChanged();
+    } catch (err) {
+      toastError('Could not delete panel', errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <CardHeader
+          title="Update channels"
+          description="Register the Discord channels where the bot publishes info panels. Group them by category so the team can find things quickly."
+          action={
+            <Button
+              variant="primary"
+              size="sm"
+              leftIcon={<Plus className="h-3.5 w-3.5" />}
+              onClick={() => setChannelModal({ open: true, item: null })}
+            >
+              Add channel
+            </Button>
+          }
+        />
+        {data.infoChannels.length === 0 ? (
+          <EmptyState
+            icon={<Hash className="h-5 w-5" />}
+            title="No update channels yet"
+            description="Add the channel you just created in Discord. Then publish your first panel and the bot posts it there."
+            action={
+              <Button variant="primary" onClick={() => setChannelModal({ open: true, item: null })}>
+                Add the first channel
+              </Button>
+            }
+          />
+        ) : (
+          <div className="divide-y divide-line/70">
+            {categories.map((category) => (
+              <div key={category} className="px-5 py-4">
+                <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-faint/90">{category}</p>
+                <div className="mt-2.5 space-y-2">
+                  {data.infoChannels
+                    .filter((channel) => channel.category === category)
+                    .map((channel) => (
+                      <div
+                        key={channel.id}
+                        className="flex flex-wrap items-center gap-3 rounded-xl border border-line/80 bg-surface-2/40 px-3.5 py-3"
+                      >
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface-1 text-gold">
+                          <Hash className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-[12.5px] font-semibold text-ink">{channel.name}</p>
+                            <Badge tone={channel.panelCount > 0 ? 'gold' : 'neutral'}>
+                              {channel.panelCount} panel{channel.panelCount === 1 ? '' : 's'}
+                            </Badge>
+                          </div>
+                          <p className="mt-0.5 font-mono text-[10px] text-faint">{channel.channelId}</p>
+                          {channel.description && (
+                            <p className="mt-1 text-[11px] leading-relaxed text-muted">{channel.description}</p>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            leftIcon={<Plus className="h-3.5 w-3.5" />}
+                            onClick={() => setPanelModal({ open: true, item: null, channelId: channel.id })}
+                          >
+                            Panel
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                            onClick={() => setChannelModal({ open: true, item: channel })}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                            onClick={() => setDeleteChannel(channel)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Info panels"
+          description="Publish announcements, developer updates, rules, or guides. Editing a sent panel updates the same Discord message."
+          action={
+            <Button
+              variant="primary"
+              size="sm"
+              leftIcon={<Plus className="h-3.5 w-3.5" />}
+              disabled={data.infoChannels.length === 0}
+              onClick={() => setPanelModal({ open: true, item: null, channelId: data.infoChannels[0]?.id })}
+            >
+              New panel
+            </Button>
+          }
+        />
+        {data.panels.length === 0 ? (
+          <EmptyState
+            icon={<FileText className="h-5 w-5" />}
+            title="No panels published"
+            description="Panels are reusable embeds: publish once, then edit them here whenever the information changes."
+            action={
+              data.infoChannels.length > 0 ? (
+                <Button variant="primary" onClick={() => setPanelModal({ open: true, item: null, channelId: data.infoChannels[0]?.id })}>
+                  Write the first panel
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <div className="divide-y divide-line/70">
+            {data.panels.map((panel) => (
+              <div key={panel.id} className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="violet">{panel.category}</Badge>
+                    <Badge tone="neutral">#{channelName(panel.infoChannelId)}</Badge>
+                    {panel.mentionEveryone && <Badge tone="warning">@everyone</Badge>}
+                    {!panel.messageId && <Badge tone="neutral">Queued</Badge>}
+                  </div>
+                  <p className="mt-2 font-display text-[15px] font-semibold text-ink">{panel.title}</p>
+                  <p className="mt-1 line-clamp-2 text-[11.5px] leading-relaxed text-muted">{panel.body}</p>
+                  <p className="mt-1.5 text-[10px] text-faint">
+                    {dateTime(panel.updatedAt)} · {panel.messageId ? 'Published in Discord' : 'Waiting for delivery'}
+                    {panel.links.length > 0 ? ` · ${panel.links.length} button${panel.links.length === 1 ? '' : 's'}` : ''}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                    onClick={() => setPanelModal({ open: true, item: panel })}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                    onClick={() => setDeletePanel(panel)}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <InfoChannelModal
+        open={channelModal.open}
+        channel={channelModal.item}
+        categories={categories}
+        onClose={() => setChannelModal({ open: false, item: null })}
+        onSaved={onChanged}
+      />
+      <PanelModal
+        open={panelModal.open}
+        panel={panelModal.item}
+        channels={data.infoChannels}
+        defaultChannelId={panelModal.channelId}
+        onClose={() => setPanelModal({ open: false, item: null })}
+        onSaved={onChanged}
+      />
+      <ConfirmDialog
+        open={Boolean(deleteChannel)}
+        onClose={() => setDeleteChannel(null)}
+        onConfirm={() => void removeChannel()}
+        title="Remove this update channel?"
+        description="Its published panels are deleted from Discord and the site. Past audit entries are kept."
+        confirmLabel="Remove channel"
+        tone="danger"
+        loading={busy}
+      />
+      <ConfirmDialog
+        open={Boolean(deletePanel)}
+        onClose={() => setDeletePanel(null)}
+        onConfirm={() => void removePanel()}
+        title="Delete this panel?"
+        description="The Discord message is removed and the record is kept as deleted for the audit trail."
+        confirmLabel="Delete panel"
+        tone="danger"
+        loading={busy}
+      />
+    </div>
+  );
+}
+
 function CodeModal({
   open,
   onClose,
@@ -621,7 +1197,7 @@ export function AdminDiscordPage() {
     <div>
       <PageHeader
         title="Discord integration"
-        description="One shared database for the website and the DonutCash bot: balances, codes, giveaways, invites, and announcements."
+        description="One shared database for the website and the DonutCash bot: balances, codes, giveaways, invites, announcements, and info panels."
         badge={
           status?.connected ? (
             <Badge tone="success" dot>
@@ -662,6 +1238,7 @@ export function AdminDiscordPage() {
           { key: 'overview', label: 'Overview' },
           { key: 'config', label: 'Configuration' },
           { key: 'announcements', label: 'Announcements', count: data?.announcements.length },
+          { key: 'panels', label: 'Info panels', count: data?.panels.length },
           { key: 'codes', label: 'Codes', count: data?.codes.length },
           { key: 'activity', label: 'Activity' },
         ]}
@@ -766,6 +1343,13 @@ export function AdminDiscordPage() {
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard label="Announcements" value={stats?.announcements ?? 0} hint="Published news and changelogs" icon={<Megaphone className="h-4 w-4" />} tone="info" />
+            <StatCard
+              label="Info panels"
+              value={stats?.panels ?? 0}
+              hint={`${stats?.infoChannels ?? 0} update channel${stats?.infoChannels === 1 ? '' : 's'} registered`}
+              icon={<Hash className="h-4 w-4" />}
+              tone="violet"
+            />
             <StatCard label="Pending delivery" value={stats?.pendingOutbox ?? 0} hint="Events waiting for the bot" icon={<Send className="h-4 w-4" />} tone="warning" />
             <StatCard label="Failed delivery" value={stats?.failedOutbox ?? 0} hint="Review the activity tab and retry" icon={<CircleOff className="h-4 w-4" />} tone={stats?.failedOutbox ? 'danger' : 'neutral'} />
             <StatCard label="Bot latency" value={status?.guild?.latencyMs !== null && status?.guild?.latencyMs !== undefined ? `${status.guild.latencyMs} ms` : '—'} hint={status?.guild?.botVersion ? `Version ${status.guild.botVersion}` : 'No heartbeat yet'} icon={<Activity className="h-4 w-4" />} tone="neutral" />
@@ -838,6 +1422,8 @@ export function AdminDiscordPage() {
           )}
         </Card>
       )}
+
+      {tab === 'panels' && data && <PanelsTab data={data} onChanged={query.refetch} />}
 
       {tab === 'codes' && (
         <Card>

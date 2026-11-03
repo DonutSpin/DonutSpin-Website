@@ -1071,6 +1071,44 @@ export interface DiscordGiveawaySyncItem {
   discordChannelId: string | null;
 }
 
+export interface DiscordInfoChannelView {
+  id: string;
+  guildId: string;
+  name: string;
+  category: string;
+  channelId: string;
+  description: string | null;
+  panelCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DiscordPanelLink {
+  label: string;
+  url: string;
+}
+
+export interface DiscordPanelView {
+  id: string;
+  guildId: string;
+  infoChannelId: string;
+  channelName: string;
+  category: string;
+  channelId: string;
+  title: string;
+  body: string;
+  color: string | null;
+  imageUrl: string | null;
+  thumbnailUrl: string | null;
+  footer: string | null;
+  links: DiscordPanelLink[];
+  mentionEveryone: boolean;
+  messageId: string | null;
+  status: 'published' | 'deleted';
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DiscordOverviewResponse {
   status: DiscordBotStatus;
   config: DiscordGuildConfig | null;
@@ -1087,11 +1125,15 @@ export interface DiscordOverviewResponse {
     activeCodes: number;
     codeRedemptions: number;
     announcements: number;
+    infoChannels: number;
+    panels: number;
     pendingOutbox: number;
     failedOutbox: number;
   };
   recentActivity: DiscordActivityView[];
   announcements: DiscordAnnouncementView[];
+  infoChannels: DiscordInfoChannelView[];
+  panels: DiscordPanelView[];
   codes: RewardCodeView[];
   inviteLeaderboard: DiscordInviteLeaderboardEntry[];
   recentVouches: DiscordVouchView[];

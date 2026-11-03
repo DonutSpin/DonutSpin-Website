@@ -453,6 +453,8 @@ In the Discord Developer Portal, enable the **Server Members** and **Server Invi
 
 Configuration, codes, announcements, invite rewards, and the primary guild live in SQLite and survive bot restarts. Website-created giveaways are queued to the configured guild/channel; Discord-created giveaways use the same `giveaways` table, entry rows, escrow, committed draw, winners, and claim tickets as the website.
 
+**Info panels** are managed in the same page under the **Info panels** tab. Add any Discord channel once, give it a category (for example Development, Community, or Rules), then publish explanatory panels with embed copy, colours, images, and up to four link buttons. Editing a panel updates the same Discord message, so no channel ID or embed copy needs to be hardcoded in the bot.
+
 ### Commands
 
 | Command | Purpose |
@@ -482,7 +484,7 @@ The self-exclusion endpoint is `POST /api/me/self-exclusion` with `{ duration: '
 
 ## Tests
 
-The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, archived legacy money-request records, cashier deposits/withdrawals and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, maintenance blocking, and the shared Discord bot API (linking, invite rewards, vouches, codes, giveaways, announcements, outbox leases, and permission gates). The Discord tests use the real bot HTTP surface but do not connect to Discord itself; live gateway behaviour is verified against a development server.
+The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, archived legacy money-request records, cashier deposits/withdrawals and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, maintenance blocking, and the shared Discord bot API (linking, invite rewards, vouches, codes, giveaways, announcements, update channels and info panels, outbox leases, and permission gates). The Discord tests use the real bot HTTP surface but do not connect to Discord itself; live gateway behaviour is verified against a development server.
 
 ```bash
 npm run typecheck

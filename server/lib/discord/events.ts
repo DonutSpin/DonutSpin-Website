@@ -2,6 +2,7 @@ import type { DB } from '../../db/index.ts';
 import type {
   DiscordAnnouncementView,
   DiscordGuildConfig,
+  DiscordPanelView,
   GiveawayView,
   RewardCodeView,
 } from '../../../shared/types.ts';
@@ -266,6 +267,47 @@ export function queueAnnouncementDelete(
   });
 }
 
+export function queuePanelPost(db: DB, guildId: string, panel: DiscordPanelView): void {
+  enqueueOutbox(db, {
+    guildId,
+    eventType: 'panel_post',
+    payload: {
+      panel,
+      channelId: panel.channelId,
+      mentionEveryone: panel.mentionEveryone,
+    },
+    dedupeKey: `panel-post:${panel.id}:${panel.updatedAt}`,
+  });
+}
+
+export function queuePanelEdit(db: DB, guildId: string, panel: DiscordPanelView): void {
+  enqueueOutbox(db, {
+    guildId,
+    eventType: 'panel_edit',
+    payload: {
+      panel,
+      channelId: panel.channelId,
+      mentionEveryone: panel.mentionEveryone,
+    },
+    dedupeKey: `panel-edit:${panel.id}:${panel.updatedAt}`,
+  });
+}
+
+export function queuePanelDelete(db: DB, guildId: string, panel: DiscordPanelView): void {
+  enqueueOutbox(db, {
+    guildId,
+    eventType: 'panel_delete',
+    payload: {
+      panelId: panel.id,
+      channelId: panel.channelId,
+      messageId: panel.messageId,
+    },
+    // A panel can be moved (delete old message, post a new one) and later
+    // deleted for real, so the delete key includes the revision it targets.
+    dedupeKey: `panel-delete:${panel.id}:${panel.updatedAt}`,
+  });
+}
+
 /**
  * Attaches the Discord message ID returned by the bot. This runs after the
  * bot acknowledges the event, so a crash between posting and acknowledgement
@@ -320,6 +362,28 @@ export function attachOutboxMessage(db: DB, event: ClaimedOutboxEvent, messageId
       const id = event.payload.announcementId;
       if (typeof id === 'string') {
         db.prepare("UPDATE discord_announcements SET message_id = NULL, status = 'deleted' WHERE id = ?").run(id);
+      }
+      break;
+    }
+    case 'panel_post':
+    case 'panel_edit': {
+      const panel = event.payload.panel as { id?: string } | undefined;
+      const channelId = event.payload.channelId;
+      if (panel?.id) {
+        db.prepare(
+          `UPDATE discord_panels
+              SET message_id = COALESCE(?, message_id), channel_id = COALESCE(?, channel_id)
+            WHERE id = ?`,
+        ).run(messageId, typeof channelId === 'string' ? channelId : null, panel.id);
+      }
+      break;
+    }
+    case 'panel_delete': {
+      const id = event.payload.panelId;
+      // A move queues a delete for the old message while the panel itself stays
+      // published, so only a genuinely deleted panel is touched here.
+      if (typeof id === 'string') {
+        db.prepare("UPDATE discord_panels SET message_id = NULL WHERE id = ? AND status = 'deleted'").run(id);
       }
       break;
     }

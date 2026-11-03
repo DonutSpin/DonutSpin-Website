@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -160,6 +160,11 @@ function playerNav(): NavGroup[] {
         { label: 'Rains', to: '/rains', icon: CloudRain },
         { label: 'Rewards', to: '/rewards', icon: Gift },
         { label: 'Reward codes', to: '/codes', icon: TicketPercent },
+      ],
+    },
+    {
+      title: 'Money',
+      items: [
         { label: 'Wallet', to: '/wallet', icon: Wallet },
         { label: 'Cashier', to: '/cashier', icon: Landmark },
         { label: 'Transactions', to: '/transactions', icon: ArrowLeftRight },
@@ -177,6 +182,15 @@ function playerNav(): NavGroup[] {
       items: [{ label: 'Settings', to: '/settings', icon: Settings }],
     },
   ];
+}
+
+function navGroupKey(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
+function navItemActive(pathname: string, item: NavItem): boolean {
+  if (item.end) return pathname === item.to;
+  return pathname === item.to || pathname.startsWith(`${item.to}/`);
 }
 
 function staffNav(role: Role): NavGroup[] {
@@ -293,68 +307,198 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { groups, label } = navFor(location.pathname, user?.role ?? 'user');
+  const storageKey = `donutcash:nav:${navGroupKey(label)}`;
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState('');
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      return stored ? (JSON.parse(stored) as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  });
+  const activeGroupTitle = groups.find((group) =>
+    group.items.some((item) => navItemActive(location.pathname, item)),
+  )?.title;
+
+  // Navigating into a collapsed group reveals it, while an explicit collapse
+  // of the group you are already in is respected.
+  useEffect(() => {
+    if (!activeGroupTitle) return;
+    const key = navGroupKey(activeGroupTitle);
+    setCollapsed((current) => {
+      if (current[key] === undefined) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }, [activeGroupTitle]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(collapsed));
+    } catch {
+      // Private browsing can refuse storage; collapsing still works for this visit.
+    }
+  }, [collapsed, storageKey]);
+
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const needle = query.trim().toLowerCase();
+  const visibleGroups = needle
+    ? groups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => `${group.title} ${item.label}`.toLowerCase().includes(needle)),
+        }))
+        .filter((group) => group.items.length > 0)
+    : groups;
+  const firstMatch = visibleGroups[0]?.items[0];
+
+  const onSearchKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' && firstMatch) {
+      setQuery('');
+      onNavigate?.();
+      navigate(firstMatch.to);
+    } else if (event.key === 'Escape') {
+      setQuery('');
+      event.currentTarget.blur();
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-[76px] items-center justify-between px-5">
+      <div className="flex h-[68px] items-center justify-between px-5">
         <Brand />
       </div>
-      <div className="mx-4 mb-4 flex items-center gap-2.5 rounded-xl border border-gold/15 bg-gradient-to-r from-gold/[0.08] to-transparent px-3 py-2.5">
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gold/50" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-gold" />
-        </span>
-        <span className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-dim">{label}</span>
+      <div className="mx-3 mb-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={onSearchKey}
+            placeholder="Find a page…"
+            aria-label="Find a page"
+            className="h-9 w-full rounded-xl border border-line/80 bg-white/[0.03] pl-8 pr-14 text-[12px] text-ink transition-colors placeholder:text-faint focus:border-gold/50 focus:outline-none focus:ring-2 focus:ring-gold/15"
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-faint transition-colors hover:bg-surface-3 hover:text-ink"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          ) : (
+            <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-md border border-line/80 bg-surface-2 px-1.5 py-0.5 text-[9px] font-medium text-faint">
+              Ctrl K
+            </kbd>
+          )}
+        </div>
+        <p className="mt-2 flex items-center gap-1.5 px-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-faint/80">
+          <span className="h-1.5 w-1.5 rounded-full bg-gold/80" /> {label}
+        </p>
       </div>
-      <nav className="flex-1 space-y-6 overflow-y-auto px-3 pb-5">
-        {groups.map((group) => (
-          <div key={group.title}>
-            <p className="px-3 pb-2 text-[9px] font-bold uppercase tracking-[0.18em] text-faint/90">{group.title}</p>
-            <div className="space-y-1">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.end}
-                    onClick={onNavigate}
-                    className={({ isActive }) =>
-                      cn(
-                        'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[12.5px] font-medium transition-all duration-200',
-                        isActive
-                          ? 'bg-gradient-to-r from-gold/[0.14] to-gold/[0.03] text-gold-bright shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
-                          : 'text-muted hover:bg-white/[0.04] hover:text-ink',
-                      )
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        {isActive && (
-                          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-gold shadow-[0_0_12px_rgba(230,194,122,0.7)]" />
-                        )}
-                        <span
-                          className={cn(
-                            'grid h-7 w-7 place-items-center rounded-lg transition-colors',
-                            isActive ? 'bg-gold/10 text-gold' : 'text-faint group-hover:text-muted',
-                          )}
-                        >
-                          <Icon className="h-[16px] w-[16px]" strokeWidth={isActive ? 2.2 : 1.8} />
-                        </span>
-                        <span className="flex-1">{item.label}</span>
-                        {item.badge === 'notifications' && unread > 0 && (
-                          <span className="rounded-full bg-gold px-1.5 py-0.5 text-[9px] font-bold text-[#1a1408] tnum shadow-[0_0_10px_-2px_rgba(230,194,122,0.8)]">
-                            {unread > 99 ? '99+' : unread}
-                          </span>
-                        )}
-                      </>
+      <nav className="flex-1 space-y-2.5 overflow-y-auto px-3 pb-5">
+        {visibleGroups.length === 0 && (
+          <p className="px-3 pt-4 text-[11.5px] leading-relaxed text-faint">No page matches “{query.trim()}”.</p>
+        )}
+        {visibleGroups.map((group) => {
+          const key = navGroupKey(group.title);
+          const stored = collapsed[key];
+          const open = needle.length > 0 || (stored === undefined ? group.title === activeGroupTitle : !stored);
+          const activeInside = group.items.some((item) => navItemActive(location.pathname, item));
+          return (
+            <div key={group.title}>
+              {!needle && (
+                <button
+                  type="button"
+                  onClick={() => setCollapsed((current) => ({ ...current, [key]: open }))}
+                  aria-expanded={open}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-white/[0.03]"
+                >
+                  <span
+                    className={cn(
+                      'flex-1 text-[9px] font-bold uppercase tracking-[0.18em]',
+                      activeInside ? 'text-gold-dim' : 'text-faint/90',
                     )}
-                  </NavLink>
-                );
-              })}
+                  >
+                    {group.title}
+                  </span>
+                  {!open && activeInside && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-gold shadow-[0_0_8px_rgba(230,194,122,0.8)]" />
+                  )}
+                  <ChevronDown
+                    className={cn('h-3 w-3 text-faint transition-transform duration-200', !open && '-rotate-90')}
+                  />
+                </button>
+              )}
+              {needle && (
+                <p className="px-3 pb-1 text-[9px] font-bold uppercase tracking-[0.18em] text-faint/90">
+                  {group.title}
+                </p>
+              )}
+              {open && (
+                <div className="mt-0.5 space-y-0.5">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        end={item.end}
+                        onClick={onNavigate}
+                        className={({ isActive }) =>
+                          cn(
+                            'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[12.5px] font-medium transition-all duration-200',
+                            isActive
+                              ? 'bg-gradient-to-r from-gold/[0.14] to-gold/[0.03] text-gold-bright shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+                              : 'text-muted hover:bg-white/[0.04] hover:text-ink',
+                          )
+                        }
+                      >
+                        {({ isActive }) => (
+                          <>
+                            {isActive && (
+                              <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-gold shadow-[0_0_12px_rgba(230,194,122,0.7)]" />
+                            )}
+                            <span
+                              className={cn(
+                                'grid h-7 w-7 place-items-center rounded-lg transition-colors',
+                                isActive ? 'bg-gold/10 text-gold' : 'text-faint group-hover:text-muted',
+                              )}
+                            >
+                              <Icon className="h-[16px] w-[16px]" strokeWidth={isActive ? 2.2 : 1.8} />
+                            </span>
+                            <span className="flex-1">{item.label}</span>
+                            {item.badge === 'notifications' && unread > 0 && (
+                              <span className="rounded-full bg-gold px-1.5 py-0.5 text-[9px] font-bold text-[#1a1408] tnum shadow-[0_0_10px_-2px_rgba(230,194,122,0.8)]">
+                                {unread > 99 ? '99+' : unread}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </NavLink>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </nav>
       <div className="border-t border-line/80 p-3.5">
         <div className="flex items-center gap-2.5 rounded-xl border border-line/80 bg-white/[0.025] p-2.5 transition-colors hover:border-line-strong/80 hover:bg-white/[0.04]">
@@ -758,7 +902,7 @@ export function AppShell() {
   return (
     <div className="min-h-screen">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[272px] border-r border-line/80 bg-surface-1/85 backdrop-blur-xl lg:block">
-        <SidebarContent />
+        <SidebarContent key={label} />
       </aside>
 
       {mobileOpen && (
@@ -772,7 +916,7 @@ export function AppShell() {
             >
               <X className="h-4 w-4" />
             </button>
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+            <SidebarContent key={label} onNavigate={() => setMobileOpen(false)} />
           </aside>
         </div>
       )}

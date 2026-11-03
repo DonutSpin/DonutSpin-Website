@@ -6,6 +6,7 @@ import {
   Gamepad2,
   Landmark,
   LifeBuoy,
+  MessageCircle,
   ShieldCheck,
   Sparkles,
   Ticket,
@@ -57,6 +58,8 @@ interface Overview {
 }
 
 const gameOrder = ['coinflip', 'mines', 'blackjack', 'roulette', 'towers', 'plinko'];
+
+const DISCORD_INVITE_URL = 'https://discord.gg/39mY8xdRrD';
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -154,6 +157,31 @@ export function HomePage() {
           </div>
         </div>
       </div>
+
+      <a
+        href={DISCORD_INVITE_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="group relative flex flex-wrap items-center gap-4 overflow-hidden rounded-2xl border border-[#5865F2]/30 bg-gradient-to-r from-[#5865F2]/[0.14] via-surface-1 to-surface-1 p-5 transition-colors hover:border-[#5865F2]/50 sm:p-6"
+      >
+        <span className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full bg-[#5865F2]/20 blur-3xl" />
+        <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-[#5865F2]/30 bg-[#5865F2]/15 text-[#a9b4ff]">
+          <MessageCircle className="h-6 w-6" />
+        </span>
+        <span className="relative min-w-0 flex-1">
+          <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#a9b4ff]">
+            <Sparkles className="h-3 w-3" /> The community hub
+          </span>
+          <span className="mt-1 block font-display text-[17px] font-semibold text-ink">Join the DonutCash Discord</span>
+          <span className="mt-1 block max-w-xl text-[12px] leading-relaxed text-muted">
+            Developer updates, code drops, giveaways, invite rewards, and direct support. New to the server? Say hi and
+            grab a role.
+          </span>
+        </span>
+        <span className="relative inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-[#5865F2] px-4 text-[12.5px] font-semibold text-white shadow-[0_10px_30px_-12px_rgba(88,101,242,0.9)] transition-transform group-hover:-translate-y-0.5">
+          Join the Discord <ArrowUpRight className="h-4 w-4" />
+        </span>
+      </a>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard

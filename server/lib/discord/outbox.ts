@@ -20,7 +20,10 @@ export type DiscordEventType =
   | 'code_delete'
   | 'announcement_post'
   | 'announcement_edit'
-  | 'announcement_delete';
+  | 'announcement_delete'
+  | 'panel_post'
+  | 'panel_edit'
+  | 'panel_delete';
 
 export interface ClaimedOutboxEvent {
   id: string;

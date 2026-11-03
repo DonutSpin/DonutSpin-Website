@@ -980,6 +980,49 @@ CREATE TABLE discord_activity (
 CREATE INDEX discord_activity_created_idx ON discord_activity(created_at DESC);
 `,
   },
+  {
+    version: 21,
+    name: 'discord_info_panels',
+    // Staff can register any number of informational Discord channels without
+    // editing code. Categories are website-side labels used to group channels;
+    // the bot only needs the real channel ID when a panel is published.
+    sql: `
+CREATE TABLE discord_info_channels (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL REFERENCES discord_guilds(guild_id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  description TEXT,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (guild_id, channel_id)
+);
+CREATE INDEX discord_info_channels_guild_idx ON discord_info_channels(guild_id, category, name);
+
+CREATE TABLE discord_panels (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL REFERENCES discord_guilds(guild_id) ON DELETE CASCADE,
+  info_channel_id TEXT NOT NULL REFERENCES discord_info_channels(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  color TEXT,
+  image_url TEXT,
+  thumbnail_url TEXT,
+  footer TEXT,
+  links TEXT NOT NULL DEFAULT '[]',
+  mention_everyone INTEGER NOT NULL DEFAULT 0,
+  channel_id TEXT,
+  message_id TEXT,
+  status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('published','deleted')),
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX discord_panels_channel_idx ON discord_panels(info_channel_id, created_at DESC);
+`,
+  },
 ];
 
 export function pendingMigrations(db: Database): { version: number; name: string }[] {

@@ -658,6 +658,8 @@ export function getDiscordStats(db: DB): {
   activeCodes: number;
   codeRedemptions: number;
   announcements: number;
+  infoChannels: number;
+  panels: number;
   pendingOutbox: number;
   failedOutbox: number;
 } {
@@ -690,6 +692,8 @@ export function getDiscordStats(db: DB): {
     ),
     codeRedemptions: count('SELECT COUNT(*) AS count FROM reward_code_redemptions'),
     announcements: count("SELECT COUNT(*) AS count FROM discord_announcements WHERE status = 'published'"),
+    infoChannels: count('SELECT COUNT(*) AS count FROM discord_info_channels'),
+    panels: count("SELECT COUNT(*) AS count FROM discord_panels WHERE status = 'published'"),
     pendingOutbox: outbox.pending,
     failedOutbox: outbox.failed,
   };

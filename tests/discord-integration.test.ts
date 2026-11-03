@@ -651,3 +651,168 @@ describe('announcements and the durable outbox', () => {
     expect(second.body.events.length).toBe(0);
   });
 });
+
+describe('info channels and panels', () => {
+  const DEV_CHANNEL = '1123456789012345678';
+
+  it('registers a categorised channel and publishes a panel through the website', async () => {
+    const created = await agents.owner!.post('/api/admin/discord/info-channels').set(CSRF).send({
+      name: 'dev-updates',
+      category: 'Development',
+      channelId: DEV_CHANNEL,
+      description: 'Release notes for the dev team',
+    });
+    expectStatus(created, 201);
+    const channel = created.body.channel as { id: string; category: string; panelCount: number };
+    expect(channel.category).toBe('Development');
+    expect(channel.panelCount).toBe(0);
+
+    const duplicate = await agents.owner!.post('/api/admin/discord/info-channels').set(CSRF).send({
+      name: 'dev-updates-again',
+      category: 'Development',
+      channelId: DEV_CHANNEL,
+    });
+    expectStatus(duplicate, 409);
+    expect(duplicate.body.error.code).toBe('CHANNEL_ALREADY_ADDED');
+
+    const panelRes = await agents.owner!.post('/api/admin/discord/panels').set(CSRF).send({
+      infoChannelId: channel.id,
+      title: 'Meet the dev team',
+      body: 'We ship website and bot updates every week.',
+      color: '#5865F2',
+      links: [{ label: 'Website', url: 'https://donutcash.example/updates' }],
+      mentionEveryone: false,
+    });
+    expectStatus(panelRes, 201);
+    const panel = panelRes.body.panel as {
+      id: string;
+      category: string;
+      channelId: string;
+      links: { label: string; url: string }[];
+    };
+    expect(panel.category).toBe('Development');
+    expect(panel.channelId).toBe(DEV_CHANNEL);
+    expect(panel.links).toEqual([{ label: 'Website', url: 'https://donutcash.example/updates' }]);
+
+    const postEvent = db
+      .prepare("SELECT id, payload FROM discord_outbox WHERE event_type = 'panel_post'")
+      .get() as { id: string; payload: string };
+    expect(JSON.parse(postEvent.payload).channelId).toBe(DEV_CHANNEL);
+
+    const claimed = await bot('post', '/api/bot/outbox/claim').send({ limit: 5 });
+    expectStatus(claimed, 200);
+    expect(claimed.body.events.some((event: { id: string }) => event.id === postEvent.id)).toBe(true);
+    const completed = await bot('post', `/api/bot/outbox/${postEvent.id}/complete`).send({
+      messageId: '999999999999999998',
+    });
+    expectStatus(completed, 200);
+    expect(
+      db.prepare('SELECT message_id, channel_id FROM discord_panels WHERE id = ?').get(panel.id),
+    ).toEqual({ message_id: '999999999999999998', channel_id: DEV_CHANNEL });
+
+    const edited = await agents.owner!.patch(`/api/admin/discord/panels/${panel.id}`).set(CSRF).send({
+      infoChannelId: channel.id,
+      title: 'Meet the dev team',
+      body: 'Updated: we ship website and bot updates daily.',
+      links: [],
+    });
+    expectStatus(edited, 200);
+    expect(
+      db.prepare("SELECT COUNT(*) AS count FROM discord_outbox WHERE event_type = 'panel_edit'").get(),
+    ).toEqual({ count: 1 });
+
+    const overview = await agents.owner!.get('/api/admin/discord');
+    expectStatus(overview, 200);
+    expect(overview.body.stats.infoChannels).toBeGreaterThanOrEqual(1);
+    expect(overview.body.stats.panels).toBeGreaterThanOrEqual(1);
+    expect(
+      overview.body.infoChannels.some((item: { id: string }) => item.id === channel.id),
+    ).toBe(true);
+    expect(overview.body.panels.some((item: { id: string }) => item.id === panel.id)).toBe(true);
+  });
+
+  it('moves a panel to another update channel without marking it deleted', async () => {
+    const fromChannel = await agents.owner!.post('/api/admin/discord/info-channels').set(CSRF).send({
+      name: 'dev-old',
+      category: 'Development',
+      channelId: '1123456789012345681',
+    });
+    const toChannel = await agents.owner!.post('/api/admin/discord/info-channels').set(CSRF).send({
+      name: 'dev-new',
+      category: 'Development',
+      channelId: '1123456789012345682',
+    });
+    expectStatus(fromChannel, 201);
+    expectStatus(toChannel, 201);
+
+    const panelRes = await agents.owner!.post('/api/admin/discord/panels').set(CSRF).send({
+      infoChannelId: fromChannel.body.channel.id,
+      title: 'Relocating panel',
+      body: 'This panel moves to a new channel.',
+    });
+    expectStatus(panelRes, 201);
+    const panelId = panelRes.body.panel.id as string;
+
+    const firstClaim = await bot('post', '/api/bot/outbox/claim').send({ limit: 10 });
+    const firstPost = firstClaim.body.events.find(
+      (event: { eventType: string; payload: { panel?: { id: string } } }) =>
+        event.eventType === 'panel_post' && event.payload.panel?.id === panelId,
+    );
+    expect(firstPost).toBeTruthy();
+    await bot('post', `/api/bot/outbox/${firstPost.id}/complete`).send({ messageId: '999999999999999971' });
+
+    const moved = await agents.owner!.patch(`/api/admin/discord/panels/${panelId}`).set(CSRF).send({
+      infoChannelId: toChannel.body.channel.id,
+      title: 'Relocating panel',
+      body: 'This panel moves to a new channel.',
+    });
+    expectStatus(moved, 200);
+    expect(moved.body.panel.channelId).toBe('1123456789012345682');
+    expect(moved.body.panel.messageId).toBeNull();
+
+    const claim = await bot('post', '/api/bot/outbox/claim').send({ limit: 10 });
+    expectStatus(claim, 200);
+    const events = claim.body.events as { id: string; eventType: string }[];
+    expect(events.map((event) => event.eventType).sort()).toEqual(['panel_delete', 'panel_post']);
+
+    const deleteEvent = events.find((event) => event.eventType === 'panel_delete')!;
+    const deleted = await bot('post', `/api/bot/outbox/${deleteEvent.id}/complete`).send({ messageId: null });
+    expectStatus(deleted, 200);
+    expect(
+      db.prepare('SELECT status, message_id FROM discord_panels WHERE id = ?').get(panelId),
+    ).toEqual({ status: 'published', message_id: null });
+
+    const postEvent = events.find((event) => event.eventType === 'panel_post')!;
+    const posted = await bot('post', `/api/bot/outbox/${postEvent.id}/complete`).send({ messageId: '999999999999999972' });
+    expectStatus(posted, 200);
+    expect(
+      db.prepare('SELECT status, message_id, channel_id FROM discord_panels WHERE id = ?').get(panelId),
+    ).toEqual({ status: 'published', message_id: '999999999999999972', channel_id: '1123456789012345682' });
+  });
+
+  it('removes every attached panel when an update channel is deleted', async () => {
+    const created = await agents.owner!.post('/api/admin/discord/info-channels').set(CSRF).send({
+      name: 'dev-archive',
+      category: 'Development',
+      channelId: '1123456789012345679',
+    });
+    expectStatus(created, 201);
+    const channel = created.body.channel as { id: string };
+
+    const panelRes = await agents.owner!.post('/api/admin/discord/panels').set(CSRF).send({
+      infoChannelId: channel.id,
+      title: 'Archived release notes',
+      body: 'This panel disappears with its channel.',
+    });
+    expectStatus(panelRes, 201);
+    const panel = panelRes.body.panel as { id: string };
+
+    const removed = await agents.owner!.delete(`/api/admin/discord/info-channels/${channel.id}`).set(CSRF);
+    expectStatus(removed, 200);
+    expect(removed.body.deletedPanels).toBe(1);
+    expect(db.prepare('SELECT 1 FROM discord_panels WHERE id = ?').get(panel.id)).toBeUndefined();
+    expect(
+      db.prepare("SELECT COUNT(*) AS count FROM discord_outbox WHERE event_type = 'panel_delete'").get(),
+    ).toEqual({ count: 1 });
+  });
+});
