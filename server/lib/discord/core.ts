@@ -392,7 +392,7 @@ export function redeemDiscordLinkCode(
       userId: row.user_id,
       type: 'account',
       title: 'Discord connected',
-      body: `Your Discord account @${input.discordUsername} is now linked to DonutCash.`,
+      body: `Your Discord account @${input.discordUsername} is now linked to DonutSpin.`,
       link: '/settings#discord',
     });
     recordAudit(db, {
@@ -446,12 +446,12 @@ export function requireDiscordAccount(db: DB, discordUserId: string): { user: Se
     throw new ApiError(
       403,
       'DISCORD_NOT_LINKED',
-      'Link your Discord account first: open DonutCash → Settings → Discord and run the `/link` command.',
+      'Link your Discord account first: open DonutSpin → Settings → Discord and run the `/link` command.',
       { linkUrl: `${config.appUrl}/settings#discord` },
     );
   }
   const user = loadUser(db, link.user_id);
-  if (!user) throw forbidden('The linked DonutCash account no longer exists.', 'DISCORD_LINK_BROKEN');
+  if (!user) throw forbidden('The linked DonutSpin account no longer exists.', 'DISCORD_LINK_BROKEN');
   if (user.status === 'suspended') throw forbidden('This account is suspended.', 'ACCOUNT_SUSPENDED');
   if (user.status === 'restricted') throw forbidden('This account is restricted. Contact support.', 'ACCOUNT_RESTRICTED');
   if (isSelfExclusionActive(user.selfExcludedUntil)) {
@@ -487,7 +487,7 @@ export function requireDiscordStaff(
     );
   }
   if (!can(user.role, input.permission)) {
-    throw forbidden('Your DonutCash role does not include permission for that action.', 'DISCORD_PERMISSION_DENIED');
+    throw forbidden('Your DonutSpin role does not include permission for that action.', 'DISCORD_PERMISSION_DENIED');
   }
   const guildConfig = getGuildConfig(db, input.guildId);
   const roleIds = new Set(input.roleIds.filter(isDiscordSnowflake));
@@ -510,8 +510,8 @@ export function requireDiscordStaff(
     if (!allowed.some((list) => list.some((id) => roleIds.has(id)))) {
       throw forbidden(
         input.scope === 'admin'
-          ? 'Your Discord roles are not configured for DonutCash administrator actions.'
-          : 'Your Discord roles are not configured for DonutCash staff actions.',
+          ? 'Your Discord roles are not configured for DonutSpin administrator actions.'
+          : 'Your Discord roles are not configured for DonutSpin staff actions.',
         'DISCORD_ROLE_REQUIRED',
       );
     }

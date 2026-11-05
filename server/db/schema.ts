@@ -293,6 +293,9 @@ CREATE INDEX cashier_messages_request_idx ON cashier_messages(request_id, create
   {
     version: 3,
     name: 'donutcash_branding',
+    // Applied migrations are immutable: this SQL already ran on existing
+    // databases under the old brand. Migration 22 moves those stored names to
+    // DonutSpin without touching an operator's custom platform name.
     sql: `
 UPDATE settings SET value = '"Donutcash"'
  WHERE key = 'platform.name' AND value IN ('"Aurum Casino"', '"Aurum"', '"DonutCash"');
@@ -1023,6 +1026,17 @@ CREATE TABLE discord_panels (
 CREATE INDEX discord_panels_channel_idx ON discord_panels(info_channel_id, created_at DESC);
 `,
   },
+  {
+    version: 22,
+    name: 'donutspin_branding',
+    // Rebrand databases created before the rename. Only the old default names
+    // are touched, so a platform name an operator chose is preserved.
+    sql: `
+UPDATE settings SET value = '"DonutSpin"'
+ WHERE key IN ('platform.name', 'email.from_name')
+   AND value IN ('"Donutcash"', '"DonutCash"', '"Donut Spin"');
+`,
+  },
 ];
 
 export function pendingMigrations(db: Database): { version: number; name: string }[] {
@@ -1162,8 +1176,8 @@ export function seed(db: Database, options: { appName: string; startingCredits: 
       'email.port': 587,
       'email.secure': false,
       'email.user': 'c05ccf001@smtp-brevo.com',
-      'email.from_name': 'Donutcash',
-      'email.from_email': 'no-reply@donutcash.local',
+      'email.from_name': 'DonutSpin',
+      'email.from_email': 'no-reply@donutspin.local',
       'email.reply_to': '',
       'email.security_notifications': true,
       'email.reward_notifications': true,

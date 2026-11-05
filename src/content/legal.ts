@@ -71,9 +71,9 @@ export const legalUi: Record<
   }
 > = {
   en: {
-    brand: 'DONUTCASH',
+    brand: 'DONUTSPIN',
     brandSub: 'DonutSMP casino',
-    back: 'Back to Donutcash',
+    back: 'Back to DonutSpin',
     contents: 'On this page',
     version: `Version ${LEGAL_TERMS_VERSION}`,
     lastUpdated: `Last updated ${LEGAL_LAST_UPDATED_EN}`,
@@ -84,10 +84,10 @@ export const legalUi: Record<
     responsible: 'Responsible Gambling',
     consentTitle: 'Before you enter the tables',
     consentIntro:
-      'Donutcash is an 18+ entertainment service for DonutSMP in-game currency only. Please confirm the statements below to continue.',
+      'DonutSpin is an 18+ entertainment service for DonutSMP in-game currency only. Please confirm the statements below to continue.',
     consentAccept: 'Accept and continue',
     consentAccepting: 'Saving your consent…',
-    consentRequired: 'You must accept all three statements before using Donutcash.',
+    consentRequired: 'You must accept all three statements before using DonutSpin.',
     consentDutch: 'Nederlandse vertaling',
     language: 'Language',
     english: 'English',
@@ -96,7 +96,7 @@ export const legalUi: Record<
     readPrivacy: 'Read the Privacy Policy',
     readResponsible: 'Read the Responsible Gambling page',
     consentBanner:
-      'You need to accept the current Terms of Service and Privacy Policy before using Donutcash.',
+      'You need to accept the current Terms of Service and Privacy Policy before using DonutSpin.',
     backToConsent: 'Back to consent',
     selfExclusionTitle: 'Take a break from the tables',
     selfExclusionText:
@@ -107,9 +107,9 @@ export const legalUi: Record<
       'Your self-exclusion has been applied and you have been signed out. You cannot sign back in until the exclusion period ends. If you need help, use the support services on this page.',
   },
   nl: {
-    brand: 'DONUTCASH',
+    brand: 'DONUTSPIN',
     brandSub: 'DonutSMP casino',
-    back: 'Terug naar Donutcash',
+    back: 'Terug naar DonutSpin',
     contents: 'Op deze pagina',
     version: `Versie ${LEGAL_TERMS_VERSION}`,
     lastUpdated: `Laatst bijgewerkt ${LEGAL_LAST_UPDATED_NL}`,
@@ -120,10 +120,10 @@ export const legalUi: Record<
     responsible: 'Verantwoord spelen',
     consentTitle: 'Voordat je aan tafel gaat',
     consentIntro:
-      'Donutcash is een 18+ entertainmentservice voor DonutSMP in-game valuta. Bevestig de onderstaande verklaringen om verder te gaan.',
+      'DonutSpin is een 18+ entertainmentservice voor DonutSMP in-game valuta. Bevestig de onderstaande verklaringen om verder te gaan.',
     consentAccept: 'Accepteren en doorgaan',
     consentAccepting: 'Toestemming opslaan…',
-    consentRequired: 'Je moet alle drie de verklaringen accepteren voordat je Donutcash gebruikt.',
+    consentRequired: 'Je moet alle drie de verklaringen accepteren voordat je DonutSpin gebruikt.',
     consentDutch: 'English translation',
     language: 'Taal',
     english: 'English',
@@ -132,7 +132,7 @@ export const legalUi: Record<
     readPrivacy: 'Lees het Privacybeleid',
     readResponsible: 'Lees de pagina Verantwoord spelen',
     consentBanner:
-      'Je moet de actuele Servicevoorwaarden en het Privacybeleid accepteren voordat je Donutcash gebruikt.',
+      'Je moet de actuele Servicevoorwaarden en het Privacybeleid accepteren voordat je DonutSpin gebruikt.',
     backToConsent: 'Terug naar toestemming',
     selfExclusionTitle: 'Neem een pauze van de tafels',
     selfExclusionText:
@@ -206,14 +206,14 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       title: 'Terms of Service',
       eyebrow: 'Legal agreement',
       intro:
-        'These Terms govern your use of Donutcash, a website for entertainment with DonutSMP in-game currency. Please read them carefully before creating an account.',
+        'These Terms govern your use of DonutSpin, a website for entertainment with DonutSMP in-game currency. Please read them carefully before creating an account.',
       sections: [
         {
           id: 'about',
           title: '1. About these terms',
           paragraphs: [
-            'These Terms of Service (the “Terms”) are a legal agreement between you and the operator of Donutcash (the “Operator”, “we”, “us”, or “our”). They apply to the website, games, Cashier, support desk, and every related service.',
-            'By creating an account, accessing, or using Donutcash, you agree to these Terms and our Privacy Policy. If you do not agree, do not access or use the website.',
+            'These Terms of Service (the “Terms”) are a legal agreement between you and the operator of DonutSpin (the “Operator”, “we”, “us”, or “our”). They apply to the website, games, Cashier, support desk, and every related service.',
+            'By creating an account, accessing, or using DonutSpin, you agree to these Terms and our Privacy Policy. If you do not agree, do not access or use the website.',
             'We may publish updated Terms from time to time. You must accept the new version before you can continue using your account.',
           ],
         },
@@ -221,8 +221,8 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'eligibility',
           title: '2. Age and lawful use',
           paragraphs: [
-            'You must be at least 18 years old, or older if the legal gambling age in your country is higher. You must also confirm that using Donutcash is lawful in the country from which you access it.',
-            'You are responsible for checking and complying with your local laws. If you are underage, or if using Donutcash is unlawful where you are, you must not create an account or use the service.',
+            'You must be at least 18 years old, or older if the legal gambling age in your country is higher. You must also confirm that using DonutSpin is lawful in the country from which you access it.',
+            'You are responsible for checking and complying with your local laws. If you are underage, or if using DonutSpin is unlawful where you are, you must not create an account or use the service.',
           ],
           bullets: [
             'You confirm your age and lawful access during registration and whenever a new version of these Terms is published.',
@@ -236,15 +236,15 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           paragraphs: [
             'This website is NOT affiliated with, endorsed by, approved by or connected to DonutSMP, Mojang or Microsoft.',
             'DonutSMP, Minecraft, Mojang, Microsoft, and their logos and trademarks belong to their respective owners. We do not claim any sponsorship, partnership, approval, or official status.',
-            'You must not present Donutcash as an official DonutSMP, Mojang, or Microsoft service.',
+            'You must not present DonutSpin as an official DonutSMP, Mojang, or Microsoft service.',
           ],
         },
         {
           id: 'currency',
           title: '4. In-game currency only',
           paragraphs: [
-            'Only in-game currency is used on Donutcash. Buying or selling this currency for real money is strictly prohibited and will not be permitted.',
-            'DonutSMP money has no cash value, is not legal tender, and is not a financial instrument. You cannot deposit, withdraw, or exchange it for real money, goods, or services through Donutcash.',
+            'Only in-game currency is used on DonutSpin. Buying or selling this currency for real money is strictly prohibited and will not be permitted.',
+            'DonutSMP money has no cash value, is not legal tender, and is not a financial instrument. You cannot deposit, withdraw, or exchange it for real money, goods, or services through DonutSpin.',
             'Wagers, losses, and payouts are made solely in in-game currency. We do not promise that any in-game currency can be converted into anything of real-world value.',
           ],
         },
@@ -254,7 +254,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           paragraphs: [
             'Gambling with in-game currency may violate DonutSMP’s rules. Users may be banned as a result. Use of this website is entirely at the user’s own risk. The website owner is not responsible for bans, lost currency, lost items or lost accounts.',
             'You are solely responsible for understanding and following DonutSMP’s rules. We do not control DonutSMP, its moderation decisions, its economy, or your account there.',
-            'You must not use Donutcash in a way that breaks DonutSMP’s rules, Minecraft’s terms, or any applicable law.',
+            'You must not use DonutSpin in a way that breaks DonutSMP’s rules, Minecraft’s terms, or any applicable law.',
           ],
         },
         {
@@ -294,7 +294,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'availability',
           title: '9. Availability and changes to the service',
           paragraphs: [
-            'We may change, suspend, or discontinue any part of Donutcash, including games, limits, features, and the Cashier, at any time. We may perform maintenance without prior notice.',
+            'We may change, suspend, or discontinue any part of DonutSpin, including games, limits, features, and the Cashier, at any time. We may perform maintenance without prior notice.',
             'We do not warrant that the service will be uninterrupted, secure, timely, or error-free, or that defects will be corrected.',
           ],
         },
@@ -329,7 +329,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           title: '13. Changes to these Terms',
           paragraphs: [
             'We may update these Terms to reflect changes in the service, legal requirements, or risk controls. The current version and effective date are shown at the top of this page.',
-            'When we publish a new version, you must accept it before continuing to use Donutcash. If you do not accept, access to your account will remain blocked until you accept or close your account.',
+            'When we publish a new version, you must accept it before continuing to use DonutSpin. If you do not accept, access to your account will remain blocked until you accept or close your account.',
           ],
         },
         {
@@ -346,14 +346,14 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       title: 'Servicevoorwaarden',
       eyebrow: 'Juridische overeenkomst',
       intro:
-        'Deze voorwaarden gelden voor je gebruik van Donutcash, een website voor entertainment met DonutSMP in-game valuta. Lees ze zorgvuldig voordat je een account aanmaakt.',
+        'Deze voorwaarden gelden voor je gebruik van DonutSpin, een website voor entertainment met DonutSMP in-game valuta. Lees ze zorgvuldig voordat je een account aanmaakt.',
       sections: [
         {
           id: 'about',
           title: '1. Over deze voorwaarden',
           paragraphs: [
-            'Deze Servicevoorwaarden (de “Voorwaarden”) vormen een juridische overeenkomst tussen jou en de exploitant van Donutcash (de “Exploitant”, “wij”, “ons” of “onze”). Ze gelden voor de website, spellen, Cashier, supportdesk en alle gerelateerde diensten.',
-            'Door een account aan te maken of Donutcash te bezoeken of te gebruiken, ga je akkoord met deze Voorwaarden en ons Privacybeleid. Als je niet akkoord gaat, mag je de website niet gebruiken.',
+            'Deze Servicevoorwaarden (de “Voorwaarden”) vormen een juridische overeenkomst tussen jou en de exploitant van DonutSpin (de “Exploitant”, “wij”, “ons” of “onze”). Ze gelden voor de website, spellen, Cashier, supportdesk en alle gerelateerde diensten.',
+            'Door een account aan te maken of DonutSpin te bezoeken of te gebruiken, ga je akkoord met deze Voorwaarden en ons Privacybeleid. Als je niet akkoord gaat, mag je de website niet gebruiken.',
             'We kunnen deze Voorwaarden van tijd tot tijd bijwerken. Je moet de nieuwe versie accepteren voordat je je account kunt blijven gebruiken.',
           ],
         },
@@ -361,8 +361,8 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'eligibility',
           title: '2. Leeftijd en rechtmatig gebruik',
           paragraphs: [
-            'Je moet minimaal 18 jaar oud zijn, of ouder als de wettelijke gokleeftijd in jouw land hoger is. Je moet ook bevestigen dat het gebruik van Donutcash is toegestaan in het land van waaruit je toegang krijgt.',
-            'Je bent zelf verantwoordelijk voor het controleren en naleven van je lokale wetgeving. Als je minderjarig bent, of als gebruik van Donutcash op jouw locatie onrechtmatig is, mag je geen account aanmaken of de dienst gebruiken.',
+            'Je moet minimaal 18 jaar oud zijn, of ouder als de wettelijke gokleeftijd in jouw land hoger is. Je moet ook bevestigen dat het gebruik van DonutSpin is toegestaan in het land van waaruit je toegang krijgt.',
+            'Je bent zelf verantwoordelijk voor het controleren en naleven van je lokale wetgeving. Als je minderjarig bent, of als gebruik van DonutSpin op jouw locatie onrechtmatig is, mag je geen account aanmaken of de dienst gebruiken.',
           ],
           bullets: [
             'Je bevestigt je leeftijd en rechtmatige toegang bij registratie en telkens wanneer een nieuwe versie van deze Voorwaarden wordt gepubliceerd.',
@@ -376,15 +376,15 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           paragraphs: [
             'Deze website is NIET verbonden aan, goedgekeurd door of gelieerd aan DonutSMP, Mojang of Microsoft.',
             'DonutSMP, Minecraft, Mojang, Microsoft en hun logo’s en handelsmerken zijn eigendom van hun respectieve eigenaren. We claimen geen sponsoring, partnerschap, goedkeuring of officiële status.',
-            'Je mag Donutcash niet presenteren als een officiële dienst van DonutSMP, Mojang of Microsoft.',
+            'Je mag DonutSpin niet presenteren als een officiële dienst van DonutSMP, Mojang of Microsoft.',
           ],
         },
         {
           id: 'currency',
           title: '4. Alleen in-game valuta',
           paragraphs: [
-            'Op Donutcash wordt uitsluitend in-game valuta gebruikt. Het kopen of verkopen van deze valuta voor echt geld is strikt verboden en niet toegestaan.',
-            'DonutSMP-money heeft geen geldwaarde, is geen wettig betaalmiddel en is geen financieel instrument. Je kunt via Donutcash geen echt geld, goederen of diensten storten, opnemen of uitwisselen.',
+            'Op DonutSpin wordt uitsluitend in-game valuta gebruikt. Het kopen of verkopen van deze valuta voor echt geld is strikt verboden en niet toegestaan.',
+            'DonutSMP-money heeft geen geldwaarde, is geen wettig betaalmiddel en is geen financieel instrument. Je kunt via DonutSpin geen echt geld, goederen of diensten storten, opnemen of uitwisselen.',
             'Inzetten, verliezen en uitbetalingen vinden uitsluitend plaats in in-game valuta. We beloven niet dat in-game valuta kan worden omgezet in iets met waarde in de echte wereld.',
           ],
         },
@@ -394,7 +394,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           paragraphs: [
             'Gokken met in-game valuta kan in strijd zijn met de regels van DonutSMP. Gebruikers kunnen daardoor een ban krijgen. Gebruik van deze website is volledig op eigen risico. De eigenaar van de website is niet verantwoordelijk voor bans, verloren valuta, verloren items of verloren accounts.',
             'Je bent zelf verantwoordelijk voor het begrijpen en naleven van de regels van DonutSMP. Wij hebben geen controle over DonutSMP, hun moderatiebeslissingen, hun economie of jouw account daar.',
-            'Je mag Donutcash niet gebruiken op een manier die de regels van DonutSMP, de voorwaarden van Minecraft of toepasselijke wetgeving schendt.',
+            'Je mag DonutSpin niet gebruiken op een manier die de regels van DonutSMP, de voorwaarden van Minecraft of toepasselijke wetgeving schendt.',
           ],
         },
         {
@@ -434,7 +434,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'availability',
           title: '9. Beschikbaarheid en wijzigingen van de dienst',
           paragraphs: [
-            'We kunnen elk onderdeel van Donutcash op elk moment wijzigen, opschorten of stopzetten, inclusief spellen, limieten, functies en de Cashier. We kunnen onderhoud uitvoeren zonder voorafgaande kennisgeving.',
+            'We kunnen elk onderdeel van DonutSpin op elk moment wijzigen, opschorten of stopzetten, inclusief spellen, limieten, functies en de Cashier. We kunnen onderhoud uitvoeren zonder voorafgaande kennisgeving.',
             'We garanderen niet dat de dienst ononderbroken, veilig, tijdig of foutloos is, of dat gebreken worden verholpen.',
           ],
         },
@@ -469,7 +469,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           title: '13. Wijzigingen van deze Voorwaarden',
           paragraphs: [
             'We kunnen deze Voorwaarden bijwerken om wijzigingen in de dienst, wettelijke eisen of risicobeheersing weer te geven. De actuele versie en ingangsdatum staan bovenaan deze pagina.',
-            'Wanneer we een nieuwe versie publiceren, moet je deze accepteren voordat je Donutcash blijft gebruiken. Als je niet accepteert, blijft de toegang tot je account geblokkeerd tot je accepteert of je account sluit.',
+            'Wanneer we een nieuwe versie publiceren, moet je deze accepteren voordat je DonutSpin blijft gebruiken. Als je niet accepteert, blijft de toegang tot je account geblokkeerd tot je accepteert of je account sluit.',
           ],
         },
         {
@@ -488,13 +488,13 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       title: 'Privacy Policy',
       eyebrow: 'Your data and your rights',
       intro:
-        'This policy explains what data Donutcash collects, why we collect it, how long we keep it, and how you can request access or deletion.',
+        'This policy explains what data DonutSpin collects, why we collect it, how long we keep it, and how you can request access or deletion.',
       sections: [
         {
           id: 'controller',
           title: '1. Who is responsible for your data',
           paragraphs: [
-            'The operator of Donutcash is the data controller for the personal data described in this policy.',
+            'The operator of DonutSpin is the data controller for the personal data described in this policy.',
             'Privacy questions and requests can be submitted through the support desk in your account.',
           ],
         },
@@ -546,14 +546,14 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           title: '5. Cookies and local storage',
           paragraphs: [
             'We use a strictly necessary session cookie to keep you signed in and to protect requests against cross-site forgery. We may use browser local storage for preferences such as sound settings.',
-            'We do not use advertising cookies, sell audience data, or run third-party behavioural advertising on Donutcash. If analytics or additional cookies are added later, this policy and the consent flow must be updated first.',
+            'We do not use advertising cookies, sell audience data, or run third-party behavioural advertising on DonutSpin. If analytics or additional cookies are added later, this policy and the consent flow must be updated first.',
           ],
         },
         {
           id: 'sharing',
           title: '6. Sharing and processors',
           paragraphs: [
-            'We do not sell your personal data. We share it only with service providers that help us operate Donutcash, such as hosting and infrastructure providers and, when email delivery is enabled, our email delivery provider (currently Brevo). These providers process data on our instructions and under appropriate safeguards.',
+            'We do not sell your personal data. We share it only with service providers that help us operate DonutSpin, such as hosting and infrastructure providers and, when email delivery is enabled, our email delivery provider (currently Brevo). These providers process data on our instructions and under appropriate safeguards.',
             'We may also disclose data when required by law, to respond to lawful requests, to protect our rights or the safety of users, to investigate fraud or abuse, or in connection with a reorganisation or transfer of the service.',
           ],
         },
@@ -584,7 +584,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'children',
           title: '10. Children',
           paragraphs: [
-            'Donutcash is strictly for adults aged 18 or older (or the higher legal gambling age in their country). We do not knowingly collect data from children. If you believe a minor has created an account, contact us so we can investigate and close it.',
+            'DonutSpin is strictly for adults aged 18 or older (or the higher legal gambling age in their country). We do not knowingly collect data from children. If you believe a minor has created an account, contact us so we can investigate and close it.',
           ],
         },
         {
@@ -598,7 +598,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'changes',
           title: '12. Changes to this policy',
           paragraphs: [
-            'We may update this policy when the service or legal requirements change. The current version and date are shown at the top of this page. If the change is material, we will ask you to review and accept the updated Terms and Privacy Policy before continuing to use Donutcash.',
+            'We may update this policy when the service or legal requirements change. The current version and date are shown at the top of this page. If the change is material, we will ask you to review and accept the updated Terms and Privacy Policy before continuing to use DonutSpin.',
           ],
         },
         {
@@ -614,13 +614,13 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       title: 'Privacybeleid',
       eyebrow: 'Jouw gegevens en rechten',
       intro:
-        'Dit beleid legt uit welke gegevens Donutcash verzamelt, waarom we ze verzamelen, hoe lang we ze bewaren en hoe je inzage of verwijdering kunt aanvragen.',
+        'Dit beleid legt uit welke gegevens DonutSpin verzamelt, waarom we ze verzamelen, hoe lang we ze bewaren en hoe je inzage of verwijdering kunt aanvragen.',
       sections: [
         {
           id: 'controller',
           title: '1. Wie is verantwoordelijk voor je gegevens',
           paragraphs: [
-            'De exploitant van Donutcash is de verwerkingsverantwoordelijke voor de persoonsgegevens die in dit beleid worden beschreven.',
+            'De exploitant van DonutSpin is de verwerkingsverantwoordelijke voor de persoonsgegevens die in dit beleid worden beschreven.',
             'Vragen en verzoeken over privacy kun je indienen via de supportdesk in je account.',
           ],
         },
@@ -672,14 +672,14 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           title: '5. Cookies en lokale opslag',
           paragraphs: [
             'We gebruiken een strikt noodzakelijke sessiecookie om je ingelogd te houden en verzoeken te beschermen tegen cross-site request forgery. We kunnen lokale browseropslag gebruiken voor voorkeuren zoals geluidsinstellingen.',
-            'We gebruiken geen advertentiecookies, verkopen geen publieksgegevens en voeren op Donutcash geen gedragsgerichte advertenties van derden uit. Als later analytics of extra cookies worden toegevoegd, moeten dit beleid en de toestemmingsflow eerst worden bijgewerkt.',
+            'We gebruiken geen advertentiecookies, verkopen geen publieksgegevens en voeren op DonutSpin geen gedragsgerichte advertenties van derden uit. Als later analytics of extra cookies worden toegevoegd, moeten dit beleid en de toestemmingsflow eerst worden bijgewerkt.',
           ],
         },
         {
           id: 'sharing',
           title: '6. Delen en verwerkers',
           paragraphs: [
-            'We verkopen je persoonsgegevens niet. We delen ze alleen met dienstverleners die ons helpen Donutcash te exploiteren, zoals hosting- en infrastructuurproviders en, wanneer e-mailbezorging is ingeschakeld, onze e-mailprovider (momenteel Brevo). Deze providers verwerken gegevens volgens onze instructies en onder passende waarborgen.',
+            'We verkopen je persoonsgegevens niet. We delen ze alleen met dienstverleners die ons helpen DonutSpin te exploiteren, zoals hosting- en infrastructuurproviders en, wanneer e-mailbezorging is ingeschakeld, onze e-mailprovider (momenteel Brevo). Deze providers verwerken gegevens volgens onze instructies en onder passende waarborgen.',
             'We kunnen gegevens ook verstrekken wanneer de wet dat vereist, om te reageren op rechtmatige verzoeken, om onze rechten of de veiligheid van gebruikers te beschermen, om fraude of misbruik te onderzoeken, of in verband met een reorganisatie of overdracht van de dienst.',
           ],
         },
@@ -710,7 +710,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'children',
           title: '10. Minderjarigen',
           paragraphs: [
-            'Donutcash is uitsluitend bedoeld voor volwassenen van 18 jaar of ouder (of de hogere wettelijke gokleeftijd in hun land). We verzamelen niet bewust gegevens van minderjarigen. Als je vermoedt dat een minderjarige een account heeft aangemaakt, neem dan contact op zodat we dit kunnen onderzoeken en het account kunnen sluiten.',
+            'DonutSpin is uitsluitend bedoeld voor volwassenen van 18 jaar of ouder (of de hogere wettelijke gokleeftijd in hun land). We verzamelen niet bewust gegevens van minderjarigen. Als je vermoedt dat een minderjarige een account heeft aangemaakt, neem dan contact op zodat we dit kunnen onderzoeken en het account kunnen sluiten.',
           ],
         },
         {
@@ -724,7 +724,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           id: 'changes',
           title: '12. Wijzigingen van dit beleid',
           paragraphs: [
-            'We kunnen dit beleid bijwerken wanneer de dienst of wettelijke eisen veranderen. De actuele versie en datum staan bovenaan deze pagina. Bij een materiële wijziging vragen we je de bijgewerkte Servicevoorwaarden en het Privacybeleid te bekijken en te accepteren voordat je Donutcash blijft gebruiken.',
+            'We kunnen dit beleid bijwerken wanneer de dienst of wettelijke eisen veranderen. De actuele versie en datum staan bovenaan deze pagina. Bij een materiële wijziging vragen we je de bijgewerkte Servicevoorwaarden en het Privacybeleid te bekijken en te accepteren voordat je DonutSpin blijft gebruiken.',
           ],
         },
         {
@@ -742,13 +742,13 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       title: 'Responsible Gambling',
       eyebrow: 'Play for fun, not for survival',
       intro:
-        'Donutcash uses in-game currency only, but gambling behaviour can still become harmful. This page explains how to keep play under control and where to find help.',
+        'DonutSpin uses in-game currency only, but gambling behaviour can still become harmful. This page explains how to keep play under control and where to find help.',
       sections: [
         {
           id: 'important',
           title: '1. Important information',
           paragraphs: [
-            'Donutcash is an entertainment service for adults aged 18 or older (or the higher legal gambling age in their country). In-game currency has no real-world cash value, but the time and attention you spend can still matter.',
+            'DonutSpin is an entertainment service for adults aged 18 or older (or the higher legal gambling age in their country). In-game currency has no real-world cash value, but the time and attention you spend can still matter.',
             'Gambling with in-game currency may violate DonutSMP’s rules and can lead to a ban. You use this website entirely at your own risk. Never gamble with money you cannot afford to lose, and never buy in-game currency with real money.',
           ],
         },
@@ -784,7 +784,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           title: '4. If you need help',
           paragraphs: [
             'Pause your account and speak to someone you trust. You do not have to deal with gambling harm alone. If you are in immediate danger or feel unable to keep yourself safe, contact your local emergency services.',
-            'The organisations below provide free, confidential information and support. They are independent from Donutcash. Availability and languages vary by country.',
+            'The organisations below provide free, confidential information and support. They are independent from DonutSpin. Availability and languages vary by country.',
           ],
           links: supportLinksEn,
         },
@@ -810,13 +810,13 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
       title: 'Verantwoord spelen',
       eyebrow: 'Speel voor plezier, niet om te overleven',
       intro:
-        'Donutcash gebruikt alleen in-game valuta, maar gokgedrag kan nog steeds schadelijk worden. Deze pagina legt uit hoe je het spelen onder controle houdt en waar je hulp kunt vinden.',
+        'DonutSpin gebruikt alleen in-game valuta, maar gokgedrag kan nog steeds schadelijk worden. Deze pagina legt uit hoe je het spelen onder controle houdt en waar je hulp kunt vinden.',
       sections: [
         {
           id: 'important',
           title: '1. Belangrijke informatie',
           paragraphs: [
-            'Donutcash is een entertainmentservice voor volwassenen van 18 jaar of ouder (of de hogere wettelijke gokleeftijd in hun land). In-game valuta heeft geen geldwaarde in de echte wereld, maar de tijd en aandacht die je eraan besteedt kunnen wel belangrijk zijn.',
+            'DonutSpin is een entertainmentservice voor volwassenen van 18 jaar of ouder (of de hogere wettelijke gokleeftijd in hun land). In-game valuta heeft geen geldwaarde in de echte wereld, maar de tijd en aandacht die je eraan besteedt kunnen wel belangrijk zijn.',
             'Gokken met in-game valuta kan in strijd zijn met de regels van DonutSMP en tot een ban leiden. Je gebruikt deze website volledig op eigen risico. Gok nooit met geld dat je niet kunt missen en koop nooit in-game valuta met echt geld.',
           ],
         },
@@ -852,7 +852,7 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           title: '4. Als je hulp nodig hebt',
           paragraphs: [
             'Pauzeer je account en praat met iemand die je vertrouwt. Je hoeft gokschade niet alleen te dragen. Als je in direct gevaar bent of jezelf niet veilig kunt houden, neem dan contact op met de lokale hulpdiensten.',
-            'De onderstaande organisaties bieden gratis en vertrouwelijke informatie en ondersteuning. Ze zijn onafhankelijk van Donutcash. Beschikbaarheid en talen verschillen per land.',
+            'De onderstaande organisaties bieden gratis en vertrouwelijke informatie en ondersteuning. Ze zijn onafhankelijk van DonutSpin. Beschikbaarheid en talen verschillen per land.',
           ],
           links: supportLinksNl,
         },

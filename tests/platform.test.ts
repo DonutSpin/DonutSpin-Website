@@ -831,7 +831,7 @@ describe('wallet accounting and administrative controls', () => {
       .send({ username: 'newstaff', email: 'newstaff@test.local', role: 'support', reason: 'Adding a support agent.' });
     expectStatus(staffCreated, 201);
     expect(staffCreated.body.user.role).toBe('support');
-    expect(staffCreated.body.temporaryPassword).toMatch(/^Donutcash-/);
+    expect(staffCreated.body.temporaryPassword).toMatch(/^DonutSpin-/);
 
     const tempAgent = request.agent(app);
     const tempLogin = await tempAgent

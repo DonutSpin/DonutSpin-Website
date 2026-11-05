@@ -28,7 +28,7 @@ export function MaintenancePage() {
           </span>
           <div>
             <p className="font-display text-[17px] font-semibold leading-none tracking-[0.13em] text-ink">
-              {config?.name?.toUpperCase() ?? 'DONUTCASH'}
+              {config?.name?.toUpperCase() ?? 'DONUTSPIN'}
             </p>
             <p className="mt-1 text-[9px] uppercase tracking-[0.22em] text-faint">DonutSMP casino</p>
           </div>

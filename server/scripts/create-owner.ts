@@ -47,7 +47,7 @@ if (existing) {
 }
 
 const supplied = arg('password') ?? process.env.OWNER_PASSWORD;
-const password = supplied ?? `Donutcash-${randomBytes(8).toString('base64url')}!9`;
+const password = supplied ?? `DonutSpin-${randomBytes(8).toString('base64url')}!9`;
 const issues = passwordIssues(password);
 if (issues.length) {
   console.error(`Password does not meet policy: ${issues.join(' ')}`);

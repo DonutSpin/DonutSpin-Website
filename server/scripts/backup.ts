@@ -20,7 +20,7 @@ const dirArgIndex = process.argv.indexOf('--out');
 const outDir = dirArgIndex !== -1 ? (process.argv[dirArgIndex + 1] ?? config.backupDir) : config.backupDir;
 fs.mkdirSync(outDir, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-const target = path.resolve(outDir, `donutcash-${stamp}.db`);
+const target = path.resolve(outDir, `donutspin-${stamp}.db`);
 
 const db = getDatabase();
 await db.backup(target);

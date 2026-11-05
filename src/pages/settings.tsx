@@ -339,7 +339,7 @@ export function SettingsPage() {
                 )}
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Username" htmlFor="profile-username" error={fields.username} hint="3–20 characters, unique across Donutcash.">
+                <Field label="Username" htmlFor="profile-username" error={fields.username} hint="3–20 characters, unique across DonutSpin.">
                   <Input
                     id="profile-username"
                     value={username}
@@ -405,7 +405,7 @@ export function SettingsPage() {
                   <Bot className="h-5 w-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-display text-[15px] font-semibold text-ink">DonutCash Discord</p>
+                  <p className="font-display text-[15px] font-semibold text-ink">DonutSpin Discord</p>
                   <p className="mt-1 text-[12px] leading-relaxed text-muted">
                     Link one Discord account to this website account. The same wallet, giveaways, codes, invites, and
                     reputation are used on both platforms.
@@ -454,7 +454,7 @@ export function SettingsPage() {
                   <div className="grid gap-3 sm:grid-cols-3">
                     {[
                       { step: '1', title: 'Generate a code', body: 'Create a single-use code below. It expires in 15 minutes.' },
-                      { step: '2', title: 'Open Discord', body: 'Join the DonutCash server and run the /link command.' },
+                      { step: '2', title: 'Open Discord', body: 'Join the DonutSpin server and run the /link command.' },
                       { step: '3', title: 'Enter the code', body: 'The bot confirms the link and your website username.' },
                     ].map((item) => (
                       <div key={item.step} className="rounded-xl border border-line/80 bg-surface-2/45 p-3.5">
@@ -829,7 +829,7 @@ export function SettingsPage() {
             className="w-full rounded-xl border border-line bg-surface-1 px-4 py-3 text-left text-[11px] text-faint transition-colors hover:border-danger/30 hover:text-danger"
             title="Double-click to sign out"
           >
-            <LogOut className="mr-1.5 inline h-3.5 w-3.5" /> Sign out of Donutcash
+            <LogOut className="mr-1.5 inline h-3.5 w-3.5" /> Sign out of DonutSpin
           </button>
         </div>
       </div>
@@ -839,7 +839,7 @@ export function SettingsPage() {
         onClose={() => setUnlinkOpen(false)}
         onConfirm={() => void unlinkDiscordAccount()}
         title="Disconnect Discord?"
-        description="Your wallet, ledger, giveaway wins, and invite history stay on your DonutCash account. You can link a Discord account again later."
+        description="Your wallet, ledger, giveaway wins, and invite history stay on your DonutSpin account. You can link a Discord account again later."
         confirmLabel="Disconnect"
         tone="danger"
         loading={discordBusy}

@@ -562,7 +562,7 @@ describe('announcements and the durable outbox', () => {
     const created = await bot('post', '/api/bot/announcements').send({
       ...actor(ids.ownerDiscord!, 'owner'),
       kind: 'news',
-      title: 'DonutCash is live',
+      title: 'DonutSpin is live',
       body: 'Weekly codes, community giveaways, and a shared wallet are now live.',
       mentionEveryone: true,
       emoji: '🍩',
@@ -592,12 +592,12 @@ describe('announcements and the durable outbox', () => {
       discordUserId: ids.ownerDiscord,
       discordUsername: 'owner',
       roleIds: [],
-      title: 'DonutCash is live now',
+      title: 'DonutSpin is live now',
       body: 'Updated copy for the community announcement.',
       mentionEveryone: false,
     });
     expectStatus(edited, 200);
-    expect(edited.body.announcement.title).toBe('DonutCash is live now');
+    expect(edited.body.announcement.title).toBe('DonutSpin is live now');
     expect(
       db.prepare("SELECT COUNT(*) AS count FROM discord_outbox WHERE event_type = 'announcement_edit'").get(),
     ).toEqual({ count: 1 });

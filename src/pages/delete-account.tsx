@@ -46,7 +46,7 @@ export function DeleteAccountPage() {
             <BrandMark className="h-7 w-7" />
           </span>
           <span>
-            <span className="block font-display text-base font-bold tracking-[0.2em] text-ink">DONUTCASH</span>
+            <span className="block font-display text-base font-bold tracking-[0.2em] text-ink">DONUTSPIN</span>
             <span className="block text-[9px] uppercase tracking-[0.22em] text-faint">Account deletion</span>
           </span>
         </Link>

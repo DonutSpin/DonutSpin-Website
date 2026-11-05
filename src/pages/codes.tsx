@@ -66,7 +66,7 @@ export function CodesPage() {
     <div>
       <PageHeader
         title="Reward codes"
-        description="Redeem weekly drops and promotional codes. The same code works here and in the DonutCash Discord."
+        description="Redeem weekly drops and promotional codes. The same code works here and in the DonutSpin Discord."
         badge={<Badge tone="gold">Shared with Discord</Badge>}
       />
 
@@ -147,7 +147,7 @@ export function CodesPage() {
       <Card className="mt-5">
         <CardHeader
           title="Redemption history"
-          description="Codes redeemed on the website or through the DonutCash Discord bot."
+          description="Codes redeemed on the website or through the DonutSpin Discord bot."
           action={
             <Badge tone="neutral">
               <History className="h-3 w-3" /> {history.data?.redemptions.length ?? 0} total

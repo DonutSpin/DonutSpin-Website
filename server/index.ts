@@ -95,44 +95,44 @@ giveawayTimer.unref();
 
 const app = createApp(db);
 const server = app.listen(config.port, () => {
-  console.info(`[donutcash] API listening on http://localhost:${config.port}`);
-  console.info(`[donutcash] environment: ${config.isProduction ? 'production' : 'development'}`);
-  console.info(`[donutcash] database: ${config.databasePath} (${config.databasePathSource})`);
-  console.info(`[donutcash] persistent data: ${config.dataDir}`);
-  console.info(`[donutcash] pre-migration backups: ${config.backupDir}`);
-  console.info(`[donutcash] client build: ${config.clientDist}`);
-  console.info(`[donutcash] public url: ${config.appUrl}${config.appUrlConfigured ? '' : ' (default; set APP_URL to override)'}`);
+  console.info(`[donutspin] API listening on http://localhost:${config.port}`);
+  console.info(`[donutspin] environment: ${config.isProduction ? 'production' : 'development'}`);
+  console.info(`[donutspin] database: ${config.databasePath} (${config.databasePathSource})`);
+  console.info(`[donutspin] persistent data: ${config.dataDir}`);
+  console.info(`[donutspin] pre-migration backups: ${config.backupDir}`);
+  console.info(`[donutspin] client build: ${config.clientDist}`);
+  console.info(`[donutspin] public url: ${config.appUrl}${config.appUrlConfigured ? '' : ' (default; set APP_URL to override)'}`);
   console.info(
-    `[donutcash] client ip: ${
+    `[donutspin] client ip: ${
       config.trustProxyHeaders
         ? `forwarded headers trusted from loopback${config.trustedProxies.length ? ` and ${config.trustedProxies.join(', ')}` : ''}`
         : 'forwarded headers ignored (recorded IPs fall back to unknown)'
     }`,
   );
-  console.info(`[donutcash] rate limits: ${isSharedRateLimitStoreEnabled() ? 'shared SQLite windows' : 'in-process windows'}`);
-  console.info(`[donutcash] session cookie secure: ${config.cookieSecure}`);
+  console.info(`[donutspin] rate limits: ${isSharedRateLimitStoreEnabled() ? 'shared SQLite windows' : 'in-process windows'}`);
+  console.info(`[donutspin] session cookie secure: ${config.cookieSecure}`);
   console.info(
-    `[donutcash] turnstile: ${config.turnstile.enabled ? 'enabled' : 'disabled (TURNSTILE_SECRET_KEY not set)'}`,
+    `[donutspin] turnstile: ${config.turnstile.enabled ? 'enabled' : 'disabled (TURNSTILE_SECRET_KEY not set)'}`,
   );
-  if (!config.isProduction) console.info('[donutcash] start the client with `npm run dev:web` (Vite proxies /api here)');
+  if (!config.isProduction) console.info('[donutspin] start the client with `npm run dev:web` (Vite proxies /api here)');
 });
 
 server.on('error', (error: NodeJS.ErrnoException) => {
-  console.error(`[donutcash] could not listen on port ${config.port}:`, error.message);
+  console.error(`[donutspin] could not listen on port ${config.port}:`, error.message);
   process.exit(1);
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('[donutcash] uncaught exception:', error);
+  console.error('[donutspin] uncaught exception:', error);
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[donutcash] unhandled rejection:', reason);
+  console.error('[donutspin] unhandled rejection:', reason);
 });
 
 function shutdown(signal: string): void {
-  console.info(`[donutcash] ${signal} received, closing server`);
+  console.info(`[donutspin] ${signal} received, closing server`);
   clearInterval(emailTimer);
   clearInterval(rainTimer);
   clearInterval(giveawayTimer);

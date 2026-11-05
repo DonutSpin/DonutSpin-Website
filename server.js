@@ -33,7 +33,7 @@ if (!process.env.NODE_ENV) process.env.NODE_ENV = 'production';
 const entry = path.join(appRoot, 'build', 'server', 'index.js');
 
 if (!fs.existsSync(entry)) {
-  console.error(`[donutcash] missing ${entry}. Run \`npm run build\` before starting the server.`);
+  console.error(`[donutspin] missing ${entry}. Run \`npm run build\` before starting the server.`);
   process.exit(1);
 }
 

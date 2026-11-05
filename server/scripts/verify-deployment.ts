@@ -71,7 +71,7 @@ const runtimePaths = [
   'build',
 ];
 
-console.info('Donutcash deployment check');
+console.info('DonutSpin deployment check');
 console.info(`  app root:      ${config.root}`);
 console.info(`  database:      ${config.databasePath} (source: ${config.databasePathSource}, exists: ${config.databaseExists})`);
 console.info(`  persistent:    ${config.dataDir}`);
@@ -102,7 +102,7 @@ if (config.databasePath === ':memory:') {
         | { version: number | null }
         | undefined;
       if (!schema?.version) {
-        fail('schema_migrations is missing or empty; this does not look like a Donutcash database.');
+        fail('schema_migrations is missing or empty; this does not look like a DonutSpin database.');
       } else {
         console.info(`  schema version: ${schema.version}`);
       }

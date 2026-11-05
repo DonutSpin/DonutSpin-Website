@@ -89,7 +89,7 @@ function LegalFooter({ locale }: { locale: LegalLocale }) {
   return (
     <footer className="mt-14 border-t border-line/70 py-6">
       <div className="mx-auto flex max-w-[1160px] flex-col gap-3 px-4 text-[10.5px] text-faint sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-        <p>© {new Date().getFullYear()} Donutcash</p>
+        <p>© {new Date().getFullYear()} DonutSpin</p>
         <LegalFooterLinks locale={locale} />
         <LegalDisclaimer locale={locale} />
       </div>
@@ -107,7 +107,7 @@ export function LegalPage({ kind }: { kind: LegalPageKind }) {
 
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = `${doc.title} · Donutcash`;
+    document.title = `${doc.title} · DonutSpin`;
     document.documentElement.lang = locale;
     return () => {
       document.title = previousTitle;
@@ -291,7 +291,7 @@ export function LegalConsentPage() {
               <BrandMark className="h-6 w-6" />
             </span>
             <span>
-              <span className="block font-display text-[13px] font-bold tracking-[0.18em] text-ink">DONUTCASH</span>
+              <span className="block font-display text-[13px] font-bold tracking-[0.18em] text-ink">DONUTSPIN</span>
               <span className="block text-[8px] uppercase tracking-[0.2em] text-faint">DonutSMP casino</span>
             </span>
           </Link>
@@ -318,7 +318,7 @@ export function LegalConsentPage() {
           <p className="mt-1.5 text-[11px] leading-relaxed text-faint">{legalUi.nl.consentIntro}</p>
 
           <div className="mt-5 rounded-xl border border-warning/25 bg-warning/[0.06] px-3.5 py-3 text-[11px] leading-relaxed text-warning">
-            Donutcash is not affiliated with DonutSMP, Mojang or Microsoft. Only in-game currency is used. Gambling with
+            DonutSpin is not affiliated with DonutSMP, Mojang or Microsoft. Only in-game currency is used. Gambling with
             in-game currency may violate DonutSMP’s rules and could result in a ban.
           </div>
 

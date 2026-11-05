@@ -210,7 +210,7 @@ export function getCashierDetail(db: DB, viewer: SessionUser, reference: string)
   ).map<CashierMessage>((message) => ({
     id: message.id,
     authorId: message.author_id,
-    authorName: message.author_role === 'system' ? 'Donutcash' : (message.author_name ?? 'Deleted user'),
+    authorName: message.author_role === 'system' ? 'DonutSpin' : (message.author_name ?? 'Deleted user'),
     authorRole: (message.author_role as Role | 'system') ?? 'system',
     visibility: message.visibility,
     body: message.body,

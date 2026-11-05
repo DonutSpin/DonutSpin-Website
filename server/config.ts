@@ -406,7 +406,7 @@ export const config = {
   root,
   isProduction,
   port,
-  appName: process.env.APP_NAME || 'Donutcash',
+  appName: process.env.APP_NAME || 'DonutSpin',
   appUrl,
   appUrlConfigured,
   trustProxyHeaders,
@@ -456,7 +456,7 @@ export const config = {
     port: intEnv('SMTP_PORT', 587),
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
-    from: process.env.SMTP_FROM || 'Donutcash <no-reply@example.com>',
+    from: process.env.SMTP_FROM || 'DonutSpin <no-reply@example.com>',
   },
 };
 

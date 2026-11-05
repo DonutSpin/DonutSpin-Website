@@ -139,7 +139,7 @@ function CoinFace({ side }: { side: 'heads' | 'tails' }) {
       <div className="coin-inner">
         <span className="coin-monogram">{heads ? 'H' : 'T'}</span>
         <span className="coin-label">{heads ? 'Heads' : 'Tails'}</span>
-        <span className="coin-stars">✦ DONUTCASH ✦</span>
+        <span className="coin-stars">✦ DONUTSPIN ✦</span>
       </div>
       <div className="coin-glint" />
     </div>

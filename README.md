@@ -1,6 +1,6 @@
-# Donutcash
+# DonutSpin
 
-Donutcash is a self-hosted **casino for DonutSMP money**, with a player lobby, six server-authoritative games, a support desk, and an administration console.
+DonutSpin is a self-hosted **casino for DonutSMP money**, with a player lobby, six server-authoritative games, a support desk, and an administration console.
 
 > **Built for DonutSMP.** Balances are tracked in DonutSMP money. The cashier is the single place to deposit money into the game or withdraw it again; owners and administrators review every request.
 
@@ -93,7 +93,7 @@ Configuration lives in `.env`. The server loads it on startup, and environment v
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `PORT` | `4000` | API/production server port. Falls back to `HTTP_PLATFORM_PORT`, which IIS assigns. |
-| `APP_NAME` | `Donutcash` | Initial platform name seed |
+| `APP_NAME` | `DonutSpin` | Initial platform name seed |
 | `APP_URL` | production: `https://donutcash.runasp.net`; development: `http://localhost:5173` | Public client origin used in every email link, reset URL, and session cookie decision. In production it is also the only allowed mutation origin. A missing, invalid, or loopback value falls back to the production default rather than sending localhost links. |
 | `DATABASE_PATH` | first existing of `app.db`, `data/app.db`, `data/aurum.db`, `App_Data/app.db`, `App_Data/aurum.db`; new installs use `App_Data/aurum.db` | SQLite file. Parent directories are created automatically. Leave unset in production so an existing database is always found before a new one is created. |
 | `DONUTCASH_DATA_DIR` | `App_Data` | Persistent directory for backups, the generated session secret, and generated owner credentials. It must not be inside `src/`, `server/`, `dist/`, or `build/`. Set an absolute path outside `/wwwroot` if the host exposes one. |
@@ -108,7 +108,7 @@ Configuration lives in `.env`. The server loads it on startup, and environment v
 | `SMTP_PORT` | `587` | STARTTLS port. |
 | `SMTP_USER` | empty | Brevo SMTP login, for example `c05ccf001@smtp-brevo.com`. |
 | `SMTP_PASS` | empty | Brevo SMTP key. Prefer saving it in Admin → Email settings; never commit it. |
-| `SMTP_FROM` | `Donutcash <no-reply@example.com>` | Sender identity. Use a domain authenticated in Brevo. |
+| `SMTP_FROM` | `DonutSpin <no-reply@example.com>` | Sender identity. Use a domain authenticated in Brevo. |
 | `EMAIL_ENCRYPTION_KEY` | `SESSION_SECRET` | Stable secret used to encrypt the SMTP key saved from the admin panel. Set a separate value in production. |
 | `TURNSTILE_SITE_KEY` | built-in public key | Public Cloudflare Turnstile widget key. Safe to expose. |
 | `TURNSTILE_SECRET_KEY` | empty | Server-only Turnstile secret. Set it in the hosting panel or local `.env`; never commit it. CAPTCHA stays disabled while empty. |
@@ -227,10 +227,10 @@ Role hierarchy checks prevent self-escalation above the actor's own role. Credit
 The database runs in WAL mode. Use the backup script rather than copying only the main file:
 
 ```bash
-npm run db:backup -- --out /var/backups/donutcash
+npm run db:backup -- --out /var/backups/donutspin
 ```
 
-On Windows, use a path such as `D:\donutcash-backups`. The default output is `App_Data/backups`. The script uses SQLite's online backup API, runs `integrity_check` on the copy, removes empty sidecar files, and prints user and ledger counts. Schedule it with the operator's normal job runner and keep copies on a volume outside the application directory.
+On Windows, use a path such as `D:\donutspin-backups`. The default output is `App_Data/backups`. The script uses SQLite's online backup API, runs `integrity_check` on the copy, removes empty sidecar files, and prints user and ledger counts. Schedule it with the operator's normal job runner and keep copies on a volume outside the application directory.
 
 To restore:
 
@@ -370,7 +370,7 @@ You do **not** need to move your current `app.db`; it is detected and protected 
 
 1. Stop the app (or place `app_offline.htm` in `/wwwroot`).
 2. Take a verified backup: `npm run db:backup -- --out App_Data`.
-3. Rename the printed `App_Data/donutcash-<timestamp>.db` snapshot to `App_Data/aurum.db` while the app is stopped. Do not overwrite an existing `App_Data/aurum.db`; if one exists, confirm it is the same database or choose another path.
+3. Rename the printed `App_Data/donutspin-<timestamp>.db` snapshot to `App_Data/aurum.db` while the app is stopped. Do not overwrite an existing `App_Data/aurum.db`; if one exists, confirm it is the same database or choose another path.
 4. Set `DATABASE_PATH=App_Data/aurum.db` in the panel environment variables and restart.
 5. Sign in and verify balances/settings, then keep the old `app.db` for at least one backup cycle. Never delete the old file until the new one is proven.
 

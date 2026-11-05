@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setConfig(publicConfig);
       setUnread(me.user && !me.user.legalAcceptanceRequired ? me.unreadNotifications : 0);
     } catch (error) {
-      setBootError(error instanceof ApiRequestError ? error.message : 'Cannot reach the Donutcash server.');
+      setBootError(error instanceof ApiRequestError ? error.message : 'Cannot reach the DonutSpin server.');
     } finally {
       setLoading(false);
     }

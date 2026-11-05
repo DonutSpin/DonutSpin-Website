@@ -51,7 +51,7 @@ beforeAll(async () => {
   dbModule.setSetting(db, 'email.secure', false, null);
   dbModule.setSetting(db, 'email.user', 'sink-user', null);
   dbModule.setSetting(db, 'email.from_email', 'no-reply@donutcash.runasp.net', null);
-  dbModule.setSetting(db, 'email.from_name', 'Donutcash', null);
+  dbModule.setSetting(db, 'email.from_name', 'DonutSpin', null);
   dbModule.setSetting(db, 'email.smtp_pass_enc', cryptoModule.encryptSecret('sink-password'), null);
 
   email = `${unique('mailer')}@test.local`;

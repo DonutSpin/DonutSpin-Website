@@ -35,7 +35,7 @@ function AuthLayout({ children, title, subtitle }: { children: ReactNode; title:
               <BrandMark className="h-7 w-7" />
             </span>
             <span>
-              <span className="block font-display text-base font-bold tracking-[0.2em] text-ink">DONUTCASH</span>
+              <span className="block font-display text-base font-bold tracking-[0.2em] text-ink">DONUTSPIN</span>
               <span className="block text-[9px] uppercase tracking-[0.22em] text-faint">DonutSMP casino</span>
             </span>
           </Link>
@@ -71,7 +71,7 @@ function AuthLayout({ children, title, subtitle }: { children: ReactNode; title:
 
         <div className="relative flex items-center gap-3 text-[10.5px] text-faint">
           <span className="h-1.5 w-1.5 rounded-full bg-success" />
-          {config?.name ?? 'Donutcash'} · DonutSMP casino
+          {config?.name ?? 'DonutSpin'} · DonutSMP casino
         </div>
       </div>
 
@@ -82,7 +82,7 @@ function AuthLayout({ children, title, subtitle }: { children: ReactNode; title:
               <span className="grid h-9 w-9 place-items-center rounded-xl border border-gold/30 bg-gold/10">
                 <BrandMark className="h-6 w-6" />
               </span>
-              <span className="font-display text-sm font-bold tracking-[0.18em]">DONUTCASH</span>
+              <span className="font-display text-sm font-bold tracking-[0.18em]">DONUTSPIN</span>
             </Link>
             <Link to="/" className="text-[11px] text-faint hover:text-ink">
               Back to lobby
@@ -258,14 +258,14 @@ export function LoginPage() {
         </Alert>
       ) : (
         <p className="mt-6 text-center text-[12.5px] text-muted">
-          New to Donutcash?{' '}
+          New to DonutSpin?{' '}
           <Link to="/register" className="font-medium text-gold hover:text-gold-bright">
             Create an account
           </Link>
         </p>
       )}
       <p className="mt-10 text-center text-[10.5px] leading-relaxed text-faint">
-        Donutcash · The casino for DonutSMP money.
+        DonutSpin · The casino for DonutSMP money.
       </p>
     </AuthLayout>
   );
@@ -339,7 +339,7 @@ export function RegisterPage() {
 
   return (
     <AuthLayout
-      title="Create your Donutcash account"
+      title="Create your DonutSpin account"
       subtitle={
         config
           ? `Start with ${money(config.startingCredits)} DonutSMP money in your wallet.`

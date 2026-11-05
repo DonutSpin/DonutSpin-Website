@@ -199,7 +199,7 @@ function ConfigPanel({ config, onSaved }: { config: DiscordGuildConfig; onSaved:
               <Field label="Invites per reward" hint="Example: 3.">
                 <Input type="number" min={1} max={100} value={rewardEvery} onChange={(event) => setRewardEvery(event.target.value)} />
               </Field>
-              <Field label="Reward amount" hint="Credited to the inviter's DonutCash wallet.">
+              <Field label="Reward amount" hint="Credited to the inviter's DonutSpin wallet.">
                 <AmountInput value={rewardAmount} onChange={setRewardAmount} min={1} />
               </Field>
             </div>
@@ -665,7 +665,7 @@ function PanelModal({
           </Select>
         </Field>
         <Field label="Title" required hint="3-120 characters.">
-          <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} placeholder="Meet the DonutCash dev team" />
+          <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} placeholder="Meet the DonutSpin dev team" />
         </Field>
         <Field label="Message" required hint={`${body.length}/4,000 characters. Discord markdown is supported.`}>
           <Textarea value={body} onChange={(event) => setBody(event.target.value)} rows={7} maxLength={4000} />
@@ -1187,7 +1187,7 @@ export function AdminDiscordPage() {
   if (query.error && !data) {
     return (
       <div>
-        <PageHeader title="Discord integration" description="Manage the DonutCash bot and its shared systems." />
+        <PageHeader title="Discord integration" description="Manage the DonutSpin bot and its shared systems." />
         <Alert tone="error">{query.error}</Alert>
       </div>
     );
@@ -1197,7 +1197,7 @@ export function AdminDiscordPage() {
     <div>
       <PageHeader
         title="Discord integration"
-        description="One shared database for the website and the DonutCash bot: balances, codes, giveaways, invites, announcements, and info panels."
+        description="One shared database for the website and the DonutSpin bot: balances, codes, giveaways, invites, announcements, and info panels."
         badge={
           status?.connected ? (
             <Badge tone="success" dot>

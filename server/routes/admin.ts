@@ -859,7 +859,7 @@ export function createAdminRouter(db: DB): Router {
       .prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE')
       .get(body.username, body.email) as { id: string } | undefined;
     if (existing) throw conflict('That username or email is already in use.', 'ACCOUNT_EXISTS');
-    const temporaryPassword = `Donutcash-${randomBytes(6).toString('hex')}!`;
+    const temporaryPassword = `DonutSpin-${randomBytes(6).toString('hex')}!`;
     const userId = `usr_${randomBytes(10).toString('hex')}`;
     const now = nowIso();
     db.transaction(() => {

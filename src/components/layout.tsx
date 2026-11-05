@@ -64,7 +64,7 @@ export function Splash({ message }: { message?: string }) {
           <BrandMark className="h-9 w-9" />
         </div>
         <div className="text-center">
-          <p className="font-display text-xl font-semibold tracking-[0.2em] text-ink">DONUTCASH</p>
+          <p className="font-display text-xl font-semibold tracking-[0.2em] text-ink">DONUTSPIN</p>
           <p className="mt-1 text-[11px] uppercase tracking-[0.24em] text-faint">DonutSMP casino</p>
         </div>
         {message ? (
@@ -184,15 +184,6 @@ function playerNav(): NavGroup[] {
   ];
 }
 
-function navGroupKey(title: string): string {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-}
-
-function navItemActive(pathname: string, item: NavItem): boolean {
-  if (item.end) return pathname === item.to;
-  return pathname === item.to || pathname.startsWith(`${item.to}/`);
-}
-
 function staffNav(role: Role): NavGroup[] {
   return [
     {
@@ -295,7 +286,7 @@ function Brand() {
         <BrandMark className="relative h-[23px] w-[23px]" />
       </span>
       <span className="min-w-0">
-        <span className="block font-display text-[15px] font-bold tracking-[0.17em] text-ink">DONUTCASH</span>
+        <span className="block font-display text-[15px] font-bold tracking-[0.17em] text-ink">DONUTSPIN</span>
         <span className="block text-[8.5px] font-semibold uppercase tracking-[0.22em] text-gold-dim">DonutSMP casino</span>
       </span>
     </Link>
@@ -307,41 +298,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { groups, label } = navFor(location.pathname, user?.role ?? 'user');
-  const storageKey = `donutcash:nav:${navGroupKey(label)}`;
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
-    try {
-      const stored = window.localStorage.getItem(storageKey);
-      return stored ? (JSON.parse(stored) as Record<string, boolean>) : {};
-    } catch {
-      return {};
-    }
-  });
-  const activeGroupTitle = groups.find((group) =>
-    group.items.some((item) => navItemActive(location.pathname, item)),
-  )?.title;
-
-  // Navigating into a collapsed group reveals it, while an explicit collapse
-  // of the group you are already in is respected.
-  useEffect(() => {
-    if (!activeGroupTitle) return;
-    const key = navGroupKey(activeGroupTitle);
-    setCollapsed((current) => {
-      if (current[key] === undefined) return current;
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
-  }, [activeGroupTitle]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(collapsed));
-    } catch {
-      // Private browsing can refuse storage; collapsing still works for this visit.
-    }
-  }, [collapsed, storageKey]);
 
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -412,93 +370,60 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <span className="h-1.5 w-1.5 rounded-full bg-gold/80" /> {label}
         </p>
       </div>
-      <nav className="flex-1 space-y-2.5 overflow-y-auto px-3 pb-5">
+      <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-5" aria-label={`${label} navigation`}>
         {visibleGroups.length === 0 && (
           <p className="px-3 pt-4 text-[11.5px] leading-relaxed text-faint">No page matches “{query.trim()}”.</p>
         )}
-        {visibleGroups.map((group) => {
-          const key = navGroupKey(group.title);
-          const stored = collapsed[key];
-          const open = needle.length > 0 || (stored === undefined ? group.title === activeGroupTitle : !stored);
-          const activeInside = group.items.some((item) => navItemActive(location.pathname, item));
-          return (
-            <div key={group.title}>
-              {!needle && (
-                <button
-                  type="button"
-                  onClick={() => setCollapsed((current) => ({ ...current, [key]: open }))}
-                  aria-expanded={open}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-white/[0.03]"
-                >
-                  <span
-                    className={cn(
-                      'flex-1 text-[9px] font-bold uppercase tracking-[0.18em]',
-                      activeInside ? 'text-gold-dim' : 'text-faint/90',
-                    )}
+        {visibleGroups.map((group) => (
+          <div key={group.title}>
+            <p className="px-3 pb-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-faint/90">
+              {group.title}
+            </p>
+            <div className="space-y-0.5">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    onClick={onNavigate}
+                    className={({ isActive }) =>
+                      cn(
+                        'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[12.5px] font-medium transition-all duration-200',
+                        isActive
+                          ? 'bg-gradient-to-r from-gold/[0.14] to-gold/[0.03] text-gold-bright shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+                          : 'text-muted hover:bg-white/[0.04] hover:text-ink',
+                      )
+                    }
                   >
-                    {group.title}
-                  </span>
-                  {!open && activeInside && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-gold shadow-[0_0_8px_rgba(230,194,122,0.8)]" />
-                  )}
-                  <ChevronDown
-                    className={cn('h-3 w-3 text-faint transition-transform duration-200', !open && '-rotate-90')}
-                  />
-                </button>
-              )}
-              {needle && (
-                <p className="px-3 pb-1 text-[9px] font-bold uppercase tracking-[0.18em] text-faint/90">
-                  {group.title}
-                </p>
-              )}
-              {open && (
-                <div className="mt-0.5 space-y-0.5">
-                  {group.items.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.end}
-                        onClick={onNavigate}
-                        className={({ isActive }) =>
-                          cn(
-                            'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[12.5px] font-medium transition-all duration-200',
-                            isActive
-                              ? 'bg-gradient-to-r from-gold/[0.14] to-gold/[0.03] text-gold-bright shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
-                              : 'text-muted hover:bg-white/[0.04] hover:text-ink',
-                          )
-                        }
-                      >
-                        {({ isActive }) => (
-                          <>
-                            {isActive && (
-                              <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-gold shadow-[0_0_12px_rgba(230,194,122,0.7)]" />
-                            )}
-                            <span
-                              className={cn(
-                                'grid h-7 w-7 place-items-center rounded-lg transition-colors',
-                                isActive ? 'bg-gold/10 text-gold' : 'text-faint group-hover:text-muted',
-                              )}
-                            >
-                              <Icon className="h-[16px] w-[16px]" strokeWidth={isActive ? 2.2 : 1.8} />
-                            </span>
-                            <span className="flex-1">{item.label}</span>
-                            {item.badge === 'notifications' && unread > 0 && (
-                              <span className="rounded-full bg-gold px-1.5 py-0.5 text-[9px] font-bold text-[#1a1408] tnum shadow-[0_0_10px_-2px_rgba(230,194,122,0.8)]">
-                                {unread > 99 ? '99+' : unread}
-                              </span>
-                            )}
-                          </>
+                    {({ isActive }) => (
+                      <>
+                        {isActive && (
+                          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-gold shadow-[0_0_12px_rgba(230,194,122,0.7)]" />
                         )}
-                      </NavLink>
-                    );
-                  })}
-                </div>
-              )}
+                        <span
+                          className={cn(
+                            'grid h-7 w-7 place-items-center rounded-lg transition-colors',
+                            isActive ? 'bg-gold/10 text-gold' : 'text-faint group-hover:text-muted',
+                          )}
+                        >
+                          <Icon className="h-[16px] w-[16px]" strokeWidth={isActive ? 2.2 : 1.8} />
+                        </span>
+                        <span className="flex-1">{item.label}</span>
+                        {item.badge === 'notifications' && unread > 0 && (
+                          <span className="rounded-full bg-gold px-1.5 py-0.5 text-[9px] font-bold text-[#1a1408] tnum shadow-[0_0_10px_-2px_rgba(230,194,122,0.8)]">
+                            {unread > 99 ? '99+' : unread}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </NavLink>
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </nav>
       <div className="border-t border-line/80 p-3.5">
         <div className="flex items-center gap-2.5 rounded-xl border border-line/80 bg-white/[0.025] p-2.5 transition-colors hover:border-line-strong/80 hover:bg-white/[0.04]">
@@ -565,8 +490,15 @@ function NotificationMenu() {
     const onDown = (event: MouseEvent) => {
       if (!ref.current?.contains(event.target as Node)) setOpen(false);
     };
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
     document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [open]);
 
   const markAllRead = async () => {
@@ -597,6 +529,8 @@ function NotificationMenu() {
         onClick={() => setOpen((value) => !value)}
         className="relative grid h-9 w-9 place-items-center rounded-lg border border-line bg-surface-2 text-muted transition-colors hover:text-ink"
         aria-label="Notifications"
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
         <Bell className="h-[17px] w-[17px]" />
         {unread > 0 && (
@@ -606,16 +540,30 @@ function NotificationMenu() {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-11 z-50 w-[340px] overflow-hidden rounded-xl border border-line bg-surface-1 shadow-2xl animate-pop-in">
-          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+        <div
+          role="dialog"
+          aria-label="Notifications"
+          className="fixed left-3 right-3 top-[76px] z-[60] overflow-hidden rounded-xl border border-line bg-surface-1 shadow-2xl animate-pop-in sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-[360px]"
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
             <p className="font-display text-[13px] font-semibold">Notifications</p>
-            {unread > 0 && (
-              <button onClick={() => void markAllRead()} className="text-[11px] font-medium text-gold hover:text-gold-bright">
-                Mark all read
+            <div className="flex items-center gap-3">
+              {unread > 0 && (
+                <button onClick={() => void markAllRead()} className="text-[11px] font-medium text-gold hover:text-gold-bright">
+                  Mark all read
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close notifications"
+                className="rounded-md p-1 text-faint transition-colors hover:bg-surface-3 hover:text-ink sm:hidden"
+              >
+                <X className="h-3.5 w-3.5" />
               </button>
-            )}
+            </div>
           </div>
-          <div className="max-h-[360px] overflow-y-auto">
+          <div className="max-h-[calc(100dvh-13rem)] overflow-y-auto sm:max-h-[360px]">
             {loading ? (
               <div className="flex justify-center py-8">
                 <Spinner />
@@ -830,13 +778,15 @@ function ActiveRoundNotice() {
 
 function MobileBottomNav({ onMenu }: { onMenu: () => void }) {
   const { unread } = useAuth();
+  // Exactly five tabs, paired with the More button below. A sixth tab used to
+  // wrap onto a second row and push the bar over the page on phones.
   const items = [
     { label: 'Home', to: '/', icon: Home, end: true },
     { label: 'Games', to: '/games', icon: Gamepad2 },
     { label: 'Giveaways', to: '/giveaways', icon: Trophy },
-    { label: 'Rewards', to: '/rewards', icon: Gift, badge: true },
     { label: 'Wallet', to: '/wallet', icon: Wallet },
   ];
+
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line/80 bg-surface-1/92 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden"
@@ -861,9 +811,6 @@ function MobileBottomNav({ onMenu }: { onMenu: () => void }) {
                 <>
                   <span className={cn('relative grid h-7 w-12 place-items-center rounded-full transition-colors', isActive && 'bg-gold/10')}>
                     <Icon className="h-[18px] w-[18px]" strokeWidth={isActive ? 2.3 : 1.8} />
-                    {item.badge && unread > 0 && (
-                      <span className="absolute right-2 top-0.5 h-1.5 w-1.5 rounded-full bg-gold shadow-[0_0_6px_rgba(230,194,122,0.8)]" />
-                    )}
                   </span>
                   {item.label}
                 </>
@@ -876,8 +823,11 @@ function MobileBottomNav({ onMenu }: { onMenu: () => void }) {
           onClick={onMenu}
           className="relative flex flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[9.5px] font-semibold text-faint transition-colors hover:text-muted"
         >
-          <span className="grid h-7 w-12 place-items-center">
+          <span className="relative grid h-7 w-12 place-items-center">
             <Menu className="h-[18px] w-[18px]" strokeWidth={1.8} />
+            {unread > 0 && (
+              <span className="absolute right-2 top-0.5 h-1.5 w-1.5 rounded-full bg-gold shadow-[0_0_6px_rgba(230,194,122,0.8)]" />
+            )}
           </span>
           More
         </button>
@@ -935,7 +885,7 @@ export function AppShell() {
               <Menu className="h-4 w-4" />
             </button>
             <Link to="/" className="font-display text-[13px] font-bold tracking-[0.18em] text-ink lg:hidden">
-              DONUTCASH
+              DONUTSPIN
             </Link>
             <div className="hidden items-center gap-2.5 lg:flex">
               <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">{label}</span>
@@ -971,7 +921,7 @@ export function AppShell() {
           </div>
           <footer className="mt-14 flex flex-col gap-3 border-t border-line/70 pt-5 text-[10.5px] text-faint/90">
             <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
-              <p>Donutcash · The casino for DonutSMP money.</p>
+              <p>DonutSpin · The casino for DonutSMP money.</p>
               <LegalFooterLinks className="text-faint" />
             </div>
             <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">

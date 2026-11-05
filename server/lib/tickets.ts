@@ -377,7 +377,7 @@ export function getTicketDetail(db: DB, viewer: SessionUser, reference: string):
     .map<TicketMessage>((row) => ({
       id: row.id,
       authorId: row.author_id,
-      authorName: row.author_role === 'system' ? 'Donutcash' : (row.author_name ?? 'Deleted user'),
+      authorName: row.author_role === 'system' ? 'DonutSpin' : (row.author_name ?? 'Deleted user'),
       authorRole: (row.author_role as Role | 'system') ?? 'system',
       visibility: row.visibility,
       body: row.body,

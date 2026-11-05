@@ -136,7 +136,7 @@ export function ensureBootstrapOwner(db: DB): void {
   const owners = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'owner'").get() as { count: number };
   if (owners.count > 0) return;
 
-  const generated = `Donutcash-${randomBytes(9).toString('base64url')}!9`;
+  const generated = `DonutSpin-${randomBytes(9).toString('base64url')}!9`;
   const ownerUsername = USERNAME_PATTERN.test(username) ? username : 'owner';
   const ownerEmail = email || `owner@${new URL(config.appUrl).hostname}`;
 

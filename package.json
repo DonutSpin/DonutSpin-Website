@@ -1,9 +1,9 @@
 {
-  "name": "donutcash",
+  "name": "donutspin",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Donutcash — a casino for DonutSMP money with a support desk and admin control panel",
+  "description": "DonutSpin — a casino for DonutSMP money with a support desk and admin control panel",
   "engines": {
     "node": ">=22"
   },

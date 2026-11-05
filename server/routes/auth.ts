@@ -145,7 +145,7 @@ export function createAuthRouter(
     notify(db, {
       userId,
       type: 'account',
-      title: 'Welcome to Donutcash',
+      title: 'Welcome to DonutSpin',
       body: `${compactAmount(startingCredits)} DonutSMP money was added to your wallet. Verify your email before your first bet.`,
       link: '/settings#email',
     });

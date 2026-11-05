@@ -327,7 +327,7 @@ export function PlayingCard({ card, index = 0, hidden = false }: { card: CardDat
   if (hidden || card.hidden) {
     return (
       <div className="playing-card back animate-deal" style={{ animationDelay: `${index * 90}ms` }}>
-        <span className="font-display text-[10px] tracking-[0.2em] text-gold/70">DONUTCASH</span>
+        <span className="font-display text-[10px] tracking-[0.2em] text-gold/70">DONUTSPIN</span>
         <span className="self-center font-display text-2xl text-gold/40">A</span>
         <span className="self-end text-[8px] tracking-[0.2em] text-gold/40">DONUTSMP</span>
       </div>

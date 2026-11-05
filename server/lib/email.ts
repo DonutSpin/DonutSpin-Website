@@ -241,7 +241,7 @@ ${preheader(input.preheader)}
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>
                   <td width="40" height="40" align="center" valign="middle" bgcolor="#e6c27a" style="width:40px;height:40px;border-radius:12px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:19px;font-weight:800;color:#211706;">D</td>
                   <td style="padding-left:12px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-                    <div style="font-size:15px;font-weight:800;letter-spacing:3px;color:#f6f4ef;">DONUTCASH</div>
+                    <div style="font-size:15px;font-weight:800;letter-spacing:3px;color:#f6f4ef;">DONUTSPIN</div>
                     <div style="font-size:9px;font-weight:600;letter-spacing:2px;color:#9b7f4d;text-transform:uppercase;padding-top:3px;">DonutSMP casino</div>
                   </td>
                 </tr></table>
@@ -707,7 +707,7 @@ async function sendRendered(email: EmailConfig, recipient: string, rendered: Ren
     html: rendered.html,
     text: rendered.text,
     headers: {
-      'X-Entity-Ref-ID': `donutcash-${Date.now()}`,
+      'X-Entity-Ref-ID': `donutspin-${Date.now()}`,
       'List-Unsubscribe': `<${safeUrl(email, '/settings#email')}>`,
     },
   });

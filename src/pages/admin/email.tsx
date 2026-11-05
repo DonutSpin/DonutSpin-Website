@@ -429,7 +429,7 @@ export function AdminEmailPage() {
           <div className="space-y-4 p-5">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Sender name" error={fields.fromName}>
-                <Input value={form.fromName} onChange={(event) => set('fromName', event.target.value)} invalid={Boolean(fields.fromName)} placeholder="Donutcash" />
+                <Input value={form.fromName} onChange={(event) => set('fromName', event.target.value)} invalid={Boolean(fields.fromName)} placeholder="DonutSpin" />
               </Field>
               <Field label="Sender address" error={fields.fromEmail} hint="Must be verified in Brevo.">
                 <Input
