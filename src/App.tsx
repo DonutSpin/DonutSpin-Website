@@ -91,6 +91,7 @@ function App() {
         <Route path="/terms" element={<LegalPage kind="terms" />} />
         <Route path="/privacy" element={<LegalPage kind="privacy" />} />
         <Route path="/responsible-gambling" element={<LegalPage kind="responsible-gambling" />} />
+        <Route path="/provably-fair" element={<LegalPage kind="provably-fair" />} />
         <Route path="/legal-consent" element={<Navigate to="/" replace />} />
         <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
         <Route path="/register" element={<GuestOnly><RegisterPage /></GuestOnly>} />

@@ -5,7 +5,7 @@ import {
   LEGAL_TERMS_VERSION,
 } from '../../shared/legal';
 
-export type LegalPageKind = 'terms' | 'privacy' | 'responsible-gambling';
+export type LegalPageKind = 'terms' | 'privacy' | 'responsible-gambling' | 'provably-fair';
 export type LegalLocale = 'en' | 'nl';
 
 export interface LegalLink {
@@ -20,6 +20,8 @@ export interface LegalSection {
   paragraphs?: string[];
   bullets?: string[];
   links?: LegalLink[];
+  /** Optional monospace block, used for a runnable verification snippet. */
+  code?: string;
 }
 
 export interface LegalDocument {
@@ -27,12 +29,16 @@ export interface LegalDocument {
   eyebrow: string;
   intro: string;
   sections: LegalSection[];
+  /** Optional metadata labels; legal documents fall back to the shared versions. */
+  versionLabel?: string;
+  updatedLabel?: string;
 }
 
 export const legalPagePaths: Record<LegalPageKind, string> = {
   terms: '/terms',
   privacy: '/privacy',
   'responsible-gambling': '/responsible-gambling',
+  'provably-fair': '/provably-fair',
 };
 
 export const legalUi: Record<
@@ -49,6 +55,10 @@ export const legalUi: Record<
     terms: string;
     privacy: string;
     responsible: string;
+    fair: string;
+    fairCtaGames: string;
+    fairCtaGiveaways: string;
+    fairCtaSupport: string;
     consentTitle: string;
     consentIntro: string;
     consentAccept: string;
@@ -82,6 +92,10 @@ export const legalUi: Record<
     terms: 'Terms of Service',
     privacy: 'Privacy Policy',
     responsible: 'Responsible Gambling',
+    fair: 'Provably Fair',
+    fairCtaGames: 'Browse the games',
+    fairCtaGiveaways: 'See open giveaways',
+    fairCtaSupport: 'Ask the support desk',
     consentTitle: 'Before you enter the tables',
     consentIntro:
       'DonutSpin is an 18+ entertainment service for DonutSMP in-game currency only. Please confirm the statements below to continue.',
@@ -118,6 +132,10 @@ export const legalUi: Record<
     terms: 'Servicevoorwaarden',
     privacy: 'Privacybeleid',
     responsible: 'Verantwoord spelen',
+    fair: 'Aantoonbaar eerlijk',
+    fairCtaGames: 'Bekijk de spellen',
+    fairCtaGiveaways: 'Bekijk open giveaways',
+    fairCtaSupport: 'Vraag het de supportdesk',
     consentTitle: 'Voordat je aan tafel gaat',
     consentIntro:
       'DonutSpin is een 18+ entertainmentservice voor DonutSMP in-game valuta. Bevestig de onderstaande verklaringen om verder te gaan.',
@@ -870,6 +888,226 @@ export const legalDocuments: Record<LegalPageKind, Record<LegalLocale, LegalDocu
           title: '6. Voor vrienden en familie',
           paragraphs: [
             'Als iemand die je kent moeite heeft met gokken, luister dan zonder oordeel en moedig diegene aan de bovenstaande hulpdiensten te gebruiken. Leen geen geld voor gokken en probeer niet namens diegene verliezen terug te winnen. Professionele diensten kunnen ook vrienden en familie adviseren.',
+          ],
+        },
+      ],
+    },
+  },
+  'provably-fair': {
+    en: {
+      title: 'Provably Fair',
+      eyebrow: 'Transparency',
+      versionLabel: 'Version 1.0',
+      updatedLabel: 'Last updated 5 November 2026',
+      intro:
+        'Every wager on DonutSpin is settled by the server, and every giveaway draw can be recomputed from a published seed. This page explains where the randomness comes from, how outcomes are recorded, and what you can verify yourself.',
+      sections: [
+        {
+          id: 'short-version',
+          title: '1. The short version',
+          bullets: [
+            'You never decide an outcome. Wagers, cards, mine positions and spins are produced by the server, not by your browser.',
+            'The result exists before the animation. A round is settled and written to the ledger the moment the server processes it; what you see on screen only reveals it.',
+            'Nothing is charged twice. Every bet carries a unique request key, so a retry or a dropped connection replays the original round instead of creating a second one.',
+            'Giveaway winners can be recomputed. Every draw publishes a SHA-256 commitment before entries close and the seed afterwards.',
+          ],
+        },
+        {
+          id: 'randomness',
+          title: '2. Where the randomness comes from',
+          paragraphs: [
+            'DonutSpin runs on Node.js and draws game randomness from crypto.randomInt, the operating system’s cryptographically secure random number generator. Game logic never uses Math.random.',
+            'When a game needs a shuffled deck or a set of hidden positions, it builds one with a Fisher–Yates shuffle driven by that same generator, so every possible arrangement is equally likely.',
+            'Your browser never sends a random value and cannot influence one. The only input the server accepts from you is your wager and your game choices, such as heads or tails, a mine count, or where you place a chip.',
+          ],
+        },
+        {
+          id: 'settlement',
+          title: '3. Settlement, snapshots and the ledger',
+          paragraphs: [
+            'When a round starts, the server stores the wager, the game configuration that was in force at that moment, and the winning chance it published. Changing a game’s configuration later does not rewrite history: the snapshot attached to your round is what settled it.',
+            'Every round writes ledger entries. The wager is debited when the round starts and the payout is credited when it ends, including losses, which are recorded with a payout of zero. The append-only ledger, not the interface, is the source of truth for your balance.',
+            'Payouts follow the multiplier shown on the game screen and the platform payout ceiling. A win is never credited above the cap that was displayed when you placed the bet.',
+            'Settled rounds keep their outcome, timestamp and round identifier. Staff cannot silently alter a result; any correction to a balance is a separate, reasoned ledger entry.',
+          ],
+        },
+        {
+          id: 'scope',
+          title: '4. What “provably fair” does and does not mean here',
+          paragraphs: [
+            'The term is used in two different senses and we do not want to blur them.',
+          ],
+          bullets: [
+            'Giveaway draws are provably fair in the cryptographic sense. The commit–reveal scheme fixes the seed before entries close, and you can recompute the winner order afterwards.',
+            'Casino rounds are server-authoritative and auditable rather than seed-reproducible. We do not publish a per-round seed, so a round cannot be recomputed from a hash. What you can check is that the outcome was generated server-side before it was displayed, stored with its configuration snapshot, and recorded in the ledger.',
+            'The house edge is part of the payout table, not a hidden adjustment. The multipliers and win chances that decide a round are the ones shown in the game, and they are stored with every round.',
+          ],
+        },
+        {
+          id: 'giveaways',
+          title: '5. How a giveaway draw works',
+          paragraphs: [
+            'When a giveaway is created, the server generates 32 random bytes as a seed and immediately publishes its SHA-256 commitment. The seed stays secret at that point, while the commitment fixes it in place: swapping the seed later would break the hash.',
+            'When the timer ends, participants are ordered by an HMAC-SHA-256 Fisher–Yates shuffle. Each step hashes the seed with the giveaway ID and a counter, reads the first four bytes as an unsigned integer, rejects values that would bias the result, and uses the value to pick a swap index. Winners are taken from the start of the shuffled list.',
+            'After the draw the seed is published on the giveaway card under “Fair draw proof”, next to the commitment. Anyone can hash it and compare the two.',
+          ],
+          code: [
+            "const { createHash, createHmac } = require('node:crypto');",
+            '',
+            "const seed = '<revealed seed>';",
+            "const commitment = '<published commitment>';",
+            "const giveawayId = '<giveaway id>';",
+            "const participants = ['<user id 1>', '<user id 2>']; // join order",
+            'const winnerCount = 1;',
+            '',
+            "console.log('commitment ok:', createHash('sha256').update(seed).digest('hex') === commitment);",
+            '',
+            'function drawOrder(seed, giveawayId, userIds, count) {',
+            '  const pool = [...userIds];',
+            '  let counter = 0;',
+            '  const nextBelow = (bound) => {',
+            '    const limit = Math.floor(0x100000000 / bound) * bound;',
+            '    for (;;) {',
+            "      const digest = createHmac('sha256', seed).update(giveawayId + ':' + counter).digest();",
+            '      counter += 1;',
+            '      const value = digest.readUInt32BE(0);',
+            '      if (value < limit) return value % bound;',
+            '    }',
+            '  };',
+            '  for (let i = pool.length - 1; i > 0; i -= 1) {',
+            '    const j = nextBelow(i + 1);',
+            '    [pool[i], pool[j]] = [pool[j], pool[i]];',
+            '  }',
+            '  return pool.slice(0, count);',
+            '}',
+            '',
+            "console.log('winners:', drawOrder(seed, giveawayId, participants, winnerCount));",
+          ].join('\n'),
+        },
+        {
+          id: 'verify',
+          title: '6. Verifying a draw yourself',
+          bullets: [
+            'Open the giveaway and expand “Fair draw proof”. You will see the algorithm, the commitment published before the draw, and, for completed giveaways, the revealed seed.',
+            'Hash the seed with SHA-256. The digest must match the commitment exactly. If it does not, the seed is not the one the operator committed to.',
+            'To recompute the winner order, run the script above with the giveaway ID, the revealed seed and the participant user IDs in join order. The card lists participants in join order, but long giveaways show only the first twelve; ask the support desk for the full ordered list when you need to verify a large draw.',
+            'Every round and transaction in your account has an identifier. If a number on screen ever disagrees with your expectation, open a support ticket with the identifier and we will walk through the ledger entry with you.',
+          ],
+        },
+        {
+          id: 'questions',
+          title: '7. Questions',
+          paragraphs: [
+            'If anything on this page does not match what you see in your account, contact us through the support desk and include the round or giveaway reference. Do not share your password or access to your email with anyone, including staff.',
+          ],
+        },
+      ],
+    },
+    nl: {
+      title: 'Aantoonbaar eerlijk',
+      eyebrow: 'Transparantie',
+      versionLabel: 'Versie 1.0',
+      updatedLabel: 'Laatst bijgewerkt 5 november 2026',
+      intro:
+        'Elke inzet op DonutSpin wordt door de server afgehandeld, en elke giveaway-trekking kan opnieuw worden berekend met een gepubliceerde seed. Deze pagina legt uit waar de willekeur vandaan komt, hoe uitkomsten worden vastgelegd en wat je zelf kunt controleren.',
+      sections: [
+        {
+          id: 'short-version',
+          title: '1. De korte versie',
+          bullets: [
+            'Jij bepaalt nooit een uitkomst. Inzetten, kaarten, mijnposities en spins worden door de server gemaakt, niet door je browser.',
+            'De uitkomst bestaat vóór de animatie. Een ronde wordt afgehandeld en in het grootboek gezet zodra de server hem verwerkt; wat je op het scherm ziet, maakt die uitkomst alleen zichtbaar.',
+            'Er wordt nooit dubbel afgeschreven. Elke inzet heeft een unieke aanvraagsleutel, zodat een nieuwe poging of een weggevallen verbinding dezelfde ronde herhaalt in plaats van een tweede ronde te maken.',
+            'Winnaars van giveaways zijn opnieuw te berekenen. Elke trekking publiceert een SHA-256-commitment voordat de deelname sluit en de seed daarna.',
+          ],
+        },
+        {
+          id: 'randomness',
+          title: '2. Waar de willekeur vandaan komt',
+          paragraphs: [
+            'DonutSpin draait op Node.js en haalt spelwillekeur uit crypto.randomInt, de cryptografisch veilige generator van het besturingssysteem. Spelcode gebruikt nooit Math.random.',
+            'Als een spel een geschudde stapel of een set verborgen posities nodig heeft, wordt die opgebouwd met een Fisher–Yates-shuffle op dezelfde generator, zodat elke mogelijke ordening even waarschijnlijk is.',
+            'Je browser stuurt nooit een willekeurige waarde en kan er ook geen invloed op hebben. De server accepteert alleen je inzet en je spelkeuzes, zoals kop of munt, een aantal mijnen of waar je een chip plaatst.',
+          ],
+        },
+        {
+          id: 'settlement',
+          title: '3. Afhandeling, momentopnamen en het grootboek',
+          paragraphs: [
+            'Bij de start van een ronde bewaart de server de inzet, de spelconfiguratie die op dat moment gold en de winkans die werd gepubliceerd. Een latere wijziging van de configuratie herschrijft de geschiedenis niet: de momentopname die aan jouw ronde hangt, heeft de ronde afgehandeld.',
+            'Elke ronde schrijft regels in het grootboek. De inzet wordt afgeschreven bij de start en de uitbetaling wordt bijgeschreven bij het einde, ook bij verlies, dat met een uitbetaling van nul wordt vastgelegd. Het alleen-toevoegende grootboek, niet het scherm, is de bron van je saldo.',
+            'Uitbetalingen volgen de vermenigvuldiger die het spel toont en het uitbetalingsmaximum van het platform. Een winst wordt nooit hoger bijgeschreven dan het maximum dat zichtbaar was toen je de inzet plaatste.',
+            'Afgehandelde rondes bewaren hun uitkomst, tijdstip en ronde-identificatie. Personeel kan een resultaat niet stilzwijgend wijzigen; elke correctie op een saldo is een aparte grootboekregel met een reden.',
+          ],
+        },
+        {
+          id: 'scope',
+          title: '4. Wat “aantoonbaar eerlijk” hier wel en niet betekent',
+          paragraphs: [
+            'De term wordt in twee betekenissen gebruikt en we willen die niet door elkaar laten lopen.',
+          ],
+          bullets: [
+            'Giveaway-trekkingen zijn aantoonbaar eerlijk in de cryptografische zin. Het commit–reveal-schema legt de seed vast voordat de deelname sluit, en je kunt de volgorde van winnaars daarna opnieuw berekenen.',
+            'Casinorondes zijn server-autoritatief en controleerbaar, maar niet seed-reproduceerbaar. We publiceren geen seed per ronde, dus een ronde kan niet uit een hash opnieuw worden berekend. Wat je wél kunt controleren: de uitkomst is serverzijds gemaakt voordat die werd getoond, opgeslagen met de configuratiemomentopname en vastgelegd in het grootboek.',
+            'Het huisvoordeel zit in de uitbetalingstabel en niet in een verborgen aanpassing. De vermenigvuldigers en winkansen die een ronde bepalen, zijn dezelfde als die in het spel worden getoond en bij elke ronde worden opgeslagen.',
+          ],
+        },
+        {
+          id: 'giveaways',
+          title: '5. Hoe een giveaway-trekking werkt',
+          paragraphs: [
+            'Bij het aanmaken van een giveaway genereert de server 32 willekeurige bytes als seed en publiceert direct de SHA-256-commitment daarvan. De seed blijft op dat moment geheim, terwijl de commitment hem vastlegt: de seed later verwisselen zou de hash breken.',
+            'Als de timer afloopt, worden deelnemers geordend met een HMAC-SHA-256 Fisher–Yates-shuffle. Elke stap hasht de seed met het giveaway-ID en een teller, leest de eerste vier bytes als unsigned integer, verwerpt waarden die het resultaat zouden vertekenen en gebruikt de waarde om een verwisselindex te kiezen. De winnaars worden vanaf het begin van de geschudde lijst genomen.',
+            'Na de trekking wordt de seed gepubliceerd op de giveaway-kaart onder “Bewijs van eerlijke trekking”, naast de commitment. Iedereen kan hem hashen en vergelijken.',
+          ],
+          code: [
+            "const { createHash, createHmac } = require('node:crypto');",
+            '',
+            "const seed = '<onthulde seed>';",
+            "const commitment = '<gepubliceerde commitment>';",
+            "const giveawayId = '<giveaway-id>';",
+            "const participants = ['<gebruikers-id 1>', '<gebruikers-id 2>']; // deelnamevolgorde",
+            'const winnerCount = 1;',
+            '',
+            "console.log('commitment ok:', createHash('sha256').update(seed).digest('hex') === commitment);",
+            '',
+            'function drawOrder(seed, giveawayId, userIds, count) {',
+            '  const pool = [...userIds];',
+            '  let counter = 0;',
+            '  const nextBelow = (bound) => {',
+            '    const limit = Math.floor(0x100000000 / bound) * bound;',
+            '    for (;;) {',
+            "      const digest = createHmac('sha256', seed).update(giveawayId + ':' + counter).digest();",
+            '      counter += 1;',
+            '      const value = digest.readUInt32BE(0);',
+            '      if (value < limit) return value % bound;',
+            '    }',
+            '  };',
+            '  for (let i = pool.length - 1; i > 0; i -= 1) {',
+            '    const j = nextBelow(i + 1);',
+            '    [pool[i], pool[j]] = [pool[j], pool[i]];',
+            '  }',
+            '  return pool.slice(0, count);',
+            '}',
+            '',
+            "console.log('winnaars:', drawOrder(seed, giveawayId, participants, winnerCount));",
+          ].join('\n'),
+        },
+        {
+          id: 'verify',
+          title: '6. Zelf een trekking controleren',
+          bullets: [
+            'Open de giveaway en klap “Bewijs van eerlijke trekking” open. Je ziet het algoritme, de commitment die vóór de trekking is gepubliceerd en, bij afgeronde giveaways, de onthulde seed.',
+            'Hash de seed met SHA-256. De digest moet exact gelijk zijn aan de commitment. Is dat niet zo, dan is de seed niet degene waaraan de exploitant zich heeft vastgelegd.',
+            'Om de volgorde van winnaars opnieuw te berekenen, voer je het script hierboven uit met het giveaway-ID, de onthulde seed en de gebruikers-ID’s van deelnemers in deelnamevolgorde. De kaart toont deelnemers in deelnamevolgorde, maar bij grote giveaways alleen de eerste twaalf; vraag de supportdesk om de volledige geordende lijst als je een grote trekking wilt controleren.',
+            'Elke ronde en transactie in je account heeft een identificatie. Komt een getal op het scherm niet overeen met wat je verwacht, open dan een supportticket met die identificatie; dan lopen we de grootboekregel met je door.',
+          ],
+        },
+        {
+          id: 'questions',
+          title: '7. Vragen',
+          paragraphs: [
+            'Klopt iets op deze pagina niet met wat je in je account ziet, neem dan contact op via de supportdesk en vermeld de ronde of de giveaway-referentie. Deel je wachtwoord of toegang tot je e-mail met niemand, ook niet met personeel.',
           ],
         },
       ],

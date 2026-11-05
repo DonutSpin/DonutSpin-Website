@@ -5,9 +5,12 @@ import {
   ArrowUpRight,
   Check,
   FileText,
+  Gamepad2,
   Globe2,
   HeartHandshake,
+  LifeBuoy,
   ShieldCheck,
+  Trophy,
 } from 'lucide-react';
 import type { SessionUser } from '../../shared/types';
 import { useAuth } from '../context/AuthContext';
@@ -166,8 +169,8 @@ export function LegalPage({ kind }: { kind: LegalPageKind }) {
             </h1>
             <p className="mt-4 max-w-2xl text-[13.5px] leading-7 text-muted">{doc.intro}</p>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[10.5px] text-faint">
-              <span className="rounded-full border border-line bg-surface-2/60 px-2.5 py-1">{ui.version}</span>
-              <span>{ui.lastUpdated}</span>
+              <span className="rounded-full border border-line bg-surface-2/60 px-2.5 py-1">{doc.versionLabel ?? ui.version}</span>
+              <span>{doc.updatedLabel ?? ui.lastUpdated}</span>
             </div>
 
             <div className="mt-9 space-y-9">
@@ -207,6 +210,11 @@ export function LegalPage({ kind }: { kind: LegalPageKind }) {
                       ))}
                     </div>
                   )}
+                  {section.code && (
+                    <pre className="mt-3.5 overflow-x-auto rounded-xl border border-line bg-surface-0/70 p-4 text-[11px] leading-relaxed text-ink/90">
+                      <code>{section.code}</code>
+                    </pre>
+                  )}
                 </section>
               ))}
             </div>
@@ -228,6 +236,29 @@ export function LegalPage({ kind }: { kind: LegalPageKind }) {
                     </Link>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {kind === 'provably-fair' && (
+              <div className="mt-10 grid gap-2 sm:grid-cols-3">
+                {[
+                  { to: '/games', label: ui.fairCtaGames, icon: Gamepad2 },
+                  { to: '/giveaways', label: ui.fairCtaGiveaways, icon: Trophy },
+                  { to: '/tickets/new', label: ui.fairCtaSupport, icon: LifeBuoy },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="group flex items-center gap-2.5 rounded-xl border border-line bg-surface-2/50 px-3.5 py-3 text-[12px] font-medium text-muted transition-colors hover:border-gold/30 hover:bg-surface-2 hover:text-gold"
+                    >
+                      <Icon className="h-4 w-4 shrink-0 text-faint group-hover:text-gold" />
+                      <span className="flex-1">{item.label}</span>
+                      <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-faint group-hover:text-gold" />
+                    </Link>
+                  );
+                })}
               </div>
             )}
 

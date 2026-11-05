@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Info, LifeBuoy, Mail, Minus, Plus, ShieldCheck, Sparkles, Wallet } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Info, LifeBuoy, Mail, Minus, Plus, ShieldCheck, Sparkles, Wallet } from 'lucide-react';
 import type { Card as CardData, GameConfig } from '../../shared/types';
 import { useAuth } from '../context/AuthContext';
 import { money } from '../lib/format';
@@ -115,6 +115,12 @@ export function GameLayout({
               secure random number generator. Animations only reveal the settled result.
             </p>
             <p className="mt-1.5">Limits: {money(game.minBet)}–{money(game.maxBet)} money per round. Maximum payout cap: {money(maxPayout ?? 0)} money.</p>
+            <Link
+              to="/provably-fair"
+              className="mt-2.5 inline-flex items-center gap-1.5 font-medium text-gold transition-colors hover:text-gold-bright"
+            >
+              How rounds and giveaway draws stay fair <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
           </div>
         </div>
       </Modal>

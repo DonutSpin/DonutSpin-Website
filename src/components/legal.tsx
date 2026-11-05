@@ -21,6 +21,9 @@ export function LegalFooterLinks({
       <Link to={`${legalPagePaths.privacy}${suffix}`} className="transition-colors hover:text-gold">
         {ui.privacy}
       </Link>
+      <Link to={`${legalPagePaths['provably-fair']}${suffix}`} className="transition-colors hover:text-gold">
+        {ui.fair}
+      </Link>
       <Link to={`${legalPagePaths['responsible-gambling']}${suffix}`} className="transition-colors hover:text-gold">
         {ui.responsible}
       </Link>
