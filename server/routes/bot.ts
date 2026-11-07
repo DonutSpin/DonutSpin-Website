@@ -38,8 +38,13 @@ import {
 } from '../lib/discord/giveaways.ts';
 import {
   getInviteLeaderboard,
+  getInvitePanelSettings,
   getInviteStats,
+  getPersonalInviteByCode,
+  getPersonalInviteLink,
   recordInviteJoin,
+  savePersonalInviteLink,
+  setInvitePanelMessage,
   settlePendingInviteRewards,
 } from '../lib/discord/invites.ts';
 import { attachOutboxMessage } from '../lib/discord/events.ts';
@@ -87,6 +92,18 @@ const inviteJoinSchema = z.object({
   inviterUsername: z.string().trim().max(100).nullable().optional().default(null),
   inviteCode: z.string().trim().max(100).nullable().optional().default(null),
   joinedAt: z.string().trim().max(40).optional(),
+});
+
+const invitePanelMessageSchema = z.object({
+  messageId: snowflake.nullable().optional().default(null),
+  channelId: snowflake.nullable().optional().default(null),
+});
+
+const inviteLinkSchema = z.object({
+  guildId: snowflake,
+  discordUserId: snowflake,
+  inviteCode: z.string().trim().min(2).max(100),
+  inviteUrl: z.string().trim().min(10).max(500),
 });
 
 const vouchSchema = actorSchema.extend({
@@ -165,6 +182,7 @@ const configSchema = z.object({
       welcome: optionalSnowflake,
       vouches: optionalSnowflake,
       scamVouches: optionalSnowflake,
+      invites: optionalSnowflake,
       codes: optionalSnowflake,
       giveaways: optionalSnowflake,
       news: optionalSnowflake,
@@ -185,6 +203,9 @@ const configSchema = z.object({
   inviteRewardsEnabled: z.boolean().optional(),
   inviteRewardEvery: z.number().int().min(1).max(100).optional(),
   inviteRewardAmount: z.number().int().min(1).max(1_000_000_000_000).optional(),
+  invitePanelTitle: z.string().trim().min(3).max(120).optional(),
+  invitePanelBody: z.string().trim().min(10).max(3_900).optional(),
+  inviteCopyMessage: z.string().trim().min(10).max(1_800).optional(),
   announcementEveryone: z.boolean().optional(),
 });
 
@@ -411,6 +432,36 @@ export function createBotRouter(db: DB): Router {
     const body = parse(inviteJoinSchema, req.body);
     const result = recordInviteJoin(db, body);
     res.json(result);
+  });
+
+  router.get('/invites/panel/:guildId', (req, res) => {
+    const guildId = req.params.guildId ?? '';
+    res.json({ panel: getInvitePanelSettings(db, guildId) });
+  });
+
+  router.post('/invites/panel/:guildId/message', (req, res) => {
+    const guildId = req.params.guildId ?? '';
+    const body = parse(invitePanelMessageSchema, req.body);
+    setInvitePanelMessage(db, guildId, body.messageId, body.channelId);
+    res.json({ ok: true });
+  });
+
+  router.post('/invites/link', (req, res) => {
+    const body = parse(inviteLinkSchema, req.body);
+    res.json({ link: savePersonalInviteLink(db, body) });
+  });
+
+  router.get('/invites/link/code/:guildId/:inviteCode', (req, res) => {
+    const guildId = req.params.guildId ?? '';
+    const inviteCode = req.params.inviteCode ?? '';
+    if (!isDiscordSnowflake(guildId)) throw badRequest('Invalid Discord server.');
+    res.json({ link: getPersonalInviteByCode(db, guildId, inviteCode.slice(0, 100)) });
+  });
+
+  router.get('/invites/link/:guildId/:discordUserId', (req, res) => {
+    const guildId = req.params.guildId ?? '';
+    const discordUserId = req.params.discordUserId ?? '';
+    res.json({ link: getPersonalInviteLink(db, guildId, discordUserId) });
   });
 
   router.get('/invites/:guildId/leaderboard', (req, res) => {

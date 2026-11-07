@@ -64,6 +64,7 @@ const CHANNEL_FIELDS: { key: keyof DiscordGuildConfig['channels']; label: string
   { key: 'welcome', label: 'Welcome channel', hint: 'Member welcomes and invite attribution.' },
   { key: 'vouches', label: 'Vouches channel', hint: 'Positive vouch embeds.' },
   { key: 'scamVouches', label: 'Scam vouch channel', hint: 'Falls back to the vouch channel when blank.' },
+  { key: 'invites', label: 'Invite rewards channel', hint: 'Text channel for the panel and personal invite links. Blank uses a channel named invite-rewards.' },
   { key: 'codes', label: 'Codes channel', hint: 'New code announcements with @everyone.' },
   { key: 'giveaways', label: 'Giveaway channel', hint: 'Live giveaway messages and results.' },
   { key: 'news', label: 'News channel', hint: 'Platform news embeds.' },
@@ -100,6 +101,9 @@ function ConfigPanel({ config, onSaved }: { config: DiscordGuildConfig; onSaved:
   const [rewardsEnabled, setRewardsEnabled] = useState(config.inviteRewardsEnabled);
   const [rewardEvery, setRewardEvery] = useState(String(config.inviteRewardEvery));
   const [rewardAmount, setRewardAmount] = useState<number | ''>(config.inviteRewardAmount);
+  const [panelTitle, setPanelTitle] = useState(config.invitePanelTitle);
+  const [panelBody, setPanelBody] = useState(config.invitePanelBody);
+  const [copyMessage, setCopyMessage] = useState(config.inviteCopyMessage);
   const [announcementEveryone, setAnnouncementEveryone] = useState(config.announcementEveryone);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +118,9 @@ function ConfigPanel({ config, onSaved }: { config: DiscordGuildConfig; onSaved:
     setRewardsEnabled(config.inviteRewardsEnabled);
     setRewardEvery(String(config.inviteRewardEvery));
     setRewardAmount(config.inviteRewardAmount);
+    setPanelTitle(config.invitePanelTitle);
+    setPanelBody(config.invitePanelBody);
+    setCopyMessage(config.inviteCopyMessage);
     setAnnouncementEveryone(config.announcementEveryone);
     // Deliberately keyed to the saved revision, not the object identity, so a
     // background refresh cannot erase form edits that have not been saved yet.
@@ -134,6 +141,9 @@ function ConfigPanel({ config, onSaved }: { config: DiscordGuildConfig; onSaved:
         inviteRewardsEnabled: rewardsEnabled,
         inviteRewardEvery: Number(rewardEvery),
         inviteRewardAmount: Number(rewardAmount || 0),
+        invitePanelTitle: panelTitle,
+        invitePanelBody: panelBody,
+        inviteCopyMessage: copyMessage,
         announcementEveryone,
       });
       success('Discord configuration saved', 'The bot reads these values on its next request.');
@@ -186,7 +196,10 @@ function ConfigPanel({ config, onSaved }: { config: DiscordGuildConfig; onSaved:
         </Card>
 
         <Card>
-          <CardHeader title="Invite rewards" description="A reward is paid once at every threshold, to the linked website wallet." />
+          <CardHeader
+            title="Invite rewards"
+            description="The panel, reward, and Copy message are stored here. The bot edits its own panel in the invite channel within about 30 seconds, and after every restart."
+          />
           <div className="space-y-4 p-5">
             <div className="flex items-center justify-between gap-4 rounded-xl border border-line/80 bg-surface-2/50 p-3.5">
               <div>
@@ -203,6 +216,21 @@ function ConfigPanel({ config, onSaved }: { config: DiscordGuildConfig; onSaved:
                 <AmountInput value={rewardAmount} onChange={setRewardAmount} min={1} />
               </Field>
             </div>
+            <Field label="Panel title" hint="Shown at the top of the embed in the invite channel.">
+              <Input value={panelTitle} onChange={(event) => setPanelTitle(event.target.value)} maxLength={120} />
+            </Field>
+            <Field
+              label="Panel text"
+              hint="Use {INVITES} for the invite threshold and {REWARD} for the reward so the copy follows these settings."
+            >
+              <Textarea value={panelBody} onChange={(event) => setPanelBody(event.target.value)} rows={8} maxLength={3900} />
+            </Field>
+            <Field
+              label="Copy button message"
+              hint="Sent only to the member who clicks Copy, inside a code block. {INVITE_LINK} becomes their personal link."
+            >
+              <Textarea value={copyMessage} onChange={(event) => setCopyMessage(event.target.value)} rows={14} maxLength={1800} />
+            </Field>
             <div className="flex items-center justify-between gap-4 rounded-xl border border-line/80 bg-surface-2/50 p-3.5">
               <div>
                 <p className="text-[12.5px] font-semibold text-ink">Mention @everyone by default</p>

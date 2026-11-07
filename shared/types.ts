@@ -886,6 +886,7 @@ export interface DiscordChannelConfig {
   welcome: string | null;
   vouches: string | null;
   scamVouches: string | null;
+  invites: string | null;
   codes: string | null;
   giveaways: string | null;
   news: string | null;
@@ -907,9 +908,34 @@ export interface DiscordGuildConfig {
   inviteRewardsEnabled: boolean;
   inviteRewardEvery: number;
   inviteRewardAmount: number;
+  invitePanelTitle: string;
+  invitePanelBody: string;
+  inviteCopyMessage: string;
+  invitePanelMessageId: string | null;
+  invitePanelChannelId: string | null;
   announcementEveryone: boolean;
   updatedAt: string | null;
   updatedBy: { id: string; username: string } | null;
+}
+
+export interface DiscordInvitePanelSettings {
+  guildId: string;
+  channelId: string | null;
+  title: string;
+  body: string;
+  copyMessage: string;
+  rewardEvery: number;
+  rewardAmount: number;
+  enabled: boolean;
+  messageId: string | null;
+  messageChannelId: string | null;
+}
+
+export interface DiscordInviteLink {
+  discordUserId: string;
+  inviteCode: string;
+  inviteUrl: string;
+  createdAt: string;
 }
 
 export interface DiscordGuildSummary {

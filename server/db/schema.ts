@@ -1060,6 +1060,33 @@ UPDATE settings
    AND value LIKE '%@donutcash.runasp.net%';
 `,
   },
+  {
+    version: 25,
+    name: 'invite_rewards_panel',
+    // The invite panel lives in one channel and is edited from the website.
+    // The message/channel IDs let the bot update that exact message after a
+    // restart instead of posting a duplicate. Personal invite links are stored
+    // per guild member so the same permanent link is always returned.
+    sql: `
+ALTER TABLE discord_guild_config ADD COLUMN invite_channel_id TEXT;
+ALTER TABLE discord_guild_config ADD COLUMN invite_panel_title TEXT;
+ALTER TABLE discord_guild_config ADD COLUMN invite_panel_body TEXT;
+ALTER TABLE discord_guild_config ADD COLUMN invite_copy_message TEXT;
+ALTER TABLE discord_guild_config ADD COLUMN invite_panel_message_id TEXT;
+ALTER TABLE discord_guild_config ADD COLUMN invite_panel_channel_id TEXT;
+
+CREATE TABLE discord_invite_links (
+  id TEXT PRIMARY KEY,
+  guild_id TEXT NOT NULL,
+  discord_user_id TEXT NOT NULL,
+  invite_code TEXT NOT NULL,
+  invite_url TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (guild_id, discord_user_id)
+);
+CREATE INDEX discord_invite_links_guild_idx ON discord_invite_links(guild_id, created_at DESC);
+`,
+  },
 ];
 
 export function pendingMigrations(db: Database): { version: number; name: string }[] {

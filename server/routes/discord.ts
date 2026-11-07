@@ -61,6 +61,7 @@ const configSchema = z.object({
       welcome: optionalSnowflake,
       vouches: optionalSnowflake,
       scamVouches: optionalSnowflake,
+      invites: optionalSnowflake,
       codes: optionalSnowflake,
       giveaways: optionalSnowflake,
       news: optionalSnowflake,
@@ -81,6 +82,9 @@ const configSchema = z.object({
   inviteRewardsEnabled: z.boolean().optional(),
   inviteRewardEvery: z.number().int().min(1).max(100).optional(),
   inviteRewardAmount: z.number().int().min(1).max(1_000_000_000_000).optional(),
+  invitePanelTitle: z.string().trim().min(3).max(120).optional(),
+  invitePanelBody: z.string().trim().min(10).max(3_900).optional(),
+  inviteCopyMessage: z.string().trim().min(10).max(1_800).optional(),
   announcementEveryone: z.boolean().optional(),
 });
 

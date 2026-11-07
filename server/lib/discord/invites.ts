@@ -1,6 +1,8 @@
 import type { DB } from '../../db/index.ts';
 import type {
   DiscordInviteLeaderboardEntry,
+  DiscordInviteLink,
+  DiscordInvitePanelSettings,
   DiscordInviteStats,
   SessionUser,
 } from '../../../shared/types.ts';
@@ -11,6 +13,7 @@ import { notify } from '../notifications.ts';
 import { recordAudit } from '../audit.ts';
 import { loadUser } from '../../auth.ts';
 import {
+  ensureGuildPlaceholder,
   getGuildConfig,
   getLinkForDiscord,
   isDiscordSnowflake,
@@ -29,6 +32,128 @@ interface InviteRewardRow {
   ledger_id: string | null;
   created_at: string;
   paid_at: string | null;
+}
+
+interface PersonalInviteRow {
+  guild_id: string;
+  discord_user_id: string;
+  invite_code: string;
+  invite_url: string;
+  created_at: string;
+}
+
+function mapPersonalInvite(row: PersonalInviteRow): DiscordInviteLink {
+  return {
+    discordUserId: row.discord_user_id,
+    inviteCode: row.invite_code,
+    inviteUrl: row.invite_url,
+    createdAt: row.created_at,
+  };
+}
+
+function isDiscordInviteUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      ['discord.gg', 'discord.com', 'www.discord.com'].includes(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** The website defaults are rendered by the server, so old rows never lose copy. */
+export function getInvitePanelSettings(db: DB, guildId: string): DiscordInvitePanelSettings {
+  if (!isDiscordSnowflake(guildId)) throw badRequest('Invalid Discord server.');
+  const config = getGuildConfig(db, guildId);
+  return {
+    guildId,
+    channelId: config.channels.invites,
+    title: config.invitePanelTitle,
+    body: config.invitePanelBody,
+    copyMessage: config.inviteCopyMessage,
+    rewardEvery: config.inviteRewardEvery,
+    rewardAmount: config.inviteRewardAmount,
+    enabled: config.inviteRewardsEnabled,
+    messageId: config.invitePanelMessageId,
+    messageChannelId: config.invitePanelChannelId,
+  };
+}
+
+export function setInvitePanelMessage(
+  db: DB,
+  guildId: string,
+  messageId: string | null,
+  channelId: string | null,
+): void {
+  if (!isDiscordSnowflake(guildId)) throw badRequest('Invalid Discord server.');
+  if (messageId !== null && !isDiscordSnowflake(messageId)) {
+    throw badRequest('Invalid Discord message.');
+  }
+  if (channelId !== null && !isDiscordSnowflake(channelId)) {
+    throw badRequest('Invalid Discord channel.');
+  }
+  ensureGuildPlaceholder(db, guildId);
+  db.prepare(
+    `UPDATE discord_guild_config
+        SET invite_panel_message_id = ?, invite_panel_channel_id = ?
+      WHERE guild_id = ?`,
+  ).run(messageId, channelId, guildId);
+}
+
+export function getPersonalInviteByCode(
+  db: DB,
+  guildId: string,
+  inviteCode: string,
+): DiscordInviteLink | null {
+  const row = db
+    .prepare('SELECT * FROM discord_invite_links WHERE guild_id = ? AND invite_code = ?')
+    .get(guildId, inviteCode) as PersonalInviteRow | undefined;
+  return row ? mapPersonalInvite(row) : null;
+}
+
+export function getPersonalInviteLink(
+  db: DB,
+  guildId: string,
+  discordUserId: string,
+): DiscordInviteLink | null {
+  if (!isDiscordSnowflake(guildId) || !isDiscordSnowflake(discordUserId)) {
+    throw badRequest('Invalid Discord guild or member.', 'INVALID_DISCORD_IDS');
+  }
+  const row = db
+    .prepare('SELECT * FROM discord_invite_links WHERE guild_id = ? AND discord_user_id = ?')
+    .get(guildId, discordUserId) as PersonalInviteRow | undefined;
+  return row ? mapPersonalInvite(row) : null;
+}
+
+/**
+ * Stores the first permanent invite created for a member. A second request
+ * returns the stored link, so every click can safely return the same URL.
+ */
+export function savePersonalInviteLink(
+  db: DB,
+  input: { guildId: string; discordUserId: string; inviteCode: string; inviteUrl: string },
+): DiscordInviteLink {
+  if (!isDiscordSnowflake(input.guildId) || !isDiscordSnowflake(input.discordUserId)) {
+    throw badRequest('Invalid Discord guild or member.', 'INVALID_DISCORD_IDS');
+  }
+  const code = input.inviteCode.trim();
+  const url = input.inviteUrl.trim();
+  if (code.length < 2 || code.length > 100 || !/^[A-Za-z0-9_-]+$/.test(code)) {
+    throw badRequest('Invalid Discord invite code.', 'INVALID_INVITE_CODE');
+  }
+  if (!isDiscordInviteUrl(url) || url.length > 500) {
+    throw badRequest('Invite links must be Discord https URLs.', 'INVALID_INVITE_URL');
+  }
+  db.prepare(
+    `INSERT OR IGNORE INTO discord_invite_links
+       (id, guild_id, discord_user_id, invite_code, invite_url, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(newId('dil'), input.guildId, input.discordUserId, code, url, nowIso());
+  const stored = getPersonalInviteLink(db, input.guildId, input.discordUserId);
+  if (!stored) throw badRequest('Could not store the invite link.', 'INVITE_LINK_NOT_STORED');
+  return stored;
 }
 
 function inviteCount(db: DB, guildId: string, discordUserId: string): number {
@@ -125,11 +250,17 @@ export function recordInviteJoin(db: DB, input: RecordInviteJoinInput): InviteJo
   if (!isDiscordSnowflake(input.guildId) || !isDiscordSnowflake(input.discordUserId)) {
     throw badRequest('Invalid Discord guild or member.', 'INVALID_DISCORD_IDS');
   }
+  // Personal invites are created by the bot, so Discord reports the bot as the
+  // inviter. The stored code is the source of truth for who owns the link.
+  const personalInvite = input.inviteCode
+    ? getPersonalInviteByCode(db, input.guildId, input.inviteCode)
+    : null;
+  const creditDiscordId = personalInvite?.discordUserId ?? input.inviterDiscordId;
   const selfInvite =
-    Boolean(input.inviterDiscordId) && input.inviterDiscordId === input.discordUserId;
+    Boolean(creditDiscordId) && creditDiscordId === input.discordUserId;
   const inviter =
-    input.inviterDiscordId && !selfInvite && isDiscordSnowflake(input.inviterDiscordId)
-      ? input.inviterDiscordId
+    creditDiscordId && !selfInvite && isDiscordSnowflake(creditDiscordId)
+      ? creditDiscordId
       : null;
   const joinedAt = input.joinedAt ?? nowIso();
   const counted = Boolean(inviter);
@@ -147,7 +278,7 @@ export function recordInviteJoin(db: DB, input: RecordInviteJoinInput): InviteJo
         input.discordUserId,
         input.username.slice(0, 100),
         inviter,
-        inviter ? (input.inviterUsername ?? '').slice(0, 100) || null : null,
+        inviter && !personalInvite ? (input.inviterUsername ?? '').slice(0, 100) || null : null,
         input.inviteCode?.slice(0, 100) ?? null,
         counted ? 1 : 0,
         joinedAt,

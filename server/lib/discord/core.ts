@@ -24,6 +24,40 @@ const LINK_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const LINK_CODE_TTL_MS = 15 * 60 * 1000;
 const ONLINE_WINDOW_MS = 120 * 1000;
 
+export const DEFAULT_INVITE_PANEL_TITLE = '🎁 DonutSpin Invite Rewards';
+export const DEFAULT_INVITE_PANEL_BODY = [
+  'Invite friends to DonutSpin and earn money in the casino.',
+  '',
+  '**How it works**',
+  '1. Click **Copy** to get your personal invite link.',
+  '2. Share it with friends. Every friend who joins through your link counts once.',
+  '3. **Reward: {INVITES} invites = {REWARD}** — paid straight to your wallet.',
+  '',
+  'Invites never expire, and a member can only count once — leaving and rejoining will not farm extra credit.',
+  '',
+  'Rewards are credited automatically when the milestone is reached and your Discord account is linked to a DonutSpin account.',
+].join('\n');
+
+export const DEFAULT_INVITE_COPY_MESSAGE = [
+  '🍩🎰 **DONUTSPIN CASINO** 🎰🍩',
+  '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
+  '# 💰 **5M FREE JOIN BONUS**',
+  '### 🎁 Just for joining! 🎁',
+  'Start your run with a massive bankroll and take your shot at the top. 👑',
+  '🎮 **6 GAME MODES**',
+  '🪙 Coinflip • 🃏 Blackjack • 🔴 Plinko',
+  '💣 Mines • 🎡 Roulette • 🗼 Towers',
+  '🔥 **NEVER-ENDING REWARDS**',
+  '🎁 Giveaways',
+  '🌧️ Rains',
+  '🎟️ Free money codes',
+  '📅 Daily rewards',
+  '▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬',
+  '👉 **Join the casino:** {INVITE_LINK}',
+  '🌐 **Website:** https://donutspin.runasp.net/',
+  '🍩 Claim your bonus and start spinning! 🍩',
+].join('\n');
+
 export interface DiscordGuildRow {
   guild_id: string;
   name: string;
@@ -43,6 +77,7 @@ interface GuildConfigRow {
   welcome_channel_id: string | null;
   vouch_channel_id: string | null;
   scam_vouch_channel_id: string | null;
+  invite_channel_id: string | null;
   codes_channel_id: string | null;
   giveaway_channel_id: string | null;
   news_channel_id: string | null;
@@ -55,6 +90,11 @@ interface GuildConfigRow {
   invite_rewards_enabled: number;
   invite_reward_every: number;
   invite_reward_amount: number;
+  invite_panel_title: string | null;
+  invite_panel_body: string | null;
+  invite_copy_message: string | null;
+  invite_panel_message_id: string | null;
+  invite_panel_channel_id: string | null;
   announcement_everyone: number;
   updated_at: string | null;
   updated_by: string | null;
@@ -112,6 +152,7 @@ export function defaultGuildConfig(guildId: string): DiscordGuildConfig {
       welcome: null,
       vouches: null,
       scamVouches: null,
+      invites: null,
       codes: null,
       giveaways: null,
       news: null,
@@ -122,6 +163,11 @@ export function defaultGuildConfig(guildId: string): DiscordGuildConfig {
     inviteRewardsEnabled: true,
     inviteRewardEvery: 3,
     inviteRewardAmount: 5_000_000,
+    invitePanelTitle: DEFAULT_INVITE_PANEL_TITLE,
+    invitePanelBody: DEFAULT_INVITE_PANEL_BODY,
+    inviteCopyMessage: DEFAULT_INVITE_COPY_MESSAGE,
+    invitePanelMessageId: null,
+    invitePanelChannelId: null,
     announcementEveryone: true,
     updatedAt: null,
     updatedBy: null,
@@ -140,6 +186,7 @@ export function mapGuildConfig(db: DB, row: GuildConfigRow): DiscordGuildConfig 
       welcome: row.welcome_channel_id,
       vouches: row.vouch_channel_id,
       scamVouches: row.scam_vouch_channel_id,
+      invites: row.invite_channel_id,
       codes: row.codes_channel_id,
       giveaways: row.giveaway_channel_id,
       news: row.news_channel_id,
@@ -155,6 +202,11 @@ export function mapGuildConfig(db: DB, row: GuildConfigRow): DiscordGuildConfig 
     inviteRewardsEnabled: Boolean(row.invite_rewards_enabled),
     inviteRewardEvery: row.invite_reward_every,
     inviteRewardAmount: row.invite_reward_amount,
+    invitePanelTitle: row.invite_panel_title || DEFAULT_INVITE_PANEL_TITLE,
+    invitePanelBody: row.invite_panel_body || DEFAULT_INVITE_PANEL_BODY,
+    inviteCopyMessage: row.invite_copy_message || DEFAULT_INVITE_COPY_MESSAGE,
+    invitePanelMessageId: row.invite_panel_message_id,
+    invitePanelChannelId: row.invite_panel_channel_id,
     announcementEveryone: Boolean(row.announcement_everyone),
     updatedAt: row.updated_at,
     updatedBy: updatedBy ?? null,
@@ -585,6 +637,9 @@ export interface GuildConfigUpdate {
   inviteRewardsEnabled?: boolean;
   inviteRewardEvery?: number;
   inviteRewardAmount?: number;
+  invitePanelTitle?: string;
+  invitePanelBody?: string;
+  inviteCopyMessage?: string;
   announcementEveryone?: boolean;
 }
 
@@ -601,16 +656,19 @@ export function updateGuildConfig(
   const timestamp = nowIso();
   db.prepare(
     `UPDATE discord_guild_config SET
-       welcome_channel_id = ?, vouch_channel_id = ?, scam_vouch_channel_id = ?, codes_channel_id = ?,
-       giveaway_channel_id = ?, news_channel_id = ?, changelog_channel_id = ?, logs_channel_id = ?,
+       welcome_channel_id = ?, vouch_channel_id = ?, scam_vouch_channel_id = ?, invite_channel_id = ?,
+       codes_channel_id = ?, giveaway_channel_id = ?, news_channel_id = ?, changelog_channel_id = ?,
+       logs_channel_id = ?,
        owner_role_ids = ?, admin_role_ids = ?, staff_role_ids = ?, moderator_role_ids = ?,
        invite_rewards_enabled = ?, invite_reward_every = ?, invite_reward_amount = ?,
+       invite_panel_title = ?, invite_panel_body = ?, invite_copy_message = ?,
        announcement_everyone = ?, updated_at = ?, updated_by = ?
      WHERE guild_id = ?`,
   ).run(
     channels.welcome,
     channels.vouches,
     channels.scamVouches,
+    channels.invites,
     channels.codes,
     channels.giveaways,
     channels.news,
@@ -623,6 +681,9 @@ export function updateGuildConfig(
     (update.inviteRewardsEnabled ?? current.inviteRewardsEnabled) ? 1 : 0,
     update.inviteRewardEvery ?? current.inviteRewardEvery,
     update.inviteRewardAmount ?? current.inviteRewardAmount,
+    (update.invitePanelTitle ?? current.invitePanelTitle).slice(0, 120),
+    (update.invitePanelBody ?? current.invitePanelBody).slice(0, 4_000),
+    (update.inviteCopyMessage ?? current.inviteCopyMessage).slice(0, 1_800),
     (update.announcementEveryone ?? current.announcementEveryone) ? 1 : 0,
     timestamp,
     actor.id,

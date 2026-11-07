@@ -442,7 +442,7 @@ npm start
 
 `DONUTSPIN_API_URL` must be the public HTTPS origin of the website (for example `https://donutspin.runasp.net`). `http://localhost:4000` is accepted only for local development; a production bot on another provider must use HTTPS. `DISCORD_GUILD_ID` is optional and registers slash commands instantly while developing; leave it blank for global registration.
 
-In the Discord Developer Portal, enable the **Server Members** and **Server Invites** intents. Message Content is not required. Keep one bot gateway process online: the outbox safely leases events, but invite attribution assumes one gateway observer per server.
+In the Discord Developer Portal, enable the **Server Members** and **Server Invites** intents. Message Content is not required. Grant the bot **Create Invite** in the invite-rewards channel so it can make one permanent personal link per member. Keep one bot gateway process online: the outbox safely leases events, but invite attribution assumes one gateway observer per server.
 
 ### 3. Connect the server
 
@@ -452,6 +452,8 @@ In the Discord Developer Portal, enable the **Server Members** and **Server Invi
 4. Link your own Discord account in **Settings → Discord** before using staff commands.
 
 Configuration, codes, announcements, invite rewards, and the primary guild live in SQLite and survive bot restarts. Website-created giveaways are queued to the configured guild/channel; Discord-created giveaways use the same `giveaways` table, entry rows, escrow, committed draw, winners, and claim tickets as the website.
+
+**Invite rewards** has its own channel and panel. Set the channel under **Admin → Discord bot → Configuration**, or create a text channel named `invite-rewards` and the bot will use it automatically. The panel title, instructions, reward threshold, reward amount, and the Code-block message behind its **Copy** button are all editable there. The bot edits the same panel on every restart and within about 30 seconds of a website save; it never posts a duplicate. Clicking **Copy** creates (or reuses) one permanent, unlimited-use invite owned by that member and replies with their personal link in an ephemeral code block. Stored invite codes credit that member when a new person joins, even though Discord reports the bot as the invite creator.
 
 **Info panels** are managed in the same page under the **Info panels** tab. Add any Discord channel once, give it a category (for example Development, Community, or Rules), then publish explanatory panels with embed copy, colours, images, and up to four link buttons. Editing a panel updates the same Discord message, so no channel ID or embed copy needs to be hardcoded in the bot.
 
@@ -470,7 +472,7 @@ Configuration, codes, announcements, invite rewards, and the primary guild live 
 | `/setup` | Channel, role, invite-reward, and announcement settings |
 | `/help` | Command guide |
 
-Default invite reward: every **3** first joins pays **5,000,000** money at 3, 6, 9, 12, and so on. Joins are unique per guild/member, self-invites are ignored, duplicate reward thresholds are rejected by a unique constraint, and an unlinked inviter's reward is settled when they link.
+Default invite reward: every **3** first joins pays **5,000,000** money at 3, 6, 9, 12, and so on. Joins are unique per guild/member, self-invites are ignored, duplicate reward thresholds are rejected by a unique constraint, and an unlinked inviter's reward is settled when they link. A member's personal invite is stored permanently; leaving and rejoining can never count twice.
 
 Giveaway winners receive a Discord DM when linked and a public result message. The DM and embed link to the website, where the winner must open a **Giveaway Claim** ticket; staff verification and payout still go through the existing ticket and ledger flow.
 
@@ -484,7 +486,7 @@ The self-exclusion endpoint is `POST /api/me/self-exclusion` with `{ duration: '
 
 ## Tests
 
-The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, archived legacy money-request records, cashier deposits/withdrawals and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, maintenance blocking, and the shared Discord bot API (linking, invite rewards, vouches, codes, giveaways, announcements, update channels and info panels, outbox leases, and permission gates). The Discord tests use the real bot HTTP surface but do not connect to Discord itself; live gateway behaviour is verified against a development server.
+The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, archived legacy money-request records, cashier deposits/withdrawals and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, maintenance blocking, and the shared Discord bot API (linking, invite rewards and personal links, vouches, codes, giveaways, announcements, update channels and info panels, outbox leases, and permission gates). The Discord tests use the real bot HTTP surface but do not connect to Discord itself; live gateway behaviour is verified against a development server.
 
 ```bash
 npm run typecheck

@@ -20,6 +20,7 @@ const VOUCHES = '323456789012345678';
 const SCAM_VOUCHES = '423456789012345678';
 const CODES = '523456789012345678';
 const GIVEAWAYS = '623456789012345678';
+const INVITES = '633456789012345678';
 const NEWS = '723456789012345678';
 const CHANGELOG = '823456789012345678';
 const LOGS = '923456789012345678';
@@ -322,6 +323,113 @@ describe('invite rewards', () => {
     expect(stats.body.stats.totalInvites).toBe(6);
     expect(stats.body.stats.rewardsEarned).toBe(10_000_000);
     expect(stats.body.stats.progress).toBe(0);
+  });
+});
+
+describe('invite panel and personal links', () => {
+  it('serves editable panel copy, stores the panel message and keeps one link per member', async () => {
+    const initial = await bot('get', `/api/bot/invites/panel/${GUILD}`);
+    expectStatus(initial, 200);
+    expect(initial.body.panel.rewardEvery).toBe(3);
+    expect(initial.body.panel.rewardAmount).toBe(5_000_000);
+    expect(initial.body.panel.channelId).toBeNull();
+    expect(initial.body.panel.copyMessage).toContain('{INVITE_LINK}');
+
+    const saved = await bot('post', `/api/bot/config/${GUILD}`).send({
+      ...actor(ids.ownerDiscord!, 'owner'),
+      channels: { invites: INVITES },
+      invitePanelTitle: 'Invite & earn',
+      invitePanelBody: 'Bring {INVITES} friends and earn {REWARD}.',
+      inviteCopyMessage: 'Join DonutSpin: {INVITE_LINK}',
+    });
+    expectStatus(saved, 200);
+    expect(saved.body.config.invitePanelTitle).toBe('Invite & earn');
+    expect(saved.body.config.channels.invites).toBe(INVITES);
+
+    const updated = await bot('get', `/api/bot/invites/panel/${GUILD}`);
+    expectStatus(updated, 200);
+    expect(updated.body.panel.channelId).toBe(INVITES);
+    expect(updated.body.panel.body).toContain('{INVITES}');
+    expect(updated.body.panel.copyMessage).toContain('{INVITE_LINK}');
+
+    const messageId = '700000000000000123';
+    expectStatus(
+      await bot('post', `/api/bot/invites/panel/${GUILD}/message`).send({
+        messageId,
+        channelId: INVITES,
+      }),
+      200,
+    );
+    const withMessage = await bot('get', `/api/bot/invites/panel/${GUILD}`);
+    expect(withMessage.body.panel.messageId).toBe(messageId);
+    expect(withMessage.body.panel.messageChannelId).toBe(INVITES);
+
+    const none = await bot('get', `/api/bot/invites/link/${GUILD}/${ids.aliceDiscord}`);
+    expectStatus(none, 200);
+    expect(none.body.link).toBeNull();
+
+    const first = await bot('post', '/api/bot/invites/link').send({
+      guildId: GUILD,
+      discordUserId: ids.aliceDiscord,
+      inviteCode: 'alice-invite',
+      inviteUrl: 'https://discord.gg/alice-invite',
+    });
+    expectStatus(first, 200);
+    expect(first.body.link.inviteUrl).toBe('https://discord.gg/alice-invite');
+
+    const second = await bot('post', '/api/bot/invites/link').send({
+      guildId: GUILD,
+      discordUserId: ids.aliceDiscord,
+      inviteCode: 'different-code',
+      inviteUrl: 'https://discord.gg/different-code',
+    });
+    expectStatus(second, 200);
+    expect(second.body.link.inviteUrl).toBe('https://discord.gg/alice-invite');
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM discord_invite_links WHERE discord_user_id = ?').get(ids.aliceDiscord),
+    ).toEqual({ count: 1 });
+
+    const rejected = await bot('post', '/api/bot/invites/link').send({
+      guildId: GUILD,
+      discordUserId: ids.bobDiscord,
+      inviteCode: 'bob-invite',
+      inviteUrl: 'https://example.com/not-discord',
+    });
+    expectStatus(rejected, 400);
+
+    const ownerLookup = await bot('get', `/api/bot/invites/link/code/${GUILD}/alice-invite`);
+    expectStatus(ownerLookup, 200);
+    expect(ownerLookup.body.link.discordUserId).toBe(ids.aliceDiscord);
+
+    // Discord reports the bot as the creator of a personal invite. The stored
+    // code must still credit the member who owns it, not the bot.
+    const personalJoin = await bot('post', '/api/bot/invites/join').send({
+      guildId: GUILD,
+      discordUserId: '820000000000000001',
+      username: 'personalJoin',
+      inviterDiscordId: '700000000000000999',
+      inviterUsername: 'DonutSpinBot',
+      inviteCode: 'alice-invite',
+    });
+    expectStatus(personalJoin, 200);
+    expect(personalJoin.body.counted).toBe(true);
+    expect(personalJoin.body.inviteCount).toBe(1);
+
+    const aliceStats = await bot('get', `/api/bot/invites/${GUILD}/${ids.aliceDiscord}`);
+    expectStatus(aliceStats, 200);
+    expect(aliceStats.body.stats.totalInvites).toBe(1);
+
+    const selfJoin = await bot('post', '/api/bot/invites/join').send({
+      guildId: GUILD,
+      discordUserId: ids.aliceDiscord,
+      username: 'alice',
+      inviterDiscordId: '700000000000000999',
+      inviterUsername: 'DonutSpinBot',
+      inviteCode: 'alice-invite',
+    });
+    expectStatus(selfJoin, 200);
+    expect(selfJoin.body.selfInvite).toBe(true);
+    expect(selfJoin.body.counted).toBe(false);
   });
 });
 
