@@ -230,47 +230,49 @@ function layout(email: EmailConfig, input: {
   a{text-decoration:none;}
 </style>
 </head>
-<body style="margin:0;padding:0;background-color:#f2eee5;">
+<body style="margin:0;padding:0;background:#0d0a12;">
 ${preheader(input.preheader)}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f2eee5" style="background-color:#f2eee5;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#0d0a12" style="background-color:#0d0a12;">
   <tr>
-    <td align="center" style="padding:34px 12px;">
+    <td align="center" style="padding:30px 12px;">
       <table role="presentation" class="email-shell" width="600" cellspacing="0" cellpadding="0" border="0" style="width:600px;max-width:600px;border-collapse:separate;">
         <tr>
-          <td class="email-pad" style="padding:26px 34px;background:#0a0c11;border:1px solid #252c39;border-bottom:none;border-radius:20px 20px 0 0;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
-              <td align="left">
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>
-                  <td width="40" height="40" align="center" valign="middle" bgcolor="#e6c27a" style="width:40px;height:40px;border-radius:12px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:19px;font-weight:800;color:#211706;">D</td>
-                  <td style="padding-left:12px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-                    <div style="font-size:15px;font-weight:800;letter-spacing:3px;color:#f6f4ef;">DONUTSPIN</div>
-                    <div style="font-size:9px;font-weight:600;letter-spacing:2px;color:#9b7f4d;text-transform:uppercase;padding-top:3px;">DonutSMP casino</div>
-                  </td>
-                </tr></table>
+          <td class="email-pad" style="padding:28px 36px 22px;background:#110d16;border:1px solid #2a1f3d;border-left:2px solid #b345f5;border-bottom:none;border-radius:16px 16px 0 0;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;"><tr>
+              <td align="left" style="border-collapse:collapse;">
+                <img src="${escapeHtml(safeUrl(email, '/logo.png'))}" alt="DonutSpin" width="44" height="44" style="display:block;border-radius:10px;" />
               </td>
-              <td align="right" style="font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#717987;">${escapeHtml(email.tagline)}</td>
+              <td style="padding-left:14px;border-collapse:collapse;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+                <div style="font-size:16px;font-weight:800;letter-spacing:1px;color:#f8e5b8;">DONUTSPIN</div>
+                <div style="font-size:9px;font-weight:600;letter-spacing:2.5px;color:#b345f5;text-transform:uppercase;padding-top:4px;">The Donut Casino</div>
+              </td>
+              <td align="right" style="border-collapse:collapse;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:#7d6b9a;">${escapeHtml(email.tagline)}</td>
             </tr></table>
           </td>
         </tr>
-        <tr><td style="height:3px;background-color:#e6c27a;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td style="height:4px;background:linear-gradient(90deg,#b345f5,#e6c27a,#b345f5);font-size:0;line-height:0;border-radius:2px;">&nbsp;</td></tr>
         <tr>
-          <td class="email-pad" style="padding:38px 34px 34px;background:#0a0c11;border-left:1px solid #252c39;border-right:1px solid #252c39;">
-            ${input.kicker ? `<p style="margin:0 0 12px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:#9b7f4d;">${escapeHtml(input.kicker)}</p>` : ''}
-            <h1 class="email-title" style="margin:0 0 18px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:31px;line-height:1.15;letter-spacing:-0.8px;color:#f6f4ef;font-weight:700;">${escapeHtml(input.title)}</h1>
+          <td class="email-pad" style="padding:36px 36px 32px;background:#110d16;border-left:1px solid #2a1f3d;border-right:1px solid #2a1f3d;">
+            ${input.kicker ? `<p style="margin:0 0 14px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:2.8px;text-transform:uppercase;color:#b345f5;">${escapeHtml(input.kicker)}</p>` : ''}
+            <h1 class="email-title" style="margin:0 0 20px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:30px;line-height:1.2;letter-spacing:-0.5px;color:#f8e5b8;font-weight:700;">${escapeHtml(input.title)}</h1>
             ${input.content}
           </td>
         </tr>
         <tr>
-          <td class="email-pad" style="padding:22px 34px 28px;background:#080a0e;border:1px solid #252c39;border-top:1px solid #1c212c;border-radius:0 0 20px 20px;">
-            <p style="margin:0 0 8px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;line-height:1.7;color:#717987;">
+          <td class="email-pad" style="padding:24px 36px 26px;background:#0a0810;border:1px solid #2a1f3d;border-top:1px solid #1a1525;border-radius:0 0 16px 16px;">
+            <p style="margin:0 0 10px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;line-height:1.7;color:#7d6b9a;">
               ${escapeHtml(input.footerNote ?? `You are receiving this because you have a ${email.appName} account.`)}
             </p>
-            <p style="margin:0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;line-height:1.7;color:#717987;">
+            <p style="margin:0 0 16px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;line-height:1.7;color:#7d6b9a;">
               <a href="${escapeHtml(preferences)}" style="color:#e6c27a;text-decoration:underline;">Email preferences</a>
               &nbsp;·&nbsp;
               <a href="${escapeHtml(safeUrl(email, '/'))}" style="color:#e6c27a;text-decoration:underline;">Open the lobby</a>
             </p>
-            <p style="margin:10px 0 0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:10px;color:#4f5664;">
+            <p style="margin:0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#c9b8e0;">
+              <strong style="color:#f8e5b8;">Kind regards,</strong><br>
+              <strong style="color:#b345f5;">DonutSpin team</strong>
+            </p>
+            <p style="margin:12px 0 0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:9px;color:#5a4d72;">
               © ${new Date().getFullYear()} ${escapeHtml(email.appName)} · Play responsibly with DonutSMP money only.
             </p>
           </td>
@@ -291,7 +293,7 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
   const username = textValue(payload, 'username', 'there');
   const amount = Number(payload.amount ?? 0);
   const cta = (label: string, path: string) => button(email, label, path);
-  const signoff = `<p style="margin:24px 0 0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.7;color:#8f97a5;">See you at the tables,<br><strong style="color:#f6f4ef;">The ${escapeHtml(email.appName)} team</strong></p>`;
+  const signoff = `<p style="margin:24px 0 0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.7;color:#a89cc0;"><strong style="color:#f8e5b8;">Kind regards,</strong><br><strong style="color:#b345f5;">DonutSpin team</strong></p>`;
 
   switch (template) {
     case 'welcome': {
