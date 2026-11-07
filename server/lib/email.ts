@@ -73,6 +73,30 @@ interface RenderedEmail {
   text: string;
 }
 
+// The palette is copied from the website theme (src/index.css) so an email
+// looks like the same product: near-black surfaces, warm cream type and muted
+// gold accents. The neon logo is the only saturated element in the message.
+const COLORS = {
+  page: '#06070a',
+  card: '#0a0c11',
+  panel: '#0f1219',
+  panelSoft: '#121620',
+  footer: '#07090d',
+  border: '#222836',
+  borderSoft: '#1a1f29',
+  ink: '#f6f4ef',
+  muted: '#9ba2b0',
+  faint: '#717987',
+  gold: '#e6c27a',
+  goldBright: '#f8e5b8',
+  goldDim: '#9b7f4d',
+  success: '#4dd6a0',
+  danger: '#f87b86',
+} as const;
+
+const EMAIL_FONT =
+  "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Helvetica,Arial,sans-serif";
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isValidEmail(value: string): boolean {
@@ -163,46 +187,115 @@ function formatDateTime(value: unknown, timezone?: unknown): string {
   }
 }
 
-function paragraph(text: string, tone: 'muted' | 'ink' = 'muted'): string {
-  return `<p style="margin:0 0 16px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.7;color:${tone === 'ink' ? '#f6f4ef' : '#aeb5c2'};">${text}</p>`;
+function paragraph(text: string, tone: 'muted' | 'ink' | 'faint' = 'muted'): string {
+  const color = tone === 'ink' ? COLORS.ink : tone === 'faint' ? COLORS.faint : COLORS.muted;
+  return `<p style="margin:0 0 18px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.72;color:${color};mso-line-height-rule:exactly;">${text}</p>`;
 }
 
-function button(email: EmailConfig, label: string, path: string): string {
-  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:26px 0 8px;">
+function button(
+  email: EmailConfig,
+  label: string,
+  path: string,
+  variant: 'primary' | 'secondary' = 'primary',
+): string {
+  const href = escapeHtml(safeUrl(email, path));
+  const primary = variant === 'primary';
+  const background = primary ? COLORS.gold : COLORS.card;
+  const foreground = primary ? '#1b1307' : COLORS.goldBright;
+  const border = primary ? COLORS.gold : COLORS.border;
+  const width = Math.max(184, Math.min(300, Math.round(label.length * 8.6 + 64)));
+  return `<table role="presentation" class="email-button" cellspacing="0" cellpadding="0" border="0" style="margin:${primary ? '24px' : '0'} 0 10px;">
   <tr>
-    <td align="center" bgcolor="#e6c27a" style="border-radius:10px;box-shadow:0 10px 24px -14px rgba(230,194,122,0.8);">
-      <a href="${escapeHtml(safeUrl(email, path))}" target="_blank" style="display:inline-block;padding:14px 28px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:700;line-height:1;color:#211706;text-decoration:none;border-radius:10px;">${escapeHtml(label)}</a>
+    <td align="center" bgcolor="${background}" style="border:1px solid ${border};border-radius:8px;mso-padding-alt:15px 30px;">
+      <!--[if mso]>
+      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${href}" style="height:46px;v-text-anchor:middle;width:${width}px;" arcsize="17%" stroke="t" strokecolor="${border}" strokeweight="1px" fillcolor="${background}">
+        <w:anchorlock/>
+        <center style="color:${foreground};font-family:${EMAIL_FONT};font-size:14px;font-weight:700;">${escapeHtml(label)}</center>
+      </v:roundrect>
+      <![endif]-->
+      <!--[if !mso]><!-->
+      <a href="${href}" target="_blank" style="display:inline-block;padding:15px 30px;font-family:${EMAIL_FONT};font-size:14px;font-weight:700;line-height:1;color:${foreground};text-decoration:none;border-radius:8px;mso-line-height-rule:exactly;">${escapeHtml(label)}</a>
+      <!--<![endif]-->
     </td>
   </tr>
 </table>`;
 }
 
 function detailRows(rows: [string, string][]): string {
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:20px 0 6px;border:1px solid #28303d;border-radius:12px;border-collapse:separate;overflow:hidden;">
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:20px 0 8px;border:1px solid ${COLORS.border};border-radius:12px;border-collapse:separate;background-color:${COLORS.panel};">
   ${rows
     .map(
       ([label, value], index) => `<tr>
-    <td style="padding:11px 14px;border-${index === 0 ? 'top' : 'bottom'}:${index === 0 ? 'none' : '1px solid #28303d'};background:#11151d;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#8f97a5;">${escapeHtml(label)}</td>
-    <td align="right" style="padding:11px 14px;border-${index === 0 ? 'top' : 'bottom'}:${index === 0 ? 'none' : '1px solid #28303d'};background:#11151d;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;font-weight:600;color:#f6f4ef;">${escapeHtml(value)}</td>
+    <td class="email-detail-label" width="38%" style="padding:12px 16px;${index === rows.length - 1 ? '' : `border-bottom:1px solid ${COLORS.borderSoft};`}background-color:${COLORS.panel};font-family:${EMAIL_FONT};font-size:9.5px;font-weight:700;letter-spacing:1.3px;line-height:1.45;text-transform:uppercase;color:${COLORS.faint};vertical-align:top;">${escapeHtml(label)}</td>
+    <td class="email-detail-value" align="right" style="padding:12px 16px;${index === rows.length - 1 ? '' : `border-bottom:1px solid ${COLORS.borderSoft};`}background-color:${COLORS.panel};font-family:${EMAIL_FONT};font-size:12.5px;font-weight:600;line-height:1.5;color:${COLORS.ink};word-break:break-word;vertical-align:top;">${escapeHtml(value)}</td>
   </tr>`,
     )
     .join('')}
 </table>`;
 }
 
-function callout(text: string, tone: 'gold' | 'success' | 'danger' = 'gold'): string {
+function callout(
+  text: string,
+  tone: 'gold' | 'success' | 'danger' = 'gold',
+  label?: string,
+): string {
   const colors = {
-    gold: { border: '#5b4a28', bg: '#1c1810', text: '#f4d99f' },
-    success: { border: '#245844', bg: '#101d18', text: '#8df0c4' },
-    danger: { border: '#5c2d33', bg: '#1e1114', text: '#ffadb5' },
+    gold: { accent: COLORS.gold, bg: '#17140e', text: '#ddcfb2', label: 'Good to know' },
+    success: { accent: COLORS.success, bg: '#0e1a16', text: '#b9e8d2', label: 'All set' },
+    danger: { accent: COLORS.danger, bg: '#1c1114', text: '#f0c4c9', label: 'Security notice' },
   }[tone];
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:22px 0 4px;">
-  <tr><td style="padding:14px 16px;border:1px solid ${colors.border};border-radius:12px;background:${colors.bg};font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.65;color:${colors.text};">${text}</td></tr>
+  <tr><td style="padding:14px 17px;border-left:3px solid ${colors.accent};border-radius:0 10px 10px 0;background-color:${colors.bg};font-family:${EMAIL_FONT};">
+    <p style="margin:0 0 5px;font-size:9px;font-weight:700;letter-spacing:1.8px;line-height:1.4;text-transform:uppercase;color:${colors.accent};">${escapeHtml(label ?? colors.label)}</p>
+    <p style="margin:0;font-size:13px;line-height:1.65;color:${colors.text};">${text}</p>
+  </td></tr>
+</table>`;
+}
+
+function titleCase(value: string): string {
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+/** One clear focal number for balance, reward, cashier and giveaway emails. */
+function amountHighlight(input: {
+  label: string;
+  amount: string;
+  note?: string;
+  tone?: 'gold' | 'success' | 'danger';
+}): string {
+  const accent = input.tone === 'success' ? COLORS.success : input.tone === 'danger' ? COLORS.danger : COLORS.gold;
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${COLORS.panel}" style="margin:0 0 22px;border:1px solid ${COLORS.border};border-radius:12px;border-collapse:separate;background-color:${COLORS.panel};">
+  <tr><td align="center" style="padding:22px 18px 20px;background-color:${COLORS.panel};">
+    <p style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:9.5px;font-weight:700;letter-spacing:2px;text-transform:uppercase;line-height:1.4;color:${accent};">${escapeHtml(input.label)}</p>
+    <p class="email-amount" style="margin:0;font-family:${EMAIL_FONT};font-size:31px;font-weight:800;line-height:1.1;letter-spacing:-0.6px;color:${COLORS.goldBright};">${escapeHtml(input.amount)} <span style="font-size:10.5px;font-weight:700;letter-spacing:1.8px;color:${COLORS.goldDim};">MONEY</span></p>
+    ${input.note ? `<p style="margin:8px 0 0;font-family:${EMAIL_FONT};font-size:11px;line-height:1.55;color:${COLORS.faint};">${escapeHtml(input.note)}</p>` : ''}
+  </td></tr>
+</table>`;
+}
+
+function messageCard(input: { author: string; role: string; meta: string; body: string }): string {
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 10px;border:1px solid ${COLORS.border};border-left:2px solid ${COLORS.goldDim};border-radius:10px;border-collapse:separate;background-color:${COLORS.panelSoft};">
+  <tr><td style="padding:14px 16px;background-color:${COLORS.panelSoft};">
+    <p style="margin:0 0 3px;font-family:${EMAIL_FONT};font-size:11.5px;font-weight:700;line-height:1.5;color:${COLORS.ink};">${escapeHtml(input.author)} <span style="font-size:8.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:${COLORS.goldDim};">${escapeHtml(input.role)}</span></p>
+    <p style="margin:0 0 9px;font-family:${EMAIL_FONT};font-size:9.5px;line-height:1.5;color:${COLORS.faint};">${escapeHtml(input.meta)}</p>
+    <p style="margin:0;font-family:${EMAIL_FONT};font-size:13px;line-height:1.65;color:#d8dbe2;white-space:pre-wrap;">${escapeHtml(input.body).replace(/\n/g, '<br>')}</p>
+  </td></tr>
 </table>`;
 }
 
 function preheader(text: string): string {
-  return `<div style="display:none;font-size:1px;color:#f3efe4;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">${escapeHtml(text)}</div>`;
+  return `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;color:${COLORS.card};">${escapeHtml(text)}&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;&#8199;&#65279;</div>`;
+}
+
+function signature(): string {
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:30px 0 0;border-top:1px solid ${COLORS.border};">
+  <tr><td style="padding-top:20px;font-family:${EMAIL_FONT};">
+    <p style="margin:0 0 3px;font-size:12px;line-height:1.5;color:${COLORS.faint};">Kind regards,</p>
+    <p style="margin:0;font-size:13.5px;font-weight:700;line-height:1.5;color:${COLORS.goldBright};">The DonutSpin team</p>
+  </td></tr>
+</table>`;
 }
 
 function layout(email: EmailConfig, input: {
@@ -213,67 +306,81 @@ function layout(email: EmailConfig, input: {
   footerNote?: string;
 }): string {
   const preferences = safeUrl(email, '/settings#email');
+  const support = safeUrl(email, '/tickets');
+  const lobby = safeUrl(email, '/');
   return `<!doctype html>
-<html lang="en">
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="x-apple-disable-message-reformatting">
-<meta name="color-scheme" content="dark light">
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 <title>${escapeHtml(input.title)}</title>
+<!--[if mso]>
+<noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
+<![endif]-->
 <style>
   @media only screen and (max-width:620px){
-    .email-shell{width:100%!important;}
-    .email-pad{padding-left:20px!important;padding-right:20px!important;}
-    .email-title{font-size:24px!important;line-height:1.2!important;}
+    .email-shell{width:100%!important;max-width:100%!important;border-radius:14px!important;}
+    .email-header{padding-left:22px!important;padding-right:22px!important;}
+    .email-pad{padding-left:22px!important;padding-right:22px!important;}
+    .email-footer{padding-left:22px!important;padding-right:22px!important;}
+    .email-title{font-size:23px!important;line-height:1.25!important;}
+    .email-logo-cell{width:78px!important;}
+    .email-logo{width:64px!important;height:64px!important;}
+    .email-brand{font-size:16px!important;letter-spacing:2px!important;}
+    .email-amount{font-size:26px!important;}
+    .email-button{width:100%!important;}
+    .email-button a{display:block!important;}
+    .email-detail-label{width:42%!important;padding-left:12px!important;padding-right:12px!important;font-size:9px!important;}
+    .email-detail-value{padding-left:12px!important;padding-right:12px!important;font-size:12px!important;}
   }
   a{text-decoration:none;}
 </style>
 </head>
-<body style="margin:0;padding:0;background:#0a060f;">
+<body style="margin:0;padding:0;background-color:${COLORS.page};">
 ${preheader(input.preheader)}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#0a060f" style="background-color:#0a060f;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${COLORS.page}" style="background-color:${COLORS.page};">
   <tr>
-    <td align="center" style="padding:24px 10px;">
-      <table role="presentation" class="email-shell" width="600" cellspacing="0" cellpadding="0" border="0" style="width:600px;max-width:600px;border-collapse:collapse;">
+    <td align="center" style="padding:28px 12px 36px;">
+      <table role="presentation" class="email-shell" width="600" cellspacing="0" cellpadding="0" border="0" bgcolor="${COLORS.card}" style="width:100%;max-width:600px;border-collapse:separate;border-spacing:0;background-color:${COLORS.card};border:1px solid ${COLORS.border};border-radius:16px;overflow:hidden;">
+        <tr><td height="2" bgcolor="${COLORS.gold}" style="height:2px;font-size:0;line-height:0;">&nbsp;</td></tr>
         <tr>
-          <td style="padding:24px 32px 20px;background:#0d0912;border-bottom:1px solid #2a1f3d;">
+          <td class="email-header" style="padding:26px 34px 24px;background-color:${COLORS.card};border-bottom:1px solid ${COLORS.border};">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>
-              <td width="48" valign="middle" style="padding-right:14px;">
-                <img src="${escapeHtml(safeUrl(email, '/logo.png'))}" alt="DonutSpin" width="48" height="48" style="display:block;border-radius:12px;box-shadow:0 4px 12px rgba(179,69,245,0.3);" />
+              <td class="email-logo-cell" width="88" valign="middle" style="width:88px;padding-right:16px;">
+                <img class="email-logo" src="${escapeHtml(safeUrl(email, '/logo.png'))}" alt="DonutSpin" width="72" height="72" border="0" style="display:block;width:72px;height:72px;border-radius:18px;border:1px solid ${COLORS.border};background-color:${COLORS.page};" />
               </td>
-              <td style="font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-                <div style="font-size:17px;font-weight:800;letter-spacing:0.5px;color:#f8e5b8;">DONUTSPIN</div>
-                <div style="font-size:9px;font-weight:600;letter-spacing:2.5px;color:#b345f5;text-transform:uppercase;margin-top:3px;">The Donut Casino</div>
+              <td valign="middle" style="font-family:${EMAIL_FONT};">
+                <div class="email-brand" style="font-size:18px;font-weight:800;letter-spacing:2.4px;line-height:1.3;color:${COLORS.goldBright};">DONUTSPIN</div>
+                <div style="margin-top:6px;font-size:10.5px;line-height:1.5;color:${COLORS.faint};">${escapeHtml(email.tagline)}</div>
               </td>
-              <td align="right" valign="middle" style="font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#6b5d82;">${escapeHtml(email.tagline)}</td>
             </tr></table>
           </td>
         </tr>
-        <tr><td style="height:3px;background:linear-gradient(90deg,transparent,#b345f5 20%,#e6c27a 50%,#b345f5 80%,transparent);font-size:0;line-height:0;">&nbsp;</td></tr>
         <tr>
-          <td style="padding:32px 32px 28px;background:#0d0912;">
-            ${input.kicker ? `<p style="margin:0 0 12px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:#b345f5;">${escapeHtml(input.kicker)}</p>` : ''}
-            <h1 class="email-title" style="margin:0 0 18px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:28px;line-height:1.2;letter-spacing:-0.3px;color:#f8e5b8;font-weight:700;">${escapeHtml(input.title)}</h1>
+          <td class="email-pad" style="padding:34px 34px 30px;background-color:${COLORS.card};">
+            ${input.kicker ? `<p style="margin:0 0 12px;font-family:${EMAIL_FONT};font-size:9px;font-weight:700;letter-spacing:2.2px;line-height:1.5;text-transform:uppercase;color:${COLORS.goldDim};">${escapeHtml(input.kicker)}</p>` : ''}
+            <h1 class="email-title" style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:27px;line-height:1.24;letter-spacing:-0.4px;color:${COLORS.ink};font-weight:700;mso-line-height-rule:exactly;">${escapeHtml(input.title)}</h1>
             ${input.content}
+            ${signature()}
           </td>
         </tr>
         <tr>
-          <td style="padding:22px 32px 24px;background:#08050c;border-top:1px solid #1a1525;">
-            <p style="margin:0 0 10px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;line-height:1.6;color:#6b5d82;">
+          <td class="email-footer" style="padding:22px 34px 26px;background-color:${COLORS.footer};border-top:1px solid ${COLORS.border};">
+            <p style="margin:0 0 12px;font-family:${EMAIL_FONT};font-size:11px;line-height:1.65;color:${COLORS.faint};">
               ${escapeHtml(input.footerNote ?? `You are receiving this because you have a ${email.appName} account.`)}
             </p>
-            <p style="margin:0 0 14px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;line-height:1.6;color:#6b5d82;">
-              <a href="${escapeHtml(preferences)}" style="color:#e6c27a;text-decoration:underline;">Email preferences</a>
-              &nbsp;·&nbsp;
-              <a href="${escapeHtml(safeUrl(email, '/'))}" style="color:#e6c27a;text-decoration:underline;">Open the lobby</a>
+            <p style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:11px;line-height:1.7;color:${COLORS.faint};">
+              <a href="${escapeHtml(preferences)}" style="color:${COLORS.gold};text-decoration:none;">Email preferences</a>
+              <span style="color:${COLORS.borderSoft};">&nbsp;·&nbsp;</span>
+              <a href="${escapeHtml(support)}" style="color:${COLORS.gold};text-decoration:none;">Support</a>
+              <span style="color:${COLORS.borderSoft};">&nbsp;·&nbsp;</span>
+              <a href="${escapeHtml(lobby)}" style="color:${COLORS.gold};text-decoration:none;">Open the lobby</a>
             </p>
-            <p style="margin:0 0 10px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#c9b8e0;">
-              <strong style="color:#f8e5b8;">Kind regards,</strong><br>
-              <strong style="color:#b345f5;">DonutSpin team</strong>
-            </p>
-            <p style="margin:10px 0 0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:9px;color:#4a3f5c;">
-              © ${new Date().getFullYear()} ${escapeHtml(email.appName)} · Play responsibly with DonutSMP money only.
+            <p style="margin:0;font-family:${EMAIL_FONT};font-size:9.5px;line-height:1.6;color:${COLORS.faint};">
+              © ${new Date().getFullYear()} ${escapeHtml(email.appName)} · In-game currency only · 18+ · Play responsibly.
             </p>
           </td>
         </tr>
@@ -292,8 +399,8 @@ function footerText(email: EmailConfig): string {
 export function renderEmail(template: EmailTemplate, payload: Record<string, unknown>, email: EmailConfig): RenderedEmail {
   const username = textValue(payload, 'username', 'there');
   const amount = Number(payload.amount ?? 0);
-  const cta = (label: string, path: string) => button(email, label, path);
-  const signoff = `<p style="margin:22px 0 0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#c9b8e0;"><strong style="color:#f8e5b8;">Kind regards,</strong><br><strong style="color:#b345f5;">DonutSpin team</strong></p>`;
+  const cta = (label: string, path: string, variant: 'primary' | 'secondary' = 'primary') =>
+    button(email, label, path, variant);
 
   switch (template) {
     case 'welcome': {
@@ -306,18 +413,22 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           kicker: 'Your account is ready',
           preheader: `${compactAmount(credits)} DonutSMP money has been added to your wallet.`,
           content: [
-            paragraph(`Your ${escapeHtml(email.appName)} account is live. We added <strong style="color:#f8e5b8;">${compactAmount(credits)} DonutSMP money</strong> to your wallet so you can try the tables right away.`),
+            paragraph(`Your ${escapeHtml(email.appName)} account is live. We added <strong style="color:${COLORS.goldBright};">${compactAmount(credits)} DonutSMP money</strong> to your wallet so you can try the tables right away.`),
+            amountHighlight({
+              label: 'Starting balance',
+              amount: compactAmount(credits),
+              note: 'DonutSMP money · ready to play',
+            }),
             detailRows([
-              ['Starting balance', `${compactAmount(credits)} money`],
               ['Account', username],
               ['Status', verifyUrl ? 'Email verification pending' : 'Active'],
             ]),
             verifyUrl
-              ? paragraph('One quick step: confirm your email so we can help you recover your account and send important security alerts.') + cta('Verify my email', verifyUrl)
-              : paragraph('Your email is already verified. You are all set.'),
-            cta('Enter the lobby', '/games'),
+              ? paragraph('One quick step: confirm your email so we can help you recover your account and send important security alerts.') +
+                cta('Verify my email', verifyUrl) +
+                cta('Explore the games', '/games', 'secondary')
+              : paragraph('Your email is already verified. You are all set.') + cta('Enter the lobby', '/games'),
             callout('Every wager and payout is settled server-side and written to your ledger. Play responsibly.', 'gold'),
-            signoff,
           ].join(''),
         }),
         text: [
@@ -342,7 +453,6 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
             paragraph(`Hi ${username || 'there'}, please confirm the email address on your ${escapeHtml(email.appName)} account.`),
             cta('Verify my email', textValue(payload, 'verifyUrl', '/settings')),
             callout(`This link expires ${escapeHtml(formatDateTime(payload.expiresAt))}. If you did not request it, you can safely ignore this email.`, 'gold'),
-            signoff,
           ].join(''),
         }),
         text: [
@@ -360,7 +470,7 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           kicker: 'Password reset requested',
           preheader: 'This secure link expires in one hour.',
           content: [
-            paragraph(`We received a request to reset the password for <strong style="color:#f6f4ef;">${escapeHtml(username)}</strong>.`),
+            paragraph(`We received a request to reset the password for <strong style="color:${COLORS.ink};">${escapeHtml(username)}</strong>.`),
             cta('Choose a new password', textValue(payload, 'resetUrl', '/forgot-password')),
             callout('This link expires in one hour and can only be used once. If you did not request a reset, ignore this email — your password has not changed.', 'gold'),
             paragraph('For your safety, all active sessions are revoked after a password reset.', 'muted'),
@@ -381,7 +491,7 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           kicker: 'Security alert',
           preheader: 'If this was not you, secure your account immediately.',
           content: [
-            paragraph(`The password for <strong style="color:#f6f4ef;">${escapeHtml(username)}</strong> was changed on ${escapeHtml(formatDateTime(payload.changedAt))}.`),
+            paragraph(`The password for <strong style="color:${COLORS.ink};">${escapeHtml(username)}</strong> was changed on ${escapeHtml(formatDateTime(payload.changedAt))}.`),
             detailRows([
               ['Account', username],
               ['When', formatDateTime(payload.changedAt)],
@@ -406,7 +516,7 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           kicker: 'Security alert',
           preheader: 'Review the device and location below.',
           content: [
-            paragraph(`Your account <strong style="color:#f6f4ef;">${escapeHtml(username)}</strong> was just signed in to.`),
+            paragraph(`Your account <strong style="color:${COLORS.ink};">${escapeHtml(username)}</strong> was just signed in to.`),
             detailRows([
               ['When', formatDateTime(payload.at)],
               ['IP address', textValue(payload, 'ip', 'Unknown')],
@@ -434,7 +544,7 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           kicker: 'Security alert',
           preheader: 'This notice was sent to the previous address on your account.',
           content: [
-            paragraph(`The email address on your ${escapeHtml(email.appName)} account was changed to <strong style="color:#f8e5b8;">${escapeHtml(textValue(payload, 'newEmail', 'a new address'))}</strong>.`),
+            paragraph(`The email address on your ${escapeHtml(email.appName)} account was changed to <strong style="color:${COLORS.goldBright};">${escapeHtml(textValue(payload, 'newEmail', 'a new address'))}</strong>.`),
             paragraph('We sent this notice to the previous address so you are always aware of account changes.'),
             callout('If you did not make this change, contact support immediately so we can secure your account.', 'danger'),
             cta('Contact support', '/tickets/new'),
@@ -457,15 +567,18 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           preheader: `${compactAmount(amount)} money added to your wallet.`,
           content: [
             paragraph(`Nice one, ${escapeHtml(username)}. Your day ${Number(payload.streakDay ?? 1)} reward is in your wallet.`),
+            amountHighlight({
+              label: `Day ${Number(payload.streakDay ?? 1)} reward`,
+              amount: compactAmount(amount),
+              note: milestone ? `${milestone} · added to your wallet` : 'Added to your wallet',
+              tone: 'success',
+            }),
             detailRows([
-              ['Reward', `${compactAmount(amount)} money`],
               ['Streak day', String(Number(payload.streakDay ?? 1))],
-              ...(milestone ? ([['Milestone', milestone]] as [string, string][]) : []),
               ['Next reset', formatDateTime(payload.nextResetAt, payload.timezone)],
             ]),
             cta('Keep the streak alive', '/rewards'),
             callout('Claim again after the next reset to keep your streak growing. Missing a day may reset it depending on the current reward policy.', 'success'),
-            signoff,
           ].join(''),
         }),
         text: [
@@ -517,7 +630,6 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
             paragraph('You can follow every reply and status change on the ticket page. Keep the ticket ID handy when talking to support.'),
             cta('View my ticket', textValue(payload, 'ticketUrl', '/tickets')),
             callout('Please do not open duplicate tickets for the same issue. Add any new details as a reply on the existing ticket.', 'gold'),
-            signoff,
           ].join(''),
         }),
         text: [
@@ -555,7 +667,7 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           preheader: `${reference} · ${textValue(payload, 'subject', 'Support request')}`,
           content: [
             paragraph(
-              `Hi ${escapeHtml(username)}, your ticket <strong style="color:#f6f4ef;">${escapeHtml(
+              `Hi ${escapeHtml(username)}, your ticket <strong style="color:${COLORS.ink};">${escapeHtml(
                 reference,
               )}</strong> has ${count === 1 ? 'a new reply' : `${count} new replies`}.`,
             ),
@@ -565,16 +677,17 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
               ['New replies', String(count)],
             ]),
             ...previews.map((message) =>
-              `<div style="margin:0 0 12px;padding:13px 15px;border:1px solid #28303d;border-radius:10px;background:#11151d;">
-                <p style="margin:0 0 5px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#9b7f4d;">${escapeHtml(message.author)} · ${escapeHtml(message.role)} · ${escapeHtml(message.createdAt)}</p>
-                <p style="margin:0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.65;color:#e8e4da;white-space:pre-wrap;">${escapeHtml(message.body).replace(/\n/g, '<br>')}</p>
-              </div>`,
+              messageCard({
+                author: message.author,
+                role: titleCase(message.role),
+                meta: message.createdAt,
+                body: message.body,
+              }),
             ),
             messages.length > previews.length
               ? paragraph(`…and ${messages.length - previews.length} more ${messages.length - previews.length === 1 ? 'reply' : 'replies'} on the ticket.`)
               : '',
             cta('Open the conversation', textValue(payload, 'ticketUrl', '/tickets')),
-            signoff,
           ].join(''),
         }),
         text: [
@@ -587,21 +700,35 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
       };
     }
     case 'cashier-decision': {
-      const approved = textValue(payload, 'status') === 'approved';
+      const rawStatus = textValue(payload, 'status', 'updated');
+      const approved = rawStatus === 'approved';
+      const kind = titleCase(textValue(payload, 'kind', 'Cashier'));
+      const status = titleCase(rawStatus);
       return {
-        subject: `${textValue(payload, 'kind', 'Cashier')} request ${textValue(payload, 'status', 'updated')}`,
+        subject: `${kind} request ${rawStatus}`,
         html: layout(email, {
           title: approved ? 'Your request was approved' : 'Your request needs attention',
           kicker: 'Cashier update',
           preheader: `${textValue(payload, 'reference')} · ${compactAmount(amount)} money`,
           content: [
-            paragraph(`Hi ${escapeHtml(username)}, your ${escapeHtml(textValue(payload, 'kind', 'cashier'))} request has been ${escapeHtml(textValue(payload, 'status', 'updated'))}.`),
+            paragraph(`Hi ${escapeHtml(username)}, your ${escapeHtml(kind.toLowerCase())} request has been ${escapeHtml(rawStatus)}.`),
+            amountHighlight({
+              label: `${status} ${kind.toLowerCase()}`,
+              amount: compactAmount(amount),
+              note: textValue(payload, 'reference', ''),
+              tone: approved ? 'success' : 'danger',
+            }),
             detailRows([
               ['Reference', textValue(payload, 'reference', '—')],
-              ['Amount', `${compactAmount(amount)} money`],
-              ['Status', textValue(payload, 'status', '—')],
-              ...(textValue(payload, 'reason') ? ([['Note', textValue(payload, 'reason')]] as [string, string][]) : []),
+              ['Status', status],
             ]),
+            textValue(payload, 'reason')
+              ? callout(
+                  escapeHtml(textValue(payload, 'reason')),
+                  approved ? 'gold' : 'danger',
+                  approved ? 'Staff note' : 'Why it was declined',
+                )
+              : '',
             cta('Open the cashier', `/cashier/${encodeURIComponent(textValue(payload, 'reference', ''))}`),
           ].join(''),
         }),
@@ -622,7 +749,7 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           kicker: 'Account deletion requested',
           preheader: 'This confirmation link expires in 30 minutes and can only be used once.',
           content: [
-            paragraph(`We received a request to permanently delete the ${escapeHtml(email.appName)} account belonging to <strong style="color:#f6f4ef;">${escapeHtml(username)}</strong>.`),
+            paragraph(`We received a request to permanently delete the ${escapeHtml(email.appName)} account belonging to <strong style="color:${COLORS.ink};">${escapeHtml(username)}</strong>.`),
             paragraph('If you asked for this, confirm below. Your profile, email address, wallet access, sessions, rewards, support history, and other personal records will be erased. You will not be able to sign in again.'),
             cta('Confirm account deletion', textValue(payload, 'deleteUrl', '/settings')),
             callout('This link expires in 30 minutes and can only be used once. If you did not request this deletion, ignore this email and consider changing your password.', 'danger'),
@@ -648,20 +775,24 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           preheader: `${textValue(payload, 'title', 'A giveaway')} · claim your prize`,
           content: [
             paragraph(
-              `Congratulations, ${escapeHtml(username)}. Your entry was drawn in <strong style="color:#f6f4ef;">${escapeHtml(
+              `Congratulations, ${escapeHtml(username)}. Your entry was drawn in <strong style="color:${COLORS.ink};">${escapeHtml(
                 textValue(payload, 'title', 'a giveaway'),
               )}</strong>.`,
             ),
+            amountHighlight({
+              label: 'Giveaway payout',
+              amount: compactAmount(payout),
+              note: `${Number(payload.winners ?? 1)} ${Number(payload.winners ?? 1) === 1 ? 'winner' : 'winners'} · prize held in escrow`,
+              tone: 'success',
+            }),
             detailRows([
-              ['Prize', `${compactAmount(payout)} money`],
               ['Giveaway', textValue(payload, 'reference', '—')],
               ['Winners', String(Number(payload.winners ?? 1))],
-              ['Pool', `${compactAmount(Number(payload.prizeAmount ?? payout))} money`],
+              ['Prize pool', `${compactAmount(Number(payload.prizeAmount ?? payout))} money`],
             ]),
             paragraph('To receive the prize, open a Giveaway Claim ticket from the Giveaways page. Staff verify the win before releasing the escrow.'),
             cta('Claim my prize', textValue(payload, 'claimUrl', '/giveaways')),
             callout('The prize stays in escrow until staff approve your claim. Keep your claim ticket reference for updates.', 'success'),
-            signoff,
           ].join(''),
         }),
         text: [
@@ -677,31 +808,34 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
     case 'giveaway-sponsor': {
       const startsAt = textValue(payload, 'startsAt');
       const endsAt = textValue(payload, 'endsAt');
+      const prizePool = Number(payload.prizeAmount ?? amount);
       return {
-        subject: `Your sponsored giveaway is live: ${compactAmount(amount)} money`,
+        subject: `Your sponsored giveaway is live: ${compactAmount(prizePool)} money`,
         html: layout(email, {
           title: 'Your giveaway is live',
           kicker: 'Sponsorship published',
-          preheader: `${textValue(payload, 'title', 'Community giveaway')} · ${compactAmount(amount)} money`,
+          preheader: `${textValue(payload, 'title', 'Community giveaway')} · ${compactAmount(prizePool)} money`,
           content: [
             paragraph(`Thanks for sponsoring a community giveaway, ${escapeHtml(username)}. Staff published it and the prize is held in escrow.`),
+            amountHighlight({
+              label: 'Prize pool',
+              amount: compactAmount(prizePool),
+              note: `${Number(payload.winners ?? 1)} ${Number(payload.winners ?? 1) === 1 ? 'winner' : 'winners'} · funded by you`,
+            }),
             detailRows([
               ['Giveaway', textValue(payload, 'title', 'Community giveaway')],
               ['Reference', textValue(payload, 'reference', '—')],
-              ['Prize pool', `${compactAmount(amount)} money`],
-              ['Winners', String(Number(payload.winners ?? 1))],
               ['Starts', formatDateTime(startsAt)],
               ['Ends', formatDateTime(endsAt)],
             ]),
             cta('View the giveaway', textValue(payload, 'giveawayUrl', '/giveaways')),
             callout('Winners are drawn with a committed random seed when the timer ends. Payouts are released after a staff-verified claim.', 'gold'),
-            signoff,
           ].join(''),
         }),
         text: [
           `Your sponsored giveaway is live: ${textValue(payload, 'title', 'Community giveaway')}.`,
           `Reference: ${textValue(payload, 'reference', '—')}`,
-          `Prize pool: ${compactAmount(amount)} money`,
+          `Prize pool: ${compactAmount(prizePool)} money`,
           `Winners: ${Number(payload.winners ?? 1)}`,
           `Starts: ${formatDateTime(startsAt)}`,
           `Ends: ${formatDateTime(endsAt)}`,
@@ -725,7 +859,7 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
               ['Sender', `${email.fromName} <${email.fromEmail}>`],
               ['Sent', formatDateTime(new Date().toISOString())],
             ]),
-            callout('If this message landed in spam, add the sender to your allowlist and verify the domain in Brevo.', 'gold'),
+            callout('If this message landed in spam, add the sender to your allowlist and ask your email provider to authenticate the sending domain.', 'gold'),
           ].join(''),
         }),
         text: [

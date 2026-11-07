@@ -354,6 +354,45 @@ describe('email settings and queue', () => {
     expect(reset.html).toContain('Choose a new password');
   });
 
+  it('renders the sponsored giveaway prize pool and the real logo asset', () => {
+    const rendered = renderEmail(
+      'giveaway-sponsor',
+      {
+        username: 'tester',
+        title: 'Friday Night Spin',
+        reference: 'GVS-2026-000007',
+        prizeAmount: 500_000,
+        winners: 3,
+        startsAt: new Date().toISOString(),
+        endsAt: new Date(Date.now() + 3_600_000).toISOString(),
+      },
+      getEmailConfig(db),
+    );
+    expect(rendered.html).toContain('500K');
+    expect(rendered.text).toContain('Prize pool: 500K money');
+    expect(rendered.html).toContain('/logo.png');
+    expect(rendered.html).toContain('alt="DonutSpin"');
+  });
+
+  it('highlights declined cashier requests and escapes the staff note', () => {
+    const rendered = renderEmail(
+      'cashier-decision',
+      {
+        username: 'tester',
+        kind: 'withdrawal',
+        status: 'rejected',
+        reference: 'DEP-2026-000002',
+        amount: 120_000,
+        reason: '<script>alert(1)</script>',
+      },
+      getEmailConfig(db),
+    );
+    expect(rendered.subject).toBe('Withdrawal request rejected');
+    expect(rendered.html).toContain('Why it was declined');
+    expect(rendered.html).not.toContain('<script>alert(1)</script>');
+    expect(rendered.html).toContain('&lt;script&gt;');
+  });
+
   it('uses the public production origin in every template and rewrites stale loopback links', () => {
     const productionUrl = 'https://donutspin.runasp.net';
     const email = { ...getEmailConfig(db), appUrl: productionUrl };
