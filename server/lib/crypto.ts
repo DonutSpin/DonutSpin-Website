@@ -37,7 +37,7 @@ export function randomToken(bytes = 32): string {
  * secret. They are never written to logs or returned to the browser.
  */
 function mailEncryptionKey(): Buffer {
-  const material = process.env.EMAIL_ENCRYPTION_KEY || config.sessionSecret || 'donutcash-local-email-key';
+  const material = process.env.EMAIL_ENCRYPTION_KEY || config.sessionSecret || 'donutspin-local-email-key';
   return createHash('sha256').update(material).digest();
 }
 

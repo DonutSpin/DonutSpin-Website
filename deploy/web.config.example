@@ -38,7 +38,7 @@
           password reset, lobby). Change this when the domain changes; a panel
           environment variable with the same name overrides it.
         -->
-        <environmentVariable name="APP_URL" value="https://donutcash.runasp.net" />
+        <environmentVariable name="APP_URL" value="https://donutspin.runasp.net" />
       </environmentVariables>
     </httpPlatform>
 

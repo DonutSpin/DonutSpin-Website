@@ -27,9 +27,10 @@ backups/
 .env.*
 !.env.example
 
-# The Discord bot is a separate Git repository rooted at bot/. It is deployed
-# on its own host and must not be included when this website is pushed.
-bot/
+# The Discord bot is a separate Git repository rooted at DonutSpin-bot/. It is
+# deployed on its own host and must not be included when this website is
+# pushed. Keep the trailing slash so only the directory is ignored.
+DonutSpin-bot/
 
 # Generated build output: rebuilt by `npm run build` on the host
 dist/

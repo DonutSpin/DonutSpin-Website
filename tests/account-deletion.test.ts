@@ -10,7 +10,7 @@ import { getEmailConfig, renderEmail } from '../server/lib/email.ts';
 type Agent = ReturnType<typeof request.agent>;
 
 const PASSWORD = 'DeleteTest!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const unique = (prefix: string) =>
   `${prefix.replace(/[^a-z0-9]/gi, '').slice(0, 6)}_${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 5)}`;
 const expectStatus = (res: { status: number; body: unknown }, status: number) =>

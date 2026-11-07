@@ -10,7 +10,7 @@ import { giveawayInternals } from '../server/lib/giveaways.ts';
 type Agent = ReturnType<typeof request.agent>;
 
 const PASSWORD = 'GiveawayTest!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const STARTING = 50_000_000;
 
 const expectStatus = (res: { status: number; body: unknown }, status: number) =>

@@ -15,7 +15,7 @@ import { resolveCoinflip } from '../server/games/instant.ts';
 type Agent = ReturnType<typeof request.agent>;
 
 const PASSWORD = 'AurumStats!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const unique = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 const expectStatus = (res: { status: number; body: unknown }, status: number) =>
   expect(res.status, `${res.status} ${JSON.stringify(res.body)}`).toBe(status);
@@ -90,7 +90,7 @@ function insertRound(input: {
 }
 
 beforeAll(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'donutcash-game-stats-'));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'donutspin-game-stats-'));
   file = path.join(dir, 'app.db');
   db = createDatabase(file);
   app = createApp(db);

@@ -10,7 +10,7 @@ import { LEGAL_PRIVACY_VERSION, LEGAL_TERMS_VERSION } from '../shared/legal.ts';
 type Agent = ReturnType<typeof request.agent>;
 
 const PASSWORD = 'AurumTest!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const unique = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 const expectStatus = (res: { status: number; body: unknown }, status: number) =>
   expect(res.status, `${res.status} ${JSON.stringify(res.body)}`).toBe(status);

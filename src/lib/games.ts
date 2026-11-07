@@ -15,7 +15,7 @@ export const playGame = async <T,>(slug: string, body: Record<string, unknown>):
   } catch (error) {
     if (error instanceof ApiRequestError && error.code === 'ACTIVE_ROUND') {
       window.dispatchEvent(
-        new CustomEvent('donutcash:active-round', { detail: error.details?.activeRound ?? null }),
+        new CustomEvent('donutspin:active-round', { detail: error.details?.activeRound ?? null }),
       );
     }
     throw error;

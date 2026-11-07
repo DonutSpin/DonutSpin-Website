@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createDatabase } from '../server/db/index.ts';
 import { isSharedRateLimitStoreEnabled, RateLimiter, useSharedRateLimitStore } from '../server/lib/rate-limit.ts';
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'donutcash-ratelimit-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'donutspin-ratelimit-'));
 const file = path.join(dir, 'shared.db');
 
 afterAll(() => {

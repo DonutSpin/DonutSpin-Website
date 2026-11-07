@@ -12,7 +12,7 @@ import { balanceOf } from '../server/lib/wallet.ts';
 type Agent = ReturnType<typeof request.agent>;
 
 const PASSWORD = 'DiscordTest!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const BOT_KEY = 'discord-bot-test-key-0123456789abcdef';
 const GUILD = '123456789012345678';
 const WELCOME = '223456789012345678';
@@ -680,7 +680,7 @@ describe('info channels and panels', () => {
       title: 'Meet the dev team',
       body: 'We ship website and bot updates every week.',
       color: '#5865F2',
-      links: [{ label: 'Website', url: 'https://donutcash.example/updates' }],
+      links: [{ label: 'Website', url: 'https://donutspin.example/updates' }],
       mentionEveryone: false,
     });
     expectStatus(panelRes, 201);
@@ -692,7 +692,7 @@ describe('info channels and panels', () => {
     };
     expect(panel.category).toBe('Development');
     expect(panel.channelId).toBe(DEV_CHANNEL);
-    expect(panel.links).toEqual([{ label: 'Website', url: 'https://donutcash.example/updates' }]);
+    expect(panel.links).toEqual([{ label: 'Website', url: 'https://donutspin.example/updates' }]);
 
     const postEvent = db
       .prepare("SELECT id, payload FROM discord_outbox WHERE event_type = 'panel_post'")

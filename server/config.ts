@@ -34,7 +34,7 @@ const isProduction = isProductionRuntime();
  * environment cannot put localhost links into real email. Development keeps
  * the Vite origin; set APP_URL to point at any other host.
  */
-export const DEFAULT_PRODUCTION_APP_URL = 'https://donutcash.runasp.net';
+export const DEFAULT_PRODUCTION_APP_URL = 'https://donutspin.runasp.net';
 export const DEFAULT_DEVELOPMENT_APP_URL = 'http://localhost:5173';
 
 export function isLoopbackHost(hostname: string): boolean {
@@ -71,7 +71,7 @@ export interface DatabasePathResolution {
  * operations and is not a source folder, so `git pull` can never touch it.
  */
 export function resolveDataDir(env: NodeJS.ProcessEnv = process.env, appRoot = root): string {
-  const configured = (env.DONUTCASH_DATA_DIR ?? '').trim();
+  const configured = (env.DONUTSPIN_DATA_DIR ?? '').trim();
   return path.resolve(appRoot, configured || 'App_Data');
 }
 
@@ -121,7 +121,7 @@ export function resolveDatabasePath(
     };
   }
 
-  const configuredDataDir = (env.DONUTCASH_DATA_DIR ?? '').trim();
+  const configuredDataDir = (env.DONUTSPIN_DATA_DIR ?? '').trim();
   const candidates: { path: string; source: DatabasePathSource }[] = [];
   const addCandidate = (candidatePath: string, source: DatabasePathSource) => {
     if (candidates.some((candidate) => candidate.path === candidatePath)) return;

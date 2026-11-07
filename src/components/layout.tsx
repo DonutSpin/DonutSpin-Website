@@ -740,8 +740,8 @@ function ActiveRoundNotice() {
       const detail = (event as CustomEvent<ActiveRoundConflict | null>).detail;
       if (detail?.game) setConflict(detail);
     };
-    window.addEventListener('donutcash:active-round', handler);
-    return () => window.removeEventListener('donutcash:active-round', handler);
+    window.addEventListener('donutspin:active-round', handler);
+    return () => window.removeEventListener('donutspin:active-round', handler);
   }, []);
 
   return (

@@ -11,7 +11,7 @@ import { rewardDayKey } from '../server/lib/rewards.ts';
 type Agent = ReturnType<typeof request.agent>;
 
 const PASSWORD = 'RewardTest!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const unique = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 const expectStatus = (res: { status: number; body: unknown }, status: number) =>
   expect(res.status, `${res.status} ${JSON.stringify(res.body)}`).toBe(status);
@@ -355,7 +355,7 @@ describe('email settings and queue', () => {
   });
 
   it('uses the public production origin in every template and rewrites stale loopback links', () => {
-    const productionUrl = 'https://donutcash.runasp.net';
+    const productionUrl = 'https://donutspin.runasp.net';
     const email = { ...getEmailConfig(db), appUrl: productionUrl };
     const templates: EmailTemplate[] = [
       'welcome',

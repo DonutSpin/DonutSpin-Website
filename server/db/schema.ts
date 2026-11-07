@@ -292,12 +292,12 @@ CREATE INDEX cashier_messages_request_idx ON cashier_messages(request_id, create
   },
   {
     version: 3,
-    name: 'donutcash_branding',
+    name: 'legacy_branding',
     // Applied migrations are immutable: this SQL already ran on existing
-    // databases under the old brand. Migration 22 moves those stored names to
-    // DonutSpin without touching an operator's custom platform name.
+    // databases under the old brand. The old value is kept in the WHERE list
+    // so a database upgrading from before this migration is still rebranded.
     sql: `
-UPDATE settings SET value = '"Donutcash"'
+UPDATE settings SET value = '"DonutSpin"'
  WHERE key = 'platform.name' AND value IN ('"Aurum Casino"', '"Aurum"', '"DonutCash"');
 UPDATE support_categories
    SET label = 'Money request',
@@ -1029,12 +1029,22 @@ CREATE INDEX discord_panels_channel_idx ON discord_panels(info_channel_id, creat
   {
     version: 22,
     name: 'donutspin_branding',
-    // Rebrand databases created before the rename. Only the old default names
-    // are touched, so a platform name an operator chose is preserved.
+    // Rebrand databases created before the rename. Only the historical default
+    // names are touched, so a platform name an operator chose is preserved.
     sql: `
 UPDATE settings SET value = '"DonutSpin"'
  WHERE key IN ('platform.name', 'email.from_name')
-   AND value IN ('"Donutcash"', '"DonutCash"', '"Donut Spin"');
+   AND value IN ('"DonutCash"', '"Donutcash"', '"Donut Spin"');
+`,
+  },
+  {
+    version: 23,
+    name: 'donutspin_email_domain',
+    // The seeded sender address used the old brand's local domain. A real
+    // operator-configured address is left untouched.
+    sql: `
+UPDATE settings SET value = '"no-reply@donutspin.local"'
+ WHERE key = 'email.from_email' AND value = '"no-reply@donutcash.local"';
 `,
   },
 ];

@@ -9,7 +9,7 @@ import { recordLegalAcceptance } from '../server/lib/legal.ts';
 type Agent = ReturnType<typeof request.agent>;
 
 const PASSWORD = 'ResetStats!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const expectStatus = (res: { status: number; body: unknown }, status: number) =>
   expect(res.status, `${res.status} ${JSON.stringify(res.body)}`).toBe(status);
 

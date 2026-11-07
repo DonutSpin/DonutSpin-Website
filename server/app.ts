@@ -127,7 +127,7 @@ export function createApp(db: DB, options: { turnstile?: TurnstileVerifier } = {
   // custom header, and not originate from another site.
   app.use('/api', (req, res, next) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
-    if (req.get('x-requested-with') !== 'donutcash') {
+    if (req.get('x-requested-with') !== 'donutspin') {
       return next(new ApiError(403, 'CSRF_HEADER', 'This request is missing the required application header.'));
     }
     const origin = req.get('origin');

@@ -38,8 +38,8 @@ describe('public app URL resolution', () => {
   });
 
   it('normalises an explicit public origin', () => {
-    expect(resolveAppUrl('https://donutcash.runasp.net/', true)).toEqual({
-      appUrl: 'https://donutcash.runasp.net',
+    expect(resolveAppUrl('https://donutspin.runasp.net/', true)).toEqual({
+      appUrl: 'https://donutspin.runasp.net',
       configured: true,
     });
   });
@@ -59,7 +59,7 @@ describe('public app URL resolution', () => {
   });
 
   it('falls back to the production site for malformed or unsupported values', () => {
-    for (const value of ['not a url', 'ftp://donutcash.runasp.net', 'javascript:alert(1)']) {
+    for (const value of ['not a url', 'ftp://donutspin.runasp.net', 'javascript:alert(1)']) {
       expect(resolveAppUrl(value, true).appUrl).toBe(DEFAULT_PRODUCTION_APP_URL);
     }
   });

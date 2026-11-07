@@ -10,7 +10,7 @@ import { recordLegalAcceptance } from '../server/lib/legal.ts';
 type Agent = ReturnType<typeof request.agent>;
 
 const PASSWORD = 'RainTest!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const STARTING = 10_000_000;
 
 const expectStatus = (res: { status: number; body: unknown }, status: number) =>

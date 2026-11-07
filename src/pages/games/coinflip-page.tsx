@@ -26,7 +26,7 @@ import { Alert, Button, Card, Toggle, cn } from '../../components/ui';
 
 const TOSS_MS = 3100;
 const COIN_EASING = 'cubic-bezier(0.16, 0.84, 0.18, 1)';
-const SOUND_KEY = 'donutcash:coin-sound';
+const SOUND_KEY = 'donutspin:coin-sound';
 
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;

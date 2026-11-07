@@ -7,7 +7,7 @@
  * permissions and rate limiting.
  *
  *   node scripts/smoke-production.mjs http://127.0.0.1:4000
- *   SMOKE_BASE=https://donutcash.runasp.net \
+ *   SMOKE_BASE=https://donutspin.runasp.net \
  *   SMOKE_ADMIN_EMAIL=owner@example.com SMOKE_ADMIN_PASSWORD=... \
  *   SMOKE_MUTATE_CONFIG=true node scripts/smoke-production.mjs
  *
@@ -21,7 +21,7 @@ const adminEmail = process.env.SMOKE_ADMIN_EMAIL || '';
 const adminPassword = process.env.SMOKE_ADMIN_PASSWORD || '';
 const mutateConfig = process.env.SMOKE_MUTATE_CONFIG === 'true';
 const PASSWORD = 'SmokeTest!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 
 const results = [];
 let failures = 0;

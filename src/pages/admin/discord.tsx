@@ -1219,14 +1219,14 @@ export function AdminDiscordPage() {
       {!status?.guild && (
         <Alert tone="warning" title="No Discord server connected yet" className="mb-5">
           Set <code className="rounded bg-black/25 px-1">DISCORD_BOT_API_KEY</code> on this website, then start the bot on
-          its own host with <code className="rounded bg-black/25 px-1">DONUTCASH_API_URL</code> pointing at this public
+          its own host with <code className="rounded bg-black/25 px-1">DONUTSPIN_API_URL</code> pointing at this public
           HTTPS origin. It cannot use localhost. Run <strong>/setup</strong> in Discord after linking your staff account.
         </Alert>
       )}
       {status?.guild && !status.connected && (
         <Alert tone="warning" title="The bot has not sent a heartbeat recently" className="mb-5">
           Last seen {status.lastSeenAt ? timeAgo(status.lastSeenAt) : 'never'}. Check the bot process, its token, and
-          that <code className="rounded bg-black/25 px-1">DONUTCASH_API_URL</code> can reach this site.
+          that <code className="rounded bg-black/25 px-1">DONUTSPIN_API_URL</code> can reach this site.
         </Alert>
       )}
 

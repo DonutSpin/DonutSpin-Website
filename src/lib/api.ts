@@ -31,7 +31,7 @@ async function request<T>(method: Method, path: string, body?: unknown, signal?:
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (method !== 'GET') {
     headers['Content-Type'] = 'application/json';
-    headers['X-Requested-With'] = 'donutcash';
+    headers['X-Requested-With'] = 'donutspin';
   }
   let response: Response;
   try {
@@ -51,7 +51,7 @@ async function request<T>(method: Method, path: string, body?: unknown, signal?:
   const payload = contentType.includes('application/json') ? await response.json().catch(() => null) : null;
   if (!response.ok) {
     if (response.status === 401 && !path.startsWith('/auth/login') && !path.startsWith('/auth/me')) {
-      window.dispatchEvent(new Event('donutcash:unauthorized'));
+      window.dispatchEvent(new Event('donutspin:unauthorized'));
     }
     throw new ApiRequestError(response.status, (payload as { error?: ApiErrorPayload } | null)?.error ?? null);
   }

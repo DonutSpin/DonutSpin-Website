@@ -94,9 +94,9 @@ Configuration lives in `.env`. The server loads it on startup, and environment v
 | --- | --- | --- |
 | `PORT` | `4000` | API/production server port. Falls back to `HTTP_PLATFORM_PORT`, which IIS assigns. |
 | `APP_NAME` | `DonutSpin` | Initial platform name seed |
-| `APP_URL` | production: `https://donutcash.runasp.net`; development: `http://localhost:5173` | Public client origin used in every email link, reset URL, and session cookie decision. In production it is also the only allowed mutation origin. A missing, invalid, or loopback value falls back to the production default rather than sending localhost links. |
+| `APP_URL` | production: `https://donutspin.runasp.net`; development: `http://localhost:5173` | Public client origin used in every email link, reset URL, and session cookie decision. In production it is also the only allowed mutation origin. A missing, invalid, or loopback value falls back to the production default rather than sending localhost links. |
 | `DATABASE_PATH` | first existing of `app.db`, `data/app.db`, `data/aurum.db`, `App_Data/app.db`, `App_Data/aurum.db`; new installs use `App_Data/aurum.db` | SQLite file. Parent directories are created automatically. Leave unset in production so an existing database is always found before a new one is created. |
-| `DONUTCASH_DATA_DIR` | `App_Data` | Persistent directory for backups, the generated session secret, and generated owner credentials. It must not be inside `src/`, `server/`, `dist/`, or `build/`. Set an absolute path outside `/wwwroot` if the host exposes one. |
+| `DONUTSPIN_DATA_DIR` | `App_Data` | Persistent directory for backups, the generated session secret, and generated owner credentials. It must not be inside `src/`, `server/`, `dist/`, or `build/`. Set an absolute path outside `/wwwroot` if the host exposes one. |
 | `ALLOW_NEW_DATABASE` | `false` | Production refuses to boot when no existing database is found, because creating an empty one would hide all balances and settings. Set to `true` once only for a genuinely new installation, then remove it. |
 | `DB_BACKUP_BEFORE_MIGRATION` | `true` | Takes a verified `VACUUM INTO` snapshot before applying pending migrations and aborts startup if the snapshot fails. |
 | `DB_BACKUP_KEEP` | `10` | Number of automatic pre-migration snapshots kept in `App_Data/backups/`. |
@@ -113,7 +113,7 @@ Configuration lives in `.env`. The server loads it on startup, and environment v
 | `TURNSTILE_SITE_KEY` | built-in public key | Public Cloudflare Turnstile widget key. Safe to expose. |
 | `TURNSTILE_SECRET_KEY` | empty | Server-only Turnstile secret. Set it in the hosting panel or local `.env`; never commit it. CAPTCHA stays disabled while empty. |
 | `TURNSTILE_ENABLED` | `true` | Set to `false` to disable the widget and server checks without removing keys. |
-| `TURNSTILE_EXPECTED_HOSTNAME` | empty | Optional extra hostname check on Siteverify responses, for example `donutcash.runasp.net`. |
+| `TURNSTILE_EXPECTED_HOSTNAME` | empty | Optional extra hostname check on Siteverify responses, for example `donutspin.runasp.net`. |
 
 Platform name, tagline, registration, maintenance, support categories, game limits, economy limits, reward rules, and email delivery are stored in the database and managed from the admin panel. The `economy.cashier_request_limit` setting is the maximum amount for a single cashier deposit or withdrawal request.
 
@@ -135,7 +135,7 @@ Templates cover welcome, email verification, password reset, password/email chan
 
 Login, registration, and password-reset requests can require a Cloudflare Turnstile challenge. The widget is rendered on the client, but the server always calls Cloudflare's Siteverify endpoint before processing the request; a direct API submission without a valid, unused token is rejected. Tokens are single-use, expire after five minutes, and are checked against the form action and configured hostname when Cloudflare returns them.
 
-The public site key is served by `/api/public/config` and is safe to expose. The secret key is read only by the server from `TURNSTILE_SECRET_KEY`; it is never returned by the API, embedded in the client bundle, or logged. If the secret is missing, the integration reports itself disabled and logs a production warning rather than locking users out. Set the secret in **Websites → environment variables** on MonsterASP, add `donutcash.runasp.net` to the widget's hostname list in the Cloudflare dashboard, and restart/publish. No Cloudflare DNS migration is required.
+The public site key is served by `/api/public/config` and is safe to expose. The secret key is read only by the server from `TURNSTILE_SECRET_KEY`; it is never returned by the API, embedded in the client bundle, or logged. If the secret is missing, the integration reports itself disabled and logs a production warning rather than locking users out. Set the secret in **Websites → environment variables** on MonsterASP, add `donutspin.runasp.net` to the widget's hostname list in the Cloudflare dashboard, and restart/publish. No Cloudflare DNS migration is required.
 
 ## Cashier: DonutSMP money in and out
 
@@ -258,13 +258,13 @@ npm start
 
 - Put the app behind a TLS-terminating reverse proxy and forward `/api` and the SPA to the Node process.
 - `APP_URL` must exactly match the browser origin. Production mutation requests with an unexpected `Origin` header are rejected.
-- Session cookies are `httpOnly`, `SameSite=Lax`, and `Secure` whenever the resolved public origin is `https://` (`COOKIE_SECURE` overrides). In production the default origin is `https://donutcash.runasp.net`, so cookies are secure even when `APP_URL` is omitted.
+- Session cookies are `httpOnly`, `SameSite=Lax`, and `Secure` whenever the resolved public origin is `https://` (`COOKIE_SECURE` overrides). In production the default origin is `https://donutspin.runasp.net`, so cookies are secure even when `APP_URL` is omitted.
 - Rate-limit windows live in the SQLite database whenever a file database is used, so two Node workers on the same host cannot each allow a full quota. SQLite still prefers a single writer; do not scale to multiple hosts.
 - Keep `App_Data/`, `data/`, `app.db`, `.env`, `web.config`, and backups out of version control, and never place the database in a folder served by `express.static` (`dist/`).
 - `SESSION_SECRET` is optional at runtime: when it is missing in production the server generates a random secret once and persists it to `App_Data/.session-secret` (or the configured data directory). Existing `data/.session-secret` and root `.session-secret` files are reused. Set it explicitly to control rotation. A provided value shorter than 32 characters still fails closed.
 - Production refuses to start when it would create a brand-new empty database. This prevents a mistyped `DATABASE_PATH` from presenting a blank casino and hiding every existing account and setting. Set `ALLOW_NEW_DATABASE=true` once only for a genuinely new installation.
 - `PORT` is read first, then `HTTP_PLATFORM_PORT` (the port IIS assigns). The app never hard-codes a listening port.
-- Production mutation requests must be same-origin or match the resolved public origin. A missing or loopback `APP_URL` resolves to `https://donutcash.runasp.net`, not localhost.
+- Production mutation requests must be same-origin or match the resolved public origin. A missing or loopback `APP_URL` resolves to `https://donutspin.runasp.net`, not localhost.
 
 ### Deploying to MonsterASP (Windows / IIS + HttpPlatformHandler)
 
@@ -291,7 +291,7 @@ The fix is architectural, not a workaround:
 
 | Variable | Value |
 | --- | --- |
-| `APP_URL` | `https://donutcash.runasp.net` (the public origin used in email links and secure cookies) |
+| `APP_URL` | `https://donutspin.runasp.net` (the public origin used in email links and secure cookies) |
 | `SESSION_SECRET` | 64+ random characters. Generate with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret, if CAPTCHA is enabled |
 | `SMTP_PASS` | Optional fallback only; prefer saving the SMTP key in Admin → Email |
@@ -362,7 +362,7 @@ Then in the MonsterASP panel: **Pull latest → Build & publish**. No server-sid
 | `web.config` | Generated IIS startup configuration | Ignored | Generated on every publish |
 | `src/`, `server/`, `shared/`, `scripts/`, `deploy/` | Application code | Tracked | Replaced by Git |
 
-The database resolver checks, in order: `DATABASE_PATH`, `DONUTCASH_DATA_DIR`, root `app.db`, `data/app.db`, `data/aurum.db`, `App_Data/app.db`, `App_Data/aurum.db`, then the new default `App_Data/aurum.db`. It never renames or deletes a database it finds. If more than one exists it logs every candidate and uses the first match; set `DATABASE_PATH` explicitly if that is not the one you want.
+The database resolver checks, in order: `DATABASE_PATH`, `DONUTSPIN_DATA_DIR`, root `app.db`, `data/app.db`, `data/aurum.db`, `App_Data/app.db`, `App_Data/aurum.db`, then the new default `App_Data/aurum.db`. It never renames or deletes a database it finds. If more than one exists it logs every candidate and uses the first match; set `DATABASE_PATH` explicitly if that is not the one you want.
 
 #### Moving an existing app.db (optional)
 
@@ -415,7 +415,7 @@ In both cases the new owner must accept the current Terms of Service and Privacy
 
 ## Discord bot (separate repository and host)
 
-The bot is a second, standalone project rooted at `bot/`. That directory is its own Git repository and is ignored by this website repository, so the site can be built and deployed without the bot. It never opens `app.db`: every read and write goes through the authenticated `/api/bot/*` API. That is what keeps balances, codes, giveaways, invite rewards, vouches, and announcements in one database instead of two systems that can drift apart.
+The bot is a second, standalone project rooted at `DonutSpin-bot/` and published at [DonutSpin/DonutSpin-DiscordBot](https://github.com/DonutSpin/DonutSpin-DiscordBot). That directory is its own Git repository and is ignored by this website repository, so the site can be built and deployed without the bot. It never opens `app.db`: every read and write goes through the authenticated `/api/bot/*` API. That is what keeps balances, codes, giveaways, invite rewards, vouches, and announcements in one database instead of two systems that can drift apart.
 
 ### 1. Configure the website
 
@@ -429,18 +429,18 @@ The key is disabled when blank. The website mounts the bot API before the browse
 
 ### 2. Start the bot on its own machine
 
-The bot repository is checked out at `bot/` in the local workspace and must be cloned or copied separately on the bot host.
+The bot repository is checked out at `DonutSpin-bot/` in the local workspace and must be cloned or copied separately on the bot host.
 
 ```bash
-cd bot
+cd DonutSpin-bot
 cp .env.example .env
-# fill DISCORD_TOKEN, DONUTCASH_API_URL, DONUTCASH_BOT_API_KEY
+# fill DISCORD_TOKEN, DONUTSPIN_API_URL, DONUTSPIN_BOT_API_KEY
 npm ci
 npm run build
 npm start
 ```
 
-`DONUTCASH_API_URL` must be the public HTTPS origin of the website (for example `https://donutcash.runasp.net`). `http://localhost:4000` is accepted only for local development; a production bot on another provider must use HTTPS. `DISCORD_GUILD_ID` is optional and registers slash commands instantly while developing; leave it blank for global registration.
+`DONUTSPIN_API_URL` must be the public HTTPS origin of the website (for example `https://donutspin.runasp.net`). `http://localhost:4000` is accepted only for local development; a production bot on another provider must use HTTPS. `DISCORD_GUILD_ID` is optional and registers slash commands instantly while developing; leave it blank for global registration.
 
 In the Discord Developer Portal, enable the **Server Members** and **Server Invites** intents. Message Content is not required. Keep one bot gateway process online: the outbox safely leases events, but invite attribution assumes one gateway observer per server.
 
@@ -526,7 +526,7 @@ build/                Generated server build output (ignored by Git)
 
 - Passwords are salted and hashed with scrypt.
 - Session tokens are random, stored only as HMAC digests, and sent in httpOnly cookies.
-- State-changing API requests require the `X-Requested-With: donutcash` header and are origin-checked outside development.
+- State-changing API requests require the `X-Requested-With: donutspin` header and are origin-checked outside development.
 - Rate limits cover login, registration, password resets, mutations, ticket creation, and cashier request creation.
 - Wallet changes run through an append-only ledger with idempotency keys and transaction boundaries.
 - Game randomness comes from Node's `crypto.randomInt`, not `Math.random`.

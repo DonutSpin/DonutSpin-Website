@@ -13,9 +13,9 @@ import { startSmtpSink, type SmtpSink } from './helpers/smtp-sink.ts';
  * message are exactly the ones production would send.
  */
 
-const PRODUCTION_URL = 'https://donutcash.runasp.net';
+const PRODUCTION_URL = 'https://donutspin.runasp.net';
 const PASSWORD = 'MailDelivery!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const unique = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
 let db: DB;
@@ -50,7 +50,7 @@ beforeAll(async () => {
   dbModule.setSetting(db, 'email.port', sink.port, null);
   dbModule.setSetting(db, 'email.secure', false, null);
   dbModule.setSetting(db, 'email.user', 'sink-user', null);
-  dbModule.setSetting(db, 'email.from_email', 'no-reply@donutcash.runasp.net', null);
+  dbModule.setSetting(db, 'email.from_email', 'no-reply@donutspin.runasp.net', null);
   dbModule.setSetting(db, 'email.from_name', 'DonutSpin', null);
   dbModule.setSetting(db, 'email.smtp_pass_enc', cryptoModule.encryptSecret('sink-password'), null);
 

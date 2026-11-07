@@ -11,7 +11,7 @@ import type { DB } from '../server/db/index.ts';
  */
 
 const PASSWORD = 'NoProxyTrust!2026';
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const unique = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
 let db: DB;

@@ -17,7 +17,7 @@ import { backupBeforeMigrations } from '../server/db/safety.ts';
 
 const tempDirs: string[] = [];
 
-function tempDir(prefix = 'donutcash-deploy-'): string {
+function tempDir(prefix = 'donutspin-deploy-'): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   tempDirs.push(dir);
   return dir;
@@ -70,9 +70,9 @@ describe('persistent database path resolution', () => {
     expect(resolved.dataDir).toBe(path.join(appRoot, 'App_Data'));
   });
 
-  it('honours DONUTCASH_DATA_DIR for data kept outside the site folder', () => {
+  it('honours DONUTSPIN_DATA_DIR for data kept outside the site folder', () => {
     const appRoot = tempDir();
-    const resolved = resolveDatabasePath({ DONUTCASH_DATA_DIR: '../private-data' }, appRoot, () => false);
+    const resolved = resolveDatabasePath({ DONUTSPIN_DATA_DIR: '../private-data' }, appRoot, () => false);
     expect(resolved.dataDir).toBe(path.resolve(appRoot, '../private-data'));
     expect(resolved.databasePath).toBe(path.join(resolved.dataDir, 'aurum.db'));
     expect(resolved.source).toBe('data_dir_env');
@@ -182,6 +182,36 @@ describe('seed and migrations preserve production values', () => {
       expect(
         (db.prepare('SELECT COUNT(*) AS count FROM settings').get() as { count: number }).count,
       ).toBeGreaterThanOrEqual(beforeSettings.count);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('migrates historical brand names and the old sender domain for existing databases', () => {
+    const db = createDatabase(':memory:');
+    try {
+      // Simulate a database created before the DonutSpin rename and before the
+      // sender-domain migration; both must be rebranded on the next boot.
+      db.prepare('DELETE FROM schema_migrations WHERE version IN (22, 23)').run();
+      setSetting(db, 'platform.name', 'DonutCash', null);
+      setSetting(db, 'email.from_name', 'Donutcash', null);
+      setSetting(db, 'email.from_email', 'no-reply@donutcash.local', null);
+
+      migrate(db);
+
+      const read = (key: string) =>
+        JSON.parse(
+          (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string }).value,
+        ) as unknown;
+      expect(read('platform.name')).toBe('DonutSpin');
+      expect(read('email.from_name')).toBe('DonutSpin');
+      expect(read('email.from_email')).toBe('no-reply@donutspin.local');
+
+      // A name an operator chose is never rewritten by the rebrand migrations.
+      setSetting(db, 'platform.name', 'Custom Casino', null);
+      db.prepare('DELETE FROM schema_migrations WHERE version = 22').run();
+      migrate(db);
+      expect(read('platform.name')).toBe('Custom Casino');
     } finally {
       db.close();
     }

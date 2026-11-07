@@ -66,8 +66,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onUnauthorized = () => setUser(null);
-    window.addEventListener('donutcash:unauthorized', onUnauthorized);
-    return () => window.removeEventListener('donutcash:unauthorized', onUnauthorized);
+    window.addEventListener('donutspin:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('donutspin:unauthorized', onUnauthorized);
   }, []);
 
   const login = useCallback(async (identifier: string, password: string, turnstileToken?: string) => {

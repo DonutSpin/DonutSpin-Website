@@ -6,7 +6,7 @@ import { assertDatabasePathSafe } from '../server/config.ts';
 import { createDatabase, type DB } from '../server/db/index.ts';
 import { createTurnstileVerifier, type TurnstileSettings } from '../server/lib/turnstile.ts';
 
-const CSRF = { 'X-Requested-With': 'donutcash' };
+const CSRF = { 'X-Requested-With': 'donutspin' };
 const PASSWORD = 'TurnstileTest!2026';
 const CONSENT = { ageConfirmed: true, acceptTerms: true, acknowledgeDonutRules: true };
 
@@ -90,11 +90,11 @@ describe('Turnstile enforcement', () => {
   });
 
   it('registers only after a successful Siteverify response', async () => {
-    const { app } = makeApp(enabled({ expectedHostname: 'donutcash.runasp.net' }));
+    const { app } = makeApp(enabled({ expectedHostname: 'donutspin.runasp.net' }));
     const calls = mockSiteverify({
       success: true,
       action: 'register',
-      hostname: 'donutcash.runasp.net',
+      hostname: 'donutspin.runasp.net',
     });
     const username = unique('goodcaptcha');
 
@@ -191,7 +191,7 @@ describe('Turnstile enforcement', () => {
   });
 
   it('rejects a token issued for a different hostname when configured', async () => {
-    const { app } = makeApp(enabled({ expectedHostname: 'donutcash.runasp.net' }));
+    const { app } = makeApp(enabled({ expectedHostname: 'donutspin.runasp.net' }));
     mockSiteverify({ success: true, action: 'register', hostname: 'attacker.example' });
     const username = unique('hostmismatch');
 
