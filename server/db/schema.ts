@@ -1047,6 +1047,19 @@ UPDATE settings SET value = '"no-reply@donutspin.local"'
  WHERE key = 'email.from_email' AND value = '"no-reply@donutcash.local"';
 `,
   },
+  {
+    version: 24,
+    name: 'donutspin_email_origin',
+    // Keep sender and reply-to addresses on the public origin when they were
+    // stored with the old site domain. Brevo still has to verify the new
+    // domain before production delivery works.
+    sql: `
+UPDATE settings
+   SET value = replace(value, '@donutcash.runasp.net', '@donutspin.runasp.net')
+ WHERE key IN ('email.from_email', 'email.reply_to')
+   AND value LIKE '%@donutcash.runasp.net%';
+`,
+  },
 ];
 
 export function pendingMigrations(db: Database): { version: number; name: string }[] {

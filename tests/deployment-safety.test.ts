@@ -212,6 +212,12 @@ describe('seed and migrations preserve production values', () => {
       db.prepare('DELETE FROM schema_migrations WHERE version = 22').run();
       migrate(db);
       expect(read('platform.name')).toBe('Custom Casino');
+
+      // An email sender stored on the old public origin follows the new domain.
+      setSetting(db, 'email.from_email', 'no-reply@donutcash.runasp.net', null);
+      db.prepare('DELETE FROM schema_migrations WHERE version = 24').run();
+      migrate(db);
+      expect(read('email.from_email')).toBe('no-reply@donutspin.runasp.net');
     } finally {
       db.close();
     }
