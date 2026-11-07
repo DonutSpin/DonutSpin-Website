@@ -25,6 +25,9 @@ export interface CashierRow {
   decision_reason: string | null;
   decided_at: string | null;
   ledger_id: string | null;
+  held_at: string | null;
+  held_by: string | null;
+  hold_reason: string | null;
   created_at: string;
   updated_at: string;
   last_activity_at: string;
@@ -98,6 +101,9 @@ function mapSummary(row: CashierRow): CashierRequestSummary {
     decidedAt: row.decided_at,
     ledgerId: row.ledger_id,
     messageCount: row.message_count ?? 0,
+    onHold: Boolean(row.held_at),
+    holdReason: row.hold_reason,
+    heldAt: row.held_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastActivityAt: row.last_activity_at,
@@ -158,6 +164,7 @@ export function cashierCounts(db: DB, requesterId?: string): CashierCounts {
       `SELECT
          COUNT(*) AS all_count,
          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+         COALESCE(SUM(CASE WHEN status = 'pending' AND held_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS on_hold_count,
          COALESCE(SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END), 0) AS approved_count,
          COALESCE(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected_count,
          COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled_count,
@@ -169,6 +176,7 @@ export function cashierCounts(db: DB, requesterId?: string): CashierCounts {
   return {
     all: row.all_count ?? 0,
     pending: row.pending_count ?? 0,
+    onHold: row.on_hold_count ?? 0,
     approved: row.approved_count ?? 0,
     rejected: row.rejected_count ?? 0,
     cancelled: row.cancelled_count ?? 0,
@@ -233,10 +241,40 @@ export function getCashierDetail(db: DB, viewer: SessionUser, reference: string)
       ...(typeof row.requester_balance === 'number' ? { balance: row.requester_balance } : {}),
     },
     messages,
-    canDecide: canManage && row.status === 'pending',
+    canDecide: canManage && row.status === 'pending' && !row.held_at,
     canCancel: row.user_id === viewer.id && row.status === 'pending',
     canMessage: row.status !== 'cancelled',
+    canEdit: canManage && row.status === 'pending',
+    canHold: canManage && row.status === 'pending',
   };
+}
+
+export function addCashierEvent(
+  db: DB,
+  input: {
+    requestId: string;
+    actorId: string | null;
+    type: string;
+    fromValue?: string | number | null;
+    toValue?: string | number | null;
+    note?: string | null;
+  },
+): string {
+  const id = newId('cev');
+  db.prepare(
+    `INSERT INTO cashier_events (id, request_id, actor_id, type, from_value, to_value, note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    input.requestId,
+    input.actorId,
+    input.type,
+    input.fromValue === null || input.fromValue === undefined ? null : String(input.fromValue),
+    input.toValue === null || input.toValue === undefined ? null : String(input.toValue),
+    input.note ?? null,
+    nowIso(),
+  );
+  return id;
 }
 
 export function addCashierMessage(

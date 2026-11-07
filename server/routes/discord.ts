@@ -67,6 +67,10 @@ const configSchema = z.object({
       news: optionalSnowflake,
       changelog: optionalSnowflake,
       logs: optionalSnowflake,
+      tickets: optionalSnowflake,
+      ticketTranscripts: optionalSnowflake,
+      cashierRequests: optionalSnowflake,
+      cashierTranscripts: optionalSnowflake,
     })
     .partial()
     .optional(),

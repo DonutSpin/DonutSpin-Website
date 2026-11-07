@@ -129,7 +129,7 @@ Email is optional and disabled until an owner enables it in **Admin → Email**.
 
 The preconfigured Brevo relay is `smtp-relay.brevo.com:587` (STARTTLS) with login `c05ccf001@smtp-brevo.com`. Add the SMTP key in the admin panel, set a sender on a domain verified in Brevo, enable delivery, then send a test email. Delivery is queued in SQLite with exponential retries and an admin-visible delivery log; a mail failure never blocks registration, rewards, cashier decisions, or sign-in.
 
-Templates cover welcome, email verification, password reset, password/email changes, new sign-ins, cashier decisions, daily rewards, and staff announcements. Each message has an HTML version and a plain-text fallback, with notification preferences linked in the footer.
+Templates cover welcome, email verification, password reset, password/email changes, new sign-ins, cashier decisions, daily rewards, staff announcements, and support tickets. A ticket creation receipt is transactional and always includes the production ticket link. Staff replies are grouped into a delayed digest that is skipped while the requester is actively reading the ticket, so an active conversation does not produce an email per message. Each message has an HTML version and a plain-text fallback, with notification preferences linked in the footer.
 
 ### Bot protection (Cloudflare Turnstile)
 
@@ -457,6 +457,8 @@ Configuration, codes, announcements, invite rewards, and the primary guild live 
 
 **Info panels** are managed in the same page under the **Info panels** tab. Add any Discord channel once, give it a category (for example Development, Community, or Rules), then publish explanatory panels with embed copy, colours, images, and up to four link buttons. Editing a panel updates the same Discord message, so no channel ID or embed copy needs to be hardcoded in the bot.
 
+**Support logging** uses four dedicated channels, configured under **Admin → Discord bot → Configuration** or in `/setup`: ticket notifications (`#tickets`), ticket transcripts (`#ticket-transcripts`), cashier request logs (`#cashier-requests`), and cashier transcripts (`#cashier-transcripts`). The bot falls back to channels with those names when an ID is not configured. New tickets and the first staff reply in a conversation mention the configured owner, admin, and support role IDs with real role mentions; the bot never pings `@everyone` for these events. Ticket transcripts are attached as text on close and reopen. Every cashier action (created, approved, rejected, cancelled, amount changed, on hold, resumed) is logged with an embed, and a single growing audit transcript is maintained per request. Mark both transcript channels private and grant access only to authorized staff.
+
 ### Commands
 
 | Command | Purpose |
@@ -486,7 +488,7 @@ The self-exclusion endpoint is `POST /api/me/self-exclusion` with `{ duration: '
 
 ## Tests
 
-The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, archived legacy money-request records, cashier deposits/withdrawals and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, maintenance blocking, and the shared Discord bot API (linking, invite rewards and personal links, vouches, codes, giveaways, announcements, update channels and info panels, outbox leases, and permission gates). The Discord tests use the real bot HTTP surface but do not connect to Discord itself; live gateway behaviour is verified against a development server.
+The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, ticket creation and grouped reply emails with production links, support and cashier Discord logging and transcripts, archived legacy money-request records, cashier deposits/withdrawals, holds, amount edits and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, maintenance blocking, and the shared Discord bot API (linking, invite rewards and personal links, vouches, codes, giveaways, announcements, update channels and info panels, outbox leases, transcript delivery, and permission gates). The Discord tests use the real bot HTTP surface but do not connect to Discord itself; live gateway behaviour is verified against a development server.
 
 ```bash
 npm run typecheck
@@ -541,7 +543,7 @@ build/                Generated server build output (ignored by Git)
 
 - **Manual cashier review.** Cashier deposits and withdrawals are manual ledger movements settled by an owner or administrator; there is no automated payment rail. Game outcomes and balances are always server-authoritative.
 - **Email needs an owner setup step.** Delivery stays off until an owner saves a valid SMTP key and sender in **Admin → Email**. Until then, verification and reset links are written to the server log (and reset links can be exposed locally with `EXPOSE_RESET_TOKEN=true`).
-- **No attachments** in support tickets.
+- **No attachments** in support tickets. Ticket and cashier transcripts state this explicitly where an attachment section would appear.
 - **The email queue runs inside the API process.** It is durable in SQLite and retries safely, but run a single API process, as with the rest of the SQLite deployment.
 - **SQLite is single-process oriented.** Use one server instance and a persistent volume; scale by snapshot/read replicas only with a proper migration, not by pointing multiple writers at the file.
 - **Browser automation is not part of `npm test`.** The committed tests are API/integration tests; UI flows are verified manually.

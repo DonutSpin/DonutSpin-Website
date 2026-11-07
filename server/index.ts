@@ -3,6 +3,8 @@ import { getDatabase, closeDatabase } from './db/index.ts';
 import { assertProductionDatabaseAvailable, config, ensureDataDir } from './config.ts';
 import { assertProductionSecrets } from './lib/crypto.ts';
 import { processEmailQueue } from './lib/email.ts';
+import { processTicketReplyDigests } from './lib/support-notifications.ts';
+import { flushPendingSupportTranscripts } from './lib/discord/support.ts';
 import { settleDueRain } from './lib/rain.ts';
 import { settleDueGiveaways } from './lib/giveaways.ts';
 import { ensureBootstrapOwner } from './lib/owner-bootstrap.ts';
@@ -58,6 +60,27 @@ emailTimer.unref();
 setTimeout(() => {
   void processEmailQueue(db, 10).catch(() => undefined);
 }, 4_000).unref();
+
+// Support digests wait out a short grace period so a fast back-and-forth does
+// not email every message. Transcript recovery re-queues rows whose outbox
+// insert was interrupted; every operation is keyed and idempotent.
+const supportTimer = setInterval(() => {
+  try {
+    processTicketReplyDigests(db, 20);
+    flushPendingSupportTranscripts(db);
+  } catch (error) {
+    console.warn('[support] notification tick failed:', error instanceof Error ? error.message : error);
+  }
+}, 15_000);
+supportTimer.unref();
+setTimeout(() => {
+  try {
+    processTicketReplyDigests(db, 20);
+    flushPendingSupportTranscripts(db);
+  } catch {
+    /* the scheduled tick retries */
+  }
+}, 8_000).unref();
 
 // Rain countdowns belong to the server, not the creator's browser. This tick
 // settles an expired rain even when every tab is closed. Settlement is
@@ -134,6 +157,7 @@ process.on('unhandledRejection', (reason) => {
 function shutdown(signal: string): void {
   console.info(`[donutspin] ${signal} received, closing server`);
   clearInterval(emailTimer);
+  clearInterval(supportTimer);
   clearInterval(rainTimer);
   clearInterval(giveawayTimer);
   server.close(() => {

@@ -25,6 +25,7 @@ import { enqueueEmail } from '../lib/email.ts';
 import { assertNotInMaintenance } from '../lib/maintenance.ts';
 import { cashierRequestLimiter } from '../lib/rate-limit.ts';
 import {
+  addCashierEvent,
   addCashierMessage,
   buildCashierList,
   canManageCashier,
@@ -34,6 +35,7 @@ import {
   loadCashierRow,
   notifyCashierAdmins,
 } from '../lib/cashier.ts';
+import { queueCashierNotification, queueCashierTranscript } from '../lib/discord/support.ts';
 
 const createSchema = z.object({
   kind: z.enum(['deposit', 'withdrawal']),
@@ -60,6 +62,15 @@ const decisionSchema = z
       ctx.addIssue({ code: 'custom', path: ['reason'], message: 'Record a reason of at least 5 characters.' });
     }
   });
+
+const cancelSchema = z.object({ reason: z.string().trim().max(500).optional() });
+
+const amountEditSchema = z.object({
+  amount: amountSchema({ max: 1_000_000_000_000 }),
+  reason: z.string().trim().max(500).optional(),
+});
+
+const holdSchema = z.object({ reason: z.string().trim().min(3, 'Record a short reason.').max(500) });
 
 function requestLimit(db: DB): number {
   return getSetting(db, 'economy.cashier_request_limit', 5_000_000_000);
@@ -144,6 +155,13 @@ export function createCashierRouter(db: DB): Router {
         visibility: 'system',
         body: `${kindLabel(body.kind)} request created for ${compactAmount(body.amount)} DonutSMP money.`,
       });
+      addCashierEvent(db, {
+        requestId,
+        actorId: user.id,
+        type: 'created',
+        toValue: 'pending',
+        note: `${kindLabel(body.kind)} request created for ${body.amount} money.`,
+      });
       notifyCashierAdmins(db, {
         title: `New ${body.kind} request ${ref}`,
         body: `${user.username} requested ${compactAmount(body.amount)} DonutSMP money.`,
@@ -161,6 +179,22 @@ export function createCashierRouter(db: DB): Router {
       });
       return ref;
     });
+
+    const created = loadRequestOrThrow(db, reference);
+    queueCashierNotification(db, {
+      event: 'created',
+      eventKey: 'created',
+      requestId: created.id,
+      reference: created.reference,
+      username: created.requester_name ?? user.username,
+      userId: created.user_id,
+      kind: created.kind,
+      amount: created.amount,
+      status: created.status,
+      onHold: false,
+      createdAt: created.created_at,
+    });
+    queueCashierTranscript(db, { requestId: created.id, eventKey: 'created', actorId: user.id });
 
     res.status(201).json({ request: getCashierDetail(db, user, reference) });
   });
@@ -181,6 +215,7 @@ export function createCashierRouter(db: DB): Router {
       throw conflict('This cashier request was cancelled. Open a new request if you still need help.', 'REQUEST_CANCELLED');
     }
 
+    let messageEventId = '';
     inTransaction(db, () => {
       addCashierMessage(db, {
         requestId: row.id,
@@ -188,6 +223,12 @@ export function createCashierRouter(db: DB): Router {
         authorRole: user.role,
         visibility: 'public',
         body: body.body,
+      });
+      messageEventId = addCashierEvent(db, {
+        requestId: row.id,
+        actorId: user.id,
+        type: 'message',
+        note: `Requester message: ${body.body.slice(0, 300)}`,
       });
       notifyCashierAdmins(db, {
         title: `New message on ${row.reference}`,
@@ -205,17 +246,20 @@ export function createCashierRouter(db: DB): Router {
         ip: clientIp(req),
       });
     });
+    queueCashierTranscript(db, { requestId: row.id, eventKey: messageEventId, actorId: user.id });
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });
 
   router.post('/:reference/cancel', (req, res) => {
     const user = requireActive(req);
+    const body = parse(cancelSchema, req.body ?? {});
     const row = loadRequestOrThrow(db, req.params.reference ?? '');
     assertOwnRequest(user, row);
     if (row.status !== 'pending') {
       throw conflict('Only pending requests can be cancelled.', 'REQUEST_FINAL');
     }
 
+    let eventId = '';
     inTransaction(db, () => {
       const now = nowIso();
       const updated = db
@@ -232,7 +276,15 @@ export function createCashierRouter(db: DB): Router {
         authorId: user.id,
         authorRole: user.role,
         visibility: 'system',
-        body: 'Request cancelled by the requester.',
+        body: `Request cancelled by the requester.${body.reason ? ` Reason: ${body.reason}` : ''}`,
+      });
+      eventId = addCashierEvent(db, {
+        requestId: row.id,
+        actorId: user.id,
+        type: 'cancelled',
+        fromValue: 'pending',
+        toValue: 'cancelled',
+        note: body.reason ?? 'Cancelled by the requester',
       });
       recordAudit(db, {
         actorId: user.id,
@@ -243,6 +295,22 @@ export function createCashierRouter(db: DB): Router {
         ip: clientIp(req),
       });
     });
+    queueCashierNotification(db, {
+      event: 'cancelled',
+      eventKey: eventId,
+      requestId: row.id,
+      reference: row.reference,
+      username: row.requester_name ?? user.username,
+      userId: row.user_id,
+      kind: row.kind,
+      amount: row.amount,
+      status: 'cancelled',
+      onHold: false,
+      reason: body.reason ?? null,
+      createdAt: row.created_at,
+      decidedAt: nowIso(),
+    });
+    queueCashierTranscript(db, { requestId: row.id, eventKey: eventId, actorId: user.id });
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });
 
@@ -289,6 +357,7 @@ export function createAdminCashierRouter(db: DB): Router {
       throw conflict('This cashier request was cancelled.', 'REQUEST_CANCELLED');
     }
 
+    let messageEventId = '';
     inTransaction(db, () => {
       addCashierMessage(db, {
         requestId: row.id,
@@ -296,6 +365,12 @@ export function createAdminCashierRouter(db: DB): Router {
         authorRole: user.role,
         visibility: 'public',
         body: body.body,
+      });
+      messageEventId = addCashierEvent(db, {
+        requestId: row.id,
+        actorId: user.id,
+        type: 'message',
+        note: `Staff message: ${body.body.slice(0, 300)}`,
       });
       notify(db, {
         userId: row.user_id,
@@ -314,6 +389,7 @@ export function createAdminCashierRouter(db: DB): Router {
         ip: clientIp(req),
       });
     });
+    queueCashierTranscript(db, { requestId: row.id, eventKey: messageEventId, actorId: user.id });
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });
 
@@ -326,6 +402,9 @@ export function createAdminCashierRouter(db: DB): Router {
     if (row.status !== 'pending') {
       throw conflict('This cashier request has already been reviewed.', 'ALREADY_DECIDED');
     }
+    if (row.held_at) {
+      throw conflict('This cashier request is on hold. Resume it before making a decision.', 'REQUEST_ON_HOLD');
+    }
 
     if (body.decision === 'approve' && row.kind === 'withdrawal' && balanceOf(db, row.user_id) < row.amount) {
       throw new ApiError(
@@ -336,6 +415,7 @@ export function createAdminCashierRouter(db: DB): Router {
       );
     }
 
+    let eventId = '';
     inTransaction(db, () => {
       const now = nowIso();
       const nextStatus = body.decision === 'approve' ? 'approved' : 'rejected';
@@ -385,6 +465,15 @@ export function createAdminCashierRouter(db: DB): Router {
         });
       }
 
+      eventId = addCashierEvent(db, {
+        requestId: row.id,
+        actorId: user.id,
+        type: body.decision === 'approve' ? 'approved' : 'rejected',
+        fromValue: 'pending',
+        toValue: nextStatus,
+        note: body.reason ?? null,
+      });
+
       notify(db, {
         userId: row.user_id,
         type: 'cashier',
@@ -427,6 +516,247 @@ export function createAdminCashierRouter(db: DB): Router {
       });
     });
 
+    const decided = loadRequestOrThrow(db, row.reference);
+    queueCashierNotification(db, {
+      event: body.decision === 'approve' ? 'approved' : 'rejected',
+      eventKey: eventId,
+      requestId: row.id,
+      reference: row.reference,
+      username: row.requester_name ?? 'Unknown',
+      userId: row.user_id,
+      kind: row.kind,
+      amount: row.amount,
+      status: body.decision === 'approve' ? 'approved' : 'rejected',
+      onHold: Boolean(decided.held_at),
+      staffName: user.username,
+      reason: body.reason ?? null,
+      createdAt: row.created_at,
+      decidedAt: decided.decided_at,
+    });
+    queueCashierTranscript(db, { requestId: row.id, eventKey: eventId, actorId: user.id });
+
+    res.json({ request: getCashierDetail(db, user, row.reference) });
+  });
+
+  router.post('/:reference/amount', (req, res) => {
+    const user = requireActive(req);
+    requirePermission(req, 'credits.adjust');
+    if (!canManageCashier(user)) throw new ApiError(403, 'FORBIDDEN', 'Only administrators can edit cashier amounts.');
+    const body = parse(amountEditSchema, req.body);
+    const row = loadRequestOrThrow(db, req.params.reference ?? '');
+    if (row.status !== 'pending' || row.held_at) {
+      throw conflict('Only pending requests that are not on hold can be edited.', 'REQUEST_NOT_EDITABLE');
+    }
+    if (row.kind === 'withdrawal' && body.amount > balanceOf(db, row.user_id)) {
+      throw badRequest('The requester does not have enough money for that withdrawal amount.', 'INSUFFICIENT_CREDITS');
+    }
+
+    let eventId = '';
+    inTransaction(db, () => {
+      const now = nowIso();
+      const updated = db
+        .prepare(
+          `UPDATE cashier_requests SET amount = ?, updated_at = ?, last_activity_at = ?
+            WHERE id = ? AND status = 'pending' AND held_at IS NULL AND amount = ?`,
+        )
+        .run(body.amount, now, now, row.id, row.amount);
+      if (updated.changes !== 1) {
+        throw conflict('Another administrator changed this request first. Refresh and try again.', 'REQUEST_CHANGED');
+      }
+      addCashierMessage(db, {
+        requestId: row.id,
+        authorId: user.id,
+        authorRole: user.role,
+        visibility: 'system',
+        body: `Amount changed by ${user.username} from ${compactAmount(row.amount)} to ${compactAmount(body.amount)} money.${
+          body.reason ? ` Reason: ${body.reason}` : ''
+        }`,
+      });
+      eventId = addCashierEvent(db, {
+        requestId: row.id,
+        actorId: user.id,
+        type: 'amount_changed',
+        fromValue: row.amount,
+        toValue: body.amount,
+        note: body.reason ?? null,
+      });
+      notify(db, {
+        userId: row.user_id,
+        type: 'cashier',
+        title: `Amount updated on ${row.reference}`,
+        body: `${user.username} changed your request from ${compactAmount(row.amount)} to ${compactAmount(body.amount)} money.`,
+        link: `/cashier/${row.reference}`,
+        actorId: user.id,
+      });
+      recordAudit(db, {
+        actorId: user.id,
+        action: 'cashier.amount',
+        targetType: 'cashier_request',
+        targetId: row.id,
+        targetLabel: row.reference,
+        reason: body.reason ?? null,
+        metadata: { from: row.amount, to: body.amount },
+        ip: clientIp(req),
+      });
+    });
+    queueCashierNotification(db, {
+      event: 'amount_changed',
+      eventKey: eventId,
+      requestId: row.id,
+      reference: row.reference,
+      username: row.requester_name ?? 'Unknown',
+      userId: row.user_id,
+      kind: row.kind,
+      amount: body.amount,
+      previousAmount: row.amount,
+      status: 'pending',
+      onHold: false,
+      staffName: user.username,
+      reason: body.reason ?? null,
+      createdAt: row.created_at,
+    });
+    queueCashierTranscript(db, { requestId: row.id, eventKey: eventId, actorId: user.id });
+    res.json({ request: getCashierDetail(db, user, row.reference) });
+  });
+
+  router.post('/:reference/hold', (req, res) => {
+    const user = requireActive(req);
+    requirePermission(req, 'credits.adjust');
+    if (!canManageCashier(user)) throw new ApiError(403, 'FORBIDDEN', 'Only administrators can put requests on hold.');
+    const body = parse(holdSchema, req.body);
+    const row = loadRequestOrThrow(db, req.params.reference ?? '');
+    if (row.status !== 'pending' || row.held_at) {
+      throw conflict('Only pending requests can be put on hold.', 'REQUEST_NOT_HOLDABLE');
+    }
+    let eventId = '';
+    inTransaction(db, () => {
+      const now = nowIso();
+      const updated = db
+        .prepare(
+          `UPDATE cashier_requests SET held_at = ?, held_by = ?, hold_reason = ?, updated_at = ?, last_activity_at = ?
+            WHERE id = ? AND status = 'pending' AND held_at IS NULL`,
+        )
+        .run(now, user.id, body.reason, now, now, row.id);
+      if (updated.changes !== 1) {
+        throw conflict('Another administrator changed this request first. Refresh and try again.', 'REQUEST_CHANGED');
+      }
+      addCashierMessage(db, {
+        requestId: row.id,
+        authorId: user.id,
+        authorRole: user.role,
+        visibility: 'system',
+        body: `Request placed on hold by ${user.username}. Reason: ${body.reason}`,
+      });
+      eventId = addCashierEvent(db, {
+        requestId: row.id,
+        actorId: user.id,
+        type: 'on_hold',
+        toValue: 'on_hold',
+        note: body.reason,
+      });
+      notify(db, {
+        userId: row.user_id,
+        type: 'cashier',
+        title: `${row.reference} is on hold`,
+        body: `An administrator put your request on hold. Reason: ${body.reason}`,
+        link: `/cashier/${row.reference}`,
+        actorId: user.id,
+      });
+      recordAudit(db, {
+        actorId: user.id,
+        action: 'cashier.hold',
+        targetType: 'cashier_request',
+        targetId: row.id,
+        targetLabel: row.reference,
+        reason: body.reason,
+        ip: clientIp(req),
+      });
+    });
+    queueCashierNotification(db, {
+      event: 'on_hold',
+      eventKey: eventId,
+      requestId: row.id,
+      reference: row.reference,
+      username: row.requester_name ?? 'Unknown',
+      userId: row.user_id,
+      kind: row.kind,
+      amount: row.amount,
+      status: 'pending',
+      onHold: true,
+      staffName: user.username,
+      reason: body.reason,
+      createdAt: row.created_at,
+    });
+    queueCashierTranscript(db, { requestId: row.id, eventKey: eventId, actorId: user.id });
+    res.json({ request: getCashierDetail(db, user, row.reference) });
+  });
+
+  router.delete('/:reference/hold', (req, res) => {
+    const user = requireActive(req);
+    requirePermission(req, 'credits.adjust');
+    if (!canManageCashier(user)) throw new ApiError(403, 'FORBIDDEN', 'Only administrators can resume cashier requests.');
+    const row = loadRequestOrThrow(db, req.params.reference ?? '');
+    if (!row.held_at) throw conflict('This request is not on hold.', 'REQUEST_NOT_HELD');
+    let eventId = '';
+    inTransaction(db, () => {
+      const now = nowIso();
+      const updated = db
+        .prepare(
+          `UPDATE cashier_requests SET held_at = NULL, held_by = NULL, hold_reason = NULL,
+                  updated_at = ?, last_activity_at = ?
+            WHERE id = ? AND held_at IS NOT NULL`,
+        )
+        .run(now, now, row.id);
+      if (updated.changes !== 1) {
+        throw conflict('Another administrator already resumed this request.', 'REQUEST_CHANGED');
+      }
+      addCashierMessage(db, {
+        requestId: row.id,
+        authorId: user.id,
+        authorRole: user.role,
+        visibility: 'system',
+        body: `Request resumed by ${user.username}.`,
+      });
+      eventId = addCashierEvent(db, {
+        requestId: row.id,
+        actorId: user.id,
+        type: 'resumed',
+        fromValue: 'on_hold',
+        toValue: 'pending',
+      });
+      notify(db, {
+        userId: row.user_id,
+        type: 'cashier',
+        title: `${row.reference} resumed`,
+        body: 'Your cashier request is back in the review queue.',
+        link: `/cashier/${row.reference}`,
+        actorId: user.id,
+      });
+      recordAudit(db, {
+        actorId: user.id,
+        action: 'cashier.resume',
+        targetType: 'cashier_request',
+        targetId: row.id,
+        targetLabel: row.reference,
+        ip: clientIp(req),
+      });
+    });
+    queueCashierNotification(db, {
+      event: 'resumed',
+      eventKey: eventId,
+      requestId: row.id,
+      reference: row.reference,
+      username: row.requester_name ?? 'Unknown',
+      userId: row.user_id,
+      kind: row.kind,
+      amount: row.amount,
+      status: 'pending',
+      onHold: false,
+      staffName: user.username,
+      reason: row.hold_reason,
+      createdAt: row.created_at,
+    });
+    queueCashierTranscript(db, { requestId: row.id, eventKey: eventId, actorId: user.id });
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });
 

@@ -8,6 +8,7 @@ import type {
 } from '../../../shared/types.ts';
 import { getGuildConfig, getPrimaryGuild, isDiscordSnowflake } from './core.ts';
 import { completeOutbox, enqueueOutbox, type ClaimedOutboxEvent } from './outbox.ts';
+import { markCashierTranscriptSent, markTicketTranscriptSent } from './support.ts';
 
 /**
  * Website-originated events use the primary Discord guild. Bot-originated
@@ -385,6 +386,21 @@ export function attachOutboxMessage(db: DB, event: ClaimedOutboxEvent, messageId
       if (typeof id === 'string') {
         db.prepare("UPDATE discord_panels SET message_id = NULL WHERE id = ? AND status = 'deleted'").run(id);
       }
+      break;
+    }
+    case 'ticket_transcript': {
+      const id = event.payload.transcriptId;
+      if (typeof id === 'string') markTicketTranscriptSent(db, id, messageId);
+      break;
+    }
+    case 'cashier_transcript': {
+      const id = event.payload.transcriptId;
+      if (typeof id === 'string') markCashierTranscriptSent(db, id, messageId);
+      break;
+    }
+    case 'ticket_notification':
+    case 'cashier_notification': {
+      // Fire-and-forget log messages; there is no website record to attach.
       break;
     }
     default:

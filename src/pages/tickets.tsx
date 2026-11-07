@@ -452,12 +452,37 @@ export function TicketDetailPage({ mode = 'user' }: { mode?: 'user' | 'staff' | 
     setStatusTarget(null);
   }, [reference]);
 
+  // An action response is shown immediately, then replaced by the next server
+  // snapshot. This matters for the visible-tab poller, which must not stay
+  // pinned to the state captured when the user last sent a message.
+  useEffect(() => {
+    if (query.data?.ticket) setOverride(null);
+  }, [query.data]);
+
+  // Opening the conversation is a presence signal for smart email digests.
+  // Poll only while the tab is visible so a closed or hidden tab quickly looks
+  // offline; the GET also refreshes replies and records the read marker.
+  useEffect(() => {
+    if (!reference) return;
+    const tick = () => {
+      if (document.visibilityState === 'visible') query.refetch();
+    };
+    const timer = window.setInterval(tick, 15_000);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+    };
+  }, [reference, query.refetch]);
+
   const apply = (updated: TicketDetail) => setOverride(updated);
 
   if (!reference) return null;
 
   if (query.loading && !ticket) return <LoadingBlock label="Opening ticket" />;
-  if (query.error || !ticket) {
+  if (!ticket) {
     return (
       <div>
         <PageHeader
@@ -492,6 +517,7 @@ export function TicketDetailPage({ mode = 'user' }: { mode?: 'user' | 'staff' | 
     try {
       const result = await action();
       apply(result.ticket);
+      query.refetch();
       success(successMessage);
       return true;
     } catch (err) {
@@ -513,6 +539,7 @@ export function TicketDetailPage({ mode = 'user' }: { mode?: 'user' | 'staff' | 
         visibility: internal ? 'internal' : 'public',
       });
       apply(result.ticket);
+      query.refetch();
       setMessage('');
       setInternal(false);
       success(internal ? 'Internal note saved' : 'Reply sent');

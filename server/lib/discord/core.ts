@@ -83,6 +83,10 @@ interface GuildConfigRow {
   news_channel_id: string | null;
   changelog_channel_id: string | null;
   logs_channel_id: string | null;
+  ticket_channel_id: string | null;
+  ticket_transcripts_channel_id: string | null;
+  cashier_channel_id: string | null;
+  cashier_transcripts_channel_id: string | null;
   owner_role_ids: string;
   admin_role_ids: string;
   staff_role_ids: string;
@@ -158,6 +162,10 @@ export function defaultGuildConfig(guildId: string): DiscordGuildConfig {
       news: null,
       changelog: null,
       logs: null,
+      tickets: null,
+      ticketTranscripts: null,
+      cashierRequests: null,
+      cashierTranscripts: null,
     },
     roles: emptyRoles(),
     inviteRewardsEnabled: true,
@@ -192,6 +200,10 @@ export function mapGuildConfig(db: DB, row: GuildConfigRow): DiscordGuildConfig 
       news: row.news_channel_id,
       changelog: row.changelog_channel_id,
       logs: row.logs_channel_id,
+      tickets: row.ticket_channel_id,
+      ticketTranscripts: row.ticket_transcripts_channel_id,
+      cashierRequests: row.cashier_channel_id,
+      cashierTranscripts: row.cashier_transcripts_channel_id,
     },
     roles: {
       owner: parseIds(row.owner_role_ids),
@@ -658,7 +670,8 @@ export function updateGuildConfig(
     `UPDATE discord_guild_config SET
        welcome_channel_id = ?, vouch_channel_id = ?, scam_vouch_channel_id = ?, invite_channel_id = ?,
        codes_channel_id = ?, giveaway_channel_id = ?, news_channel_id = ?, changelog_channel_id = ?,
-       logs_channel_id = ?,
+       logs_channel_id = ?, ticket_channel_id = ?, ticket_transcripts_channel_id = ?,
+       cashier_channel_id = ?, cashier_transcripts_channel_id = ?,
        owner_role_ids = ?, admin_role_ids = ?, staff_role_ids = ?, moderator_role_ids = ?,
        invite_rewards_enabled = ?, invite_reward_every = ?, invite_reward_amount = ?,
        invite_panel_title = ?, invite_panel_body = ?, invite_copy_message = ?,
@@ -674,6 +687,10 @@ export function updateGuildConfig(
     channels.news,
     channels.changelog,
     channels.logs,
+    channels.tickets,
+    channels.ticketTranscripts,
+    channels.cashierRequests,
+    channels.cashierTranscripts,
     JSON.stringify(roles.owner),
     JSON.stringify(roles.admin),
     JSON.stringify(roles.staff),

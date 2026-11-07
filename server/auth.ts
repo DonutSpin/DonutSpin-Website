@@ -168,7 +168,10 @@ export function authMiddleware(db: DB) {
     };
     req.sessionId = row.session_id;
     const now = Date.now();
-    if (now - new Date(row.last_used_at).getTime() > 5 * 60_000) {
+    // Keep presence accurate enough for support notifications without writing
+    // on every two-second balance poll. A two-minute online window tolerates a
+    // short network blip while still treating a closed tab as offline.
+    if (now - new Date(row.last_used_at).getTime() > 30_000) {
       db.prepare('UPDATE sessions SET last_used_at = ? WHERE id = ?').run(nowIso(), row.session_id);
       db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(nowIso(), row.user_id);
     }

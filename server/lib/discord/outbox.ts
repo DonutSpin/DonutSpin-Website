@@ -23,7 +23,11 @@ export type DiscordEventType =
   | 'announcement_delete'
   | 'panel_post'
   | 'panel_edit'
-  | 'panel_delete';
+  | 'panel_delete'
+  | 'ticket_notification'
+  | 'ticket_transcript'
+  | 'cashier_notification'
+  | 'cashier_transcript';
 
 export interface ClaimedOutboxEvent {
   id: string;

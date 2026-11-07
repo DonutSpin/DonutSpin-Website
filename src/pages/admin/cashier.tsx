@@ -4,6 +4,9 @@ import {
   ArrowLeft,
   CheckCircle2,
   Landmark,
+  PauseCircle,
+  Pencil,
+  PlayCircle,
   Search,
   ShieldCheck,
   UserRound,
@@ -32,6 +35,7 @@ import {
 import {
   AccountStatusBadge,
   Alert,
+  AmountInput,
   Avatar,
   Badge,
   Button,
@@ -278,6 +282,12 @@ export function AdminCashierDetailPage() {
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionFields, setDecisionFields] = useState<Record<string, string>>({});
+  const [editOpen, setEditOpen] = useState(false);
+  const [editAmount, setEditAmount] = useState<number | ''>('');
+  const [editReason, setEditReason] = useState('');
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [holdReason, setHoldReason] = useState('');
+  const [actionBusy, setActionBusy] = useState(false);
   const request = query.data?.request;
 
   const sendMessage = async (body: string): Promise<boolean> => {
@@ -321,6 +331,54 @@ export function AdminCashierDetailPage() {
       if (err instanceof ApiRequestError) setDecisionFields(err.fieldErrors);
     } finally {
       setDecisionBusy(false);
+    }
+  };
+
+  const saveAmount = async () => {
+    if (!request || typeof editAmount !== 'number' || editAmount <= 0) return;
+    setActionBusy(true);
+    try {
+      await api.post(`/admin/cashier/${request.reference}/amount`, {
+        amount: editAmount,
+        reason: editReason.trim() || undefined,
+      });
+      success('Amount updated');
+      setEditOpen(false);
+      query.refetch();
+    } catch (err) {
+      toastError('Could not update the amount', errorMessage(err));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const holdRequest = async () => {
+    if (!request || holdReason.trim().length < 3) return;
+    setActionBusy(true);
+    try {
+      await api.post(`/admin/cashier/${request.reference}/hold`, { reason: holdReason.trim() });
+      success('Request placed on hold');
+      setHoldOpen(false);
+      setHoldReason('');
+      query.refetch();
+    } catch (err) {
+      toastError('Could not hold the request', errorMessage(err));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const resumeRequest = async () => {
+    if (!request) return;
+    setActionBusy(true);
+    try {
+      await api.delete(`/admin/cashier/${request.reference}/hold`);
+      success('Request resumed');
+      query.refetch();
+    } catch (err) {
+      toastError('Could not resume the request', errorMessage(err));
+    } finally {
+      setActionBusy(false);
     }
   };
 
@@ -444,6 +502,21 @@ export function AdminCashierDetailPage() {
             <div className="p-5">
               {request.status === 'pending' ? (
                 <>
+                  {request.onHold && (
+                    <Alert tone="warning" className="mb-3" title="On hold">
+                      {request.holdReason ?? 'This request is temporarily paused.'}
+                      <Button
+                        className="mt-3 w-full"
+                        variant="secondary"
+                        size="sm"
+                        loading={actionBusy}
+                        leftIcon={<PlayCircle className="h-3.5 w-3.5" />}
+                        onClick={() => void resumeRequest()}
+                      >
+                        Resume request
+                      </Button>
+                    </Alert>
+                  )}
                   {withdrawalShortfall && (
                     <Alert tone="warning" className="mb-3">
                       The requester's balance is now {money(request.requester.balance ?? 0)} money, below this
@@ -458,7 +531,7 @@ export function AdminCashierDetailPage() {
                       variant="primary"
                       leftIcon={<CheckCircle2 className="h-4 w-4" />}
                       onClick={() => openDecision('approve')}
-                      disabled={withdrawalShortfall}
+                      disabled={withdrawalShortfall || request.onHold}
                     >
                       Approve request
                     </Button>
@@ -466,13 +539,44 @@ export function AdminCashierDetailPage() {
                       variant="danger"
                       leftIcon={<XCircle className="h-4 w-4" />}
                       onClick={() => openDecision('reject')}
+                      disabled={request.onHold}
                     >
                       Reject request
                     </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={request.onHold}
+                        leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                        onClick={() => {
+                          setEditAmount(request.amount);
+                          setEditReason('');
+                          setEditOpen(true);
+                        }}
+                      >
+                        Edit amount
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={request.onHold}
+                        leftIcon={<PauseCircle className="h-3.5 w-3.5" />}
+                        onClick={() => setHoldOpen(true)}
+                      >
+                        Put on hold
+                      </Button>
+                    </div>
                   </div>
                 </>
               ) : (
                 <dl className="space-y-3 text-[11.5px]">
+                  {request.holdReason && (
+                    <div className="rounded-lg border border-warning/25 bg-warning/6 p-2.5">
+                      <dt className="text-[10px] uppercase tracking-wider text-warning">Hold reason</dt>
+                      <dd className="mt-1 leading-relaxed text-muted">{request.holdReason}</dd>
+                    </div>
+                  )}
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted">Status</dt>
                     <dd>
@@ -513,6 +617,58 @@ export function AdminCashierDetailPage() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Change the requested amount"
+        description="The requester is notified and the change is recorded in the audit transcript."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditOpen(false)} disabled={actionBusy}>
+              Cancel
+            </Button>
+            <Button variant="primary" loading={actionBusy} onClick={() => void saveAmount()}>
+              Save amount
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="New amount" hint="The request must still be pending and not on hold.">
+            <AmountInput value={editAmount} onChange={setEditAmount} min={1} />
+          </Field>
+          <Field label="Reason (optional)" hint="Shown to the requester and recorded in the transcript.">
+            <Textarea value={editReason} onChange={(event) => setEditReason(event.target.value)} rows={2} maxLength={500} />
+          </Field>
+        </div>
+      </Modal>
+
+      <Modal
+        open={holdOpen}
+        onClose={() => setHoldOpen(false)}
+        title="Place this request on hold?"
+        description="The requester stays notified, but decisions are paused until an administrator resumes it."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setHoldOpen(false)} disabled={actionBusy}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              loading={actionBusy}
+              disabled={holdReason.trim().length < 3}
+              onClick={() => void holdRequest()}
+            >
+              Put on hold
+            </Button>
+          </>
+        }
+      >
+        <Field label="Reason" required hint="At least 3 characters. Recorded in the audit transcript.">
+          <Textarea value={holdReason} onChange={(event) => setHoldReason(event.target.value)} rows={3} maxLength={500} />
+        </Field>
+      </Modal>
 
       <Modal
         open={Boolean(decision)}

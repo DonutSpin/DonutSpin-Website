@@ -458,6 +458,7 @@ export function getTicketDetail(db: DB, viewer: SessionUser, reference: string):
     canReply: userCanReply || staffCanReply,
     canNote: staff && can(viewer.role, 'tickets.note'),
     canAssign: staff && can(viewer.role, 'tickets.assign'),
+    canTranscript: staff && can(viewer.role, 'tickets.manage'),
   };
 }
 
@@ -471,12 +472,13 @@ export function addTicketEvent(
     toValue?: string | null;
     note?: string | null;
   },
-): void {
+): string {
+  const id = newId('tev');
   db.prepare(
     `INSERT INTO ticket_events (id, ticket_id, actor_id, type, from_value, to_value, note, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    newId('tev'),
+    id,
     input.ticketId,
     input.actorId,
     input.type,
@@ -485,6 +487,7 @@ export function addTicketEvent(
     input.note ?? null,
     nowIso(),
   );
+  return id;
 }
 
 export function addTicketMessage(

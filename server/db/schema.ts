@@ -1087,6 +1087,97 @@ CREATE TABLE discord_invite_links (
 CREATE INDEX discord_invite_links_guild_idx ON discord_invite_links(guild_id, created_at DESC);
 `,
   },
+  {
+    version: 26,
+    name: 'support_notifications_and_transcripts',
+    // Support and cashier events live on the website, while the bot only
+    // receives small outbox references. Transcript content therefore never
+    // travels through Discord unless the bot is explicitly authorised to fetch
+    // it from the bot API.
+    sql: `
+ALTER TABLE discord_guild_config ADD COLUMN ticket_channel_id TEXT;
+ALTER TABLE discord_guild_config ADD COLUMN ticket_transcripts_channel_id TEXT;
+ALTER TABLE discord_guild_config ADD COLUMN cashier_channel_id TEXT;
+ALTER TABLE discord_guild_config ADD COLUMN cashier_transcripts_channel_id TEXT;
+
+ALTER TABLE ticket_messages ADD COLUMN notified_at TEXT;
+CREATE INDEX ticket_messages_unnotified_idx ON ticket_messages(ticket_id, visibility, notified_at);
+
+CREATE TABLE ticket_reply_digests (
+  id TEXT PRIMARY KEY,
+  ticket_id TEXT NOT NULL UNIQUE REFERENCES tickets(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  first_message_at TEXT NOT NULL,
+  due_at TEXT NOT NULL,
+  last_message_at TEXT NOT NULL,
+  message_ids TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','skipped')),
+  created_at TEXT NOT NULL,
+  sent_at TEXT
+);
+CREATE INDEX ticket_reply_digests_due_idx ON ticket_reply_digests(status, due_at);
+
+CREATE TABLE ticket_transcripts (
+  id TEXT PRIMARY KEY,
+  ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  reference TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('closed','reopened','manual')),
+  event_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  guild_id TEXT,
+  channel_id TEXT,
+  message_id TEXT,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','failed')),
+  error TEXT,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  sent_at TEXT,
+  UNIQUE (ticket_id, kind, event_id)
+);
+CREATE INDEX ticket_transcripts_status_idx ON ticket_transcripts(status, created_at ASC);
+
+CREATE TABLE cashier_events (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES cashier_requests(id) ON DELETE CASCADE,
+  actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  type TEXT NOT NULL,
+  from_value TEXT,
+  to_value TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX cashier_events_request_idx ON cashier_events(request_id, created_at);
+
+ALTER TABLE cashier_requests ADD COLUMN held_at TEXT;
+ALTER TABLE cashier_requests ADD COLUMN held_by TEXT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE cashier_requests ADD COLUMN hold_reason TEXT;
+
+CREATE TABLE cashier_transcripts (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL UNIQUE REFERENCES cashier_requests(id) ON DELETE CASCADE,
+  reference TEXT NOT NULL,
+  content TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  guild_id TEXT,
+  channel_id TEXT,
+  message_id TEXT,
+  revision INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','failed')),
+  error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  sent_at TEXT
+);
+CREATE INDEX cashier_transcripts_status_idx ON cashier_transcripts(status, updated_at ASC);
+
+-- Seed a creation event for historical requests so their first transcript still
+-- shows where the request came from. Idempotent because migration 26 runs once.
+INSERT INTO cashier_events (id, request_id, actor_id, type, from_value, to_value, note, created_at)
+SELECT 'cev_' || lower(hex(randomblob(10))), id, NULL, 'created', NULL, 'pending', 'Imported request', created_at
+  FROM cashier_requests;
+`,
+  },
 ];
 
 export function pendingMigrations(db: Database): { version: number; name: string }[] {

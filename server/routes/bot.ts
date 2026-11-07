@@ -48,7 +48,11 @@ import {
   settlePendingInviteRewards,
 } from '../lib/discord/invites.ts';
 import { attachOutboxMessage } from '../lib/discord/events.ts';
-import { claimOutbox, completeOutbox, failOutbox, skipOutbox, type DiscordEventType } from '../lib/discord/outbox.ts';
+import {
+  getCashierTranscriptForBot,
+  getTicketTranscriptForBot,
+} from '../lib/discord/support.ts';
+import { claimOutbox, failOutbox, skipOutbox, type DiscordEventType } from '../lib/discord/outbox.ts';
 import { createVouch, getVouchStats } from '../lib/discord/vouches.ts';
 
 const snowflake = z.string().regex(/^\d{15,22}$/, 'Invalid Discord ID.');
@@ -188,6 +192,10 @@ const configSchema = z.object({
       news: optionalSnowflake,
       changelog: optionalSnowflake,
       logs: optionalSnowflake,
+      tickets: optionalSnowflake,
+      ticketTranscripts: optionalSnowflake,
+      cashierRequests: optionalSnowflake,
+      cashierTranscripts: optionalSnowflake,
     })
     .partial()
     .optional(),
@@ -671,6 +679,18 @@ export function createBotRouter(db: DB): Router {
   router.post('/outbox/claim', (req, res) => {
     const body = parse(outboxClaimSchema, req.body);
     res.json({ events: claimOutbox(db, body.limit) });
+  });
+
+  router.get('/support/transcripts/ticket/:id', (req, res) => {
+    const transcript = getTicketTranscriptForBot(db, req.params.id ?? '');
+    if (!transcript) throw notFound('Ticket transcript not found.');
+    res.json({ transcript });
+  });
+
+  router.get('/support/transcripts/cashier/:id', (req, res) => {
+    const transcript = getCashierTranscriptForBot(db, req.params.id ?? '');
+    if (!transcript) throw notFound('Cashier transcript not found.');
+    res.json({ transcript });
   });
 
   router.post('/outbox/:id/complete', (req, res) => {

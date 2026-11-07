@@ -17,6 +17,8 @@ export type EmailTemplate =
   | 'reward-claimed'
   | 'announcement'
   | 'cashier-decision'
+  | 'ticket-created'
+  | 'ticket-reply'
   | 'account-deletion'
   | 'giveaway-winner'
   | 'giveaway-sponsor'
@@ -494,6 +496,94 @@ export function renderEmail(template: EmailTemplate, payload: Record<string, unk
           footerText(email),
         ].join('\n'),
       };
+    case 'ticket-created': {
+      const reference = textValue(payload, 'reference', '—');
+      return {
+        subject: `Ticket ${reference} received`,
+        html: layout(email, {
+          title: 'Your support ticket is open',
+          kicker: 'Support ticket created',
+          preheader: `${reference} · ${textValue(payload, 'subject', 'Support request')}`,
+          content: [
+            paragraph(`Hi ${escapeHtml(username)}, we received your support ticket and it is now in the queue.`),
+            detailRows([
+              ['Ticket ID', reference],
+              ['Subject', textValue(payload, 'subject', '—')],
+              ['Category', textValue(payload, 'category', '—')],
+              ['Created', formatDateTime(payload.createdAt)],
+            ]),
+            paragraph('You can follow every reply and status change on the ticket page. Keep the ticket ID handy when talking to support.'),
+            cta('View my ticket', textValue(payload, 'ticketUrl', '/tickets')),
+            callout('Please do not open duplicate tickets for the same issue. Add any new details as a reply on the existing ticket.', 'gold'),
+            signoff,
+          ].join(''),
+        }),
+        text: [
+          `Your support ticket ${reference} was created.`,
+          `Subject: ${textValue(payload, 'subject', '—')}`,
+          `Category: ${textValue(payload, 'category', '—')}`,
+          `Created: ${formatDateTime(payload.createdAt)}`,
+          safeUrl(email, textValue(payload, 'ticketUrl', '/tickets')),
+          footerText(email),
+        ].join('\n'),
+      };
+    }
+    case 'ticket-reply': {
+      const reference = textValue(payload, 'reference', '—');
+      const rawMessages = Array.isArray(payload.messages) ? payload.messages : [];
+      const messages = rawMessages
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null;
+          const message = entry as Record<string, unknown>;
+          return {
+            author: textValue(message, 'author', 'Support'),
+            role: textValue(message, 'role', 'support'),
+            body: textValue(message, 'body'),
+            createdAt: formatDateTime(message.createdAt),
+          };
+        })
+        .filter((entry): entry is { author: string; role: string; body: string; createdAt: string } => Boolean(entry));
+      const count = messages.length || Number(payload.count ?? 1);
+      const previews = messages.slice(0, 8);
+      return {
+        subject: `${count} new support ${count === 1 ? 'reply' : 'replies'} on ${reference}`,
+        html: layout(email, {
+          title: count === 1 ? 'Support replied to your ticket' : 'New replies on your ticket',
+          kicker: 'Support ticket update',
+          preheader: `${reference} · ${textValue(payload, 'subject', 'Support request')}`,
+          content: [
+            paragraph(
+              `Hi ${escapeHtml(username)}, your ticket <strong style="color:#f6f4ef;">${escapeHtml(
+                reference,
+              )}</strong> has ${count === 1 ? 'a new reply' : `${count} new replies`}.`,
+            ),
+            detailRows([
+              ['Ticket ID', reference],
+              ['Subject', textValue(payload, 'subject', '—')],
+              ['New replies', String(count)],
+            ]),
+            ...previews.map((message) =>
+              `<div style="margin:0 0 12px;padding:13px 15px;border:1px solid #28303d;border-radius:10px;background:#11151d;">
+                <p style="margin:0 0 5px;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;color:#9b7f4d;">${escapeHtml(message.author)} · ${escapeHtml(message.role)} · ${escapeHtml(message.createdAt)}</p>
+                <p style="margin:0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.65;color:#e8e4da;white-space:pre-wrap;">${escapeHtml(message.body).replace(/\n/g, '<br>')}</p>
+              </div>`,
+            ),
+            messages.length > previews.length
+              ? paragraph(`…and ${messages.length - previews.length} more ${messages.length - previews.length === 1 ? 'reply' : 'replies'} on the ticket.`)
+              : '',
+            cta('Open the conversation', textValue(payload, 'ticketUrl', '/tickets')),
+            signoff,
+          ].join(''),
+        }),
+        text: [
+          `Your support ticket ${reference} has ${count === 1 ? 'a new reply' : `${count} new replies`}.`,
+          `Subject: ${textValue(payload, 'subject', '—')}`,
+          ...previews.map((message) => `\n${message.author} (${message.role}) · ${message.createdAt}\n${message.body}`),
+          `\nOpen the conversation: ${safeUrl(email, textValue(payload, 'ticketUrl', '/tickets'))}`,
+          footerText(email),
+        ].join('\n'),
+      };
+    }
     case 'cashier-decision': {
       const approved = textValue(payload, 'status') === 'approved';
       return {

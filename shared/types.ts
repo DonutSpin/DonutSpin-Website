@@ -564,6 +564,9 @@ export interface CashierRequestSummary {
   decidedAt: string | null;
   ledgerId: string | null;
   messageCount: number;
+  onHold: boolean;
+  holdReason: string | null;
+  heldAt: string | null;
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string;
@@ -582,11 +585,14 @@ export interface CashierRequestDetail extends Omit<CashierRequestSummary, 'reque
   canDecide: boolean;
   canCancel: boolean;
   canMessage: boolean;
+  canEdit: boolean;
+  canHold: boolean;
 }
 
 export interface CashierCounts {
   all: number;
   pending: number;
+  onHold: number;
   approved: number;
   rejected: number;
   cancelled: number;
@@ -618,6 +624,7 @@ export interface TicketDetail {
   canReply: boolean;
   canNote: boolean;
   canAssign: boolean;
+  canTranscript: boolean;
 }
 
 /* --------------------------------- rain ---------------------------------- */
@@ -892,6 +899,10 @@ export interface DiscordChannelConfig {
   news: string | null;
   changelog: string | null;
   logs: string | null;
+  tickets: string | null;
+  ticketTranscripts: string | null;
+  cashierRequests: string | null;
+  cashierTranscripts: string | null;
 }
 
 export interface DiscordRoleConfig {

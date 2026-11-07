@@ -37,6 +37,12 @@ import {
   type TicketRow,
 } from '../lib/tickets.ts';
 import { loadUser } from '../auth.ts';
+import { queueTicketNotification, queueTicketTranscript } from '../lib/discord/support.ts';
+import {
+  markTicketSeenByRequester,
+  queueTicketCreatedEmail,
+  scheduleTicketReplyDigest,
+} from '../lib/support-notifications.ts';
 
 const createSchema = z.object({
   subject: z.string().trim().min(4, 'Use at least 4 characters.').max(140, 'Keep the subject under 140 characters.'),
@@ -78,6 +84,11 @@ function loadTicketByReference(db: DB, reference: string): TicketRow {
   const row = db.prepare('SELECT * FROM tickets WHERE reference = ?').get(reference) as TicketRow | undefined;
   if (!row) throw notFound('Ticket not found.');
   return row;
+}
+
+function getRequesterName(db: DB, userId: string): string {
+  const row = db.prepare('SELECT username FROM users WHERE id = ?').get(userId) as { username: string } | undefined;
+  return row?.username ?? 'Unknown';
 }
 
 function userNotificationLink(db: DB, userId: string, reference: string): string {
@@ -131,21 +142,27 @@ function applyStatusChange(
   }
   const now = nowIso();
   const reason = input.reason?.trim() || null;
-  db.prepare(
-    `UPDATE tickets SET status = ?, hold_reason = ?, rejection_reason = ?, closed_at = ?, updated_at = ?, last_activity_at = ?
-     WHERE id = ?`,
-  ).run(
-    next,
-    next === 'on_hold' ? reason : null,
-    next === 'rejected' ? reason : ticket.rejection_reason,
-    next === 'closed' ? now : null,
-    now,
-    now,
-    ticket.id,
-  );
+  const updated = db
+    .prepare(
+      `UPDATE tickets SET status = ?, hold_reason = ?, rejection_reason = ?, closed_at = ?, updated_at = ?, last_activity_at = ?
+       WHERE id = ? AND status = ?`,
+    )
+    .run(
+      next,
+      next === 'on_hold' ? reason : null,
+      next === 'rejected' ? reason : ticket.rejection_reason,
+      next === 'closed' ? now : null,
+      now,
+      now,
+      ticket.id,
+      ticket.status,
+    );
+  if (updated.changes !== 1) {
+    throw conflict('Another staff member changed this ticket first. Refresh and try again.', 'TICKET_CHANGED');
+  }
   const eventType =
     next === 'rejected' ? 'rejected' : next === 'on_hold' ? 'hold' : ticket.status === 'closed' ? 'reopened' : 'status';
-  addTicketEvent(db, {
+  const eventId = addTicketEvent(db, {
     ticketId: ticket.id,
     actorId: actor.id,
     type: eventType,
@@ -185,6 +202,23 @@ function applyStatusChange(
     metadata: { from: ticket.status, to: next, source: input.source ?? 'staff' },
     ip: input.ip ?? null,
   });
+  if (next === 'closed') {
+    queueTicketTranscript(db, {
+      ticketId: ticket.id,
+      kind: 'closed',
+      eventId,
+      actorId: actor.id,
+      note: reason,
+    });
+  } else if (eventType === 'reopened') {
+    queueTicketTranscript(db, {
+      ticketId: ticket.id,
+      kind: 'reopened',
+      eventId,
+      actorId: actor.id,
+      note: reason,
+    });
+  }
 }
 
 function assertStaffEligible(db: DB, assigneeId: string): { id: string; username: string; role: string; status: string } {
@@ -274,9 +308,10 @@ export function createTicketsRouter(db: DB): Router {
     }
 
     const ticketId = newId('tkt');
+    const createdAt = nowIso();
     const reference = inTransaction(db, () => {
       const ref = generateTicketReference(db);
-      const now = nowIso();
+      const now = createdAt;
       db.prepare(
         `INSERT INTO tickets (id, reference, user_id, subject, description, category, status, priority, created_at, updated_at, last_activity_at)
          VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)`,
@@ -307,6 +342,28 @@ export function createTicketsRouter(db: DB): Router {
       return ref;
     });
 
+    queueTicketCreatedEmail(db, {
+      userId: user.id,
+      email: user.email,
+      username: user.username,
+      ticketId,
+      reference,
+      subject: body.subject,
+      category: category.label,
+      createdAt,
+    });
+    queueTicketNotification(db, {
+      kind: 'created',
+      ticketId,
+      reference,
+      subject: body.subject,
+      requester: user.username,
+      category: category.label,
+      priority: body.priority ?? category.defaultPriority,
+      status: 'new',
+      preview: body.description.slice(0, 300),
+    });
+
     res.status(201).json({ ticket: getTicketDetail(db, user, reference) });
   });
 
@@ -314,6 +371,7 @@ export function createTicketsRouter(db: DB): Router {
     const user = requireAuth(req);
     const detail = getTicketDetail(db, user, req.params.reference ?? '');
     markTicketRead(db, detail.id, user.id);
+    markTicketSeenByRequester(db, detail.id, user.id);
     res.json({ ticket: detail });
   });
 
@@ -335,8 +393,23 @@ export function createTicketsRouter(db: DB): Router {
     }
 
     const internal = body.visibility === 'internal';
+    const lastStaff = db
+      .prepare(
+        `SELECT created_at FROM ticket_messages
+          WHERE ticket_id = ? AND visibility = 'public' AND author_role <> 'user'
+          ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+      )
+      .get(ticket.id) as { created_at: string } | undefined;
+    // Never ping the support roles for every sentence in a rapid back-and-forth.
+    // One staff message in a five-minute burst announces the conversation;
+    // later replies in the same burst stay quiet even if the player replied in
+    // between. A genuinely fresh conversation pings again.
+    const recentStaffReply = Boolean(
+      lastStaff && Date.now() - new Date(lastStaff.created_at).getTime() < 5 * 60_000,
+    );
+
     inTransaction(db, () => {
-      addTicketMessage(db, {
+      const messageId = addTicketMessage(db, {
         ticketId: ticket.id,
         authorId: user.id,
         authorRole: user.role,
@@ -358,6 +431,29 @@ export function createTicketsRouter(db: DB): Router {
         const from = ticket.status;
         const next: TicketStatus | null =
           from === 'new' || from === 'waiting_user' ? 'in_progress' : from === 'on_hold' ? 'open' : null;
+        scheduleTicketReplyDigest(db, {
+          ticketId: ticket.id,
+          userId: ticket.user_id,
+          messageId,
+          authorName: user.username,
+          authorRole: user.role,
+          body: body.body,
+        });
+        if (!recentStaffReply) {
+          queueTicketNotification(db, {
+            kind: 'reply',
+            ticketId: ticket.id,
+            messageId,
+            reference: ticket.reference,
+            subject: ticket.subject,
+            requester: getRequesterName(db, ticket.user_id),
+            category: categoryLabel(db, ticket.category),
+            priority: ticket.priority,
+            status: next ?? ticket.status,
+            preview: body.body.slice(0, 300),
+            staffName: user.username,
+          });
+        }
         if (next) {
           db.prepare('UPDATE tickets SET status = ?, hold_reason = NULL WHERE id = ?').run(next, ticket.id);
           addTicketEvent(db, {
@@ -429,6 +525,8 @@ export function createTicketsRouter(db: DB): Router {
       }
     });
 
+    markTicketRead(db, ticket.id, user.id);
+    markTicketSeenByRequester(db, ticket.id, user.id);
     res.status(201).json({ ticket: getTicketDetail(db, user, ticket.reference) });
   });
 
@@ -529,6 +627,29 @@ export function createTicketsRouter(db: DB): Router {
       });
     });
     res.json({ ticket: getTicketDetail(db, user, ticket.reference) });
+  });
+
+  router.post('/:reference/transcript', (req, res) => {
+    const user = requireAuth(req);
+    requirePermission(req, 'tickets.manage');
+    const ticket = loadTicketByReference(db, req.params.reference ?? '');
+    const transcriptId = queueTicketTranscript(db, {
+      ticketId: ticket.id,
+      kind: 'manual',
+      eventId: newId('manual'),
+      actorId: user.id,
+      note: 'Manual transcript request',
+    });
+    if (!transcriptId) throw badRequest('The transcript could not be generated.', 'TRANSCRIPT_FAILED');
+    recordAudit(db, {
+      actorId: user.id,
+      action: 'ticket.transcript',
+      targetType: 'ticket',
+      targetId: ticket.id,
+      targetLabel: ticket.reference,
+      ip: clientIp(req),
+    });
+    res.status(202).json({ ok: true, transcriptId });
   });
 
   router.post('/:reference/claim', (req, res) => {
