@@ -10,6 +10,7 @@ import {
   Lock,
   MessageSquare,
   Plus,
+  ScrollText,
   Send,
   ShieldCheck,
   Ticket,
@@ -63,11 +64,18 @@ export function TicketsPage() {
         title="My tickets"
         description="Every support request, with a permanent reference and a complete public history."
         actions={
-          <Link to="/tickets/new">
-            <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />}>
-              New ticket
-            </Button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/transcripts">
+              <Button variant="secondary" leftIcon={<ScrollText className="h-4 w-4" />}>
+                Transcripts
+              </Button>
+            </Link>
+            <Link to="/tickets/new">
+              <Button variant="primary" leftIcon={<Plus className="h-4 w-4" />}>
+                New ticket
+              </Button>
+            </Link>
+          </div>
         }
       />
       <Alert tone="info" className="mb-4" title="Response times">
@@ -117,7 +125,6 @@ export function NewTicketPage() {
   const [subject, setSubject] = useState('');
   const [categoryKey, setCategoryKey] = useState('');
   const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<TicketPriority>('normal');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -126,7 +133,6 @@ export function NewTicketPage() {
     if (!categoryKey && categories.length > 0) {
       const first = categories.find((entry) => entry.key === 'question') ?? categories[0] ?? emptyCategory;
       setCategoryKey(first.key);
-      setPriority(first.defaultPriority);
     }
   }, [categories, categoryKey]);
 
@@ -142,7 +148,6 @@ export function NewTicketPage() {
         subject,
         category: categoryKey,
         description,
-        priority,
       });
       success('Ticket created', `Reference ${response.ticket.reference}.`);
       navigate(`/tickets/${response.ticket.reference}`);
@@ -205,11 +210,7 @@ export function NewTicketPage() {
                 <Select
                   id="category"
                   value={categoryKey}
-                  onChange={(event) => {
-                    setCategoryKey(event.target.value);
-                    const next = categories.find((entry) => entry.key === event.target.value);
-                    if (next) setPriority(next.defaultPriority);
-                  }}
+                  onChange={(event) => setCategoryKey(event.target.value)}
                   invalid={Boolean(fields.category)}
                 >
                   {categories.map((entry) => (
@@ -220,18 +221,10 @@ export function NewTicketPage() {
                 </Select>
                 {category && <p className="mt-1 text-[11px] leading-relaxed text-faint">{category.description}</p>}
               </Field>
-              <Field label="Priority" htmlFor="priority" hint="Choose urgent only for blocked access or account safety.">
-                <Select
-                  id="priority"
-                  value={priority}
-                  onChange={(event) => setPriority(event.target.value as TicketPriority)}
-                >
-                  {(['low', 'normal', 'high', 'urgent'] as const).map((level) => (
-                    <option key={level} value={level}>
-                      {TICKET_PRIORITY_LABELS[level]}
-                    </option>
-                  ))}
-                </Select>
+              <Field label="Priority" hint="Team DonutSpin sets priority automatically from the category.">
+                <div className="flex h-9 items-center rounded-lg border border-line bg-surface-2/60 px-3 text-[12px] text-muted">
+                  {category ? TICKET_PRIORITY_LABELS[category.defaultPriority] : '—'} · set by staff
+                </div>
               </Field>
             </div>
 
@@ -437,7 +430,10 @@ export function TicketDetailPage({ mode = 'user' }: { mode?: 'user' | 'staff' | 
   const [statusReason, setStatusReason] = useState('');
   const [closeConfirm, setCloseConfirm] = useState(false);
 
-  const query = useApiQuery<{ ticket: TicketDetail }>(reference ? `/tickets/${encodeURIComponent(reference)}` : null);
+  const query = useApiQuery<{ ticket: TicketDetail }>(
+    reference ? `/tickets/${encodeURIComponent(reference)}` : null,
+    { pollMs: 5_000 },
+  );
   const ticket = override ?? query.data?.ticket ?? null;
   const staff = mode !== 'user';
   const team = useApiQuery<{ staff: StaffMember[] }>(staff && ticket?.canAssign ? '/staff/team' : null, {
@@ -458,24 +454,6 @@ export function TicketDetailPage({ mode = 'user' }: { mode?: 'user' | 'staff' | 
   useEffect(() => {
     if (query.data?.ticket) setOverride(null);
   }, [query.data]);
-
-  // Opening the conversation is a presence signal for smart email digests.
-  // Poll only while the tab is visible so a closed or hidden tab quickly looks
-  // offline; the GET also refreshes replies and records the read marker.
-  useEffect(() => {
-    if (!reference) return;
-    const tick = () => {
-      if (document.visibilityState === 'visible') query.refetch();
-    };
-    const timer = window.setInterval(tick, 15_000);
-    document.addEventListener('visibilitychange', tick);
-    window.addEventListener('focus', tick);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', tick);
-      window.removeEventListener('focus', tick);
-    };
-  }, [reference, query.refetch]);
 
   const apply = (updated: TicketDetail) => setOverride(updated);
 
@@ -617,6 +595,13 @@ export function TicketDetailPage({ mode = 'user' }: { mode?: 'user' | 'staff' | 
         }
         actions={
           <>
+            {['closed', 'rejected'].includes(ticket.status) && (
+              <Link to={`/transcripts/ticket/${ticket.reference}`}>
+                <Button variant="secondary" leftIcon={<ScrollText className="h-4 w-4" />}>
+                  Transcript
+                </Button>
+              </Link>
+            )}
             <Link to={backToList}>
               <Button variant="ghost" leftIcon={<ArrowLeft className="h-4 w-4" />}>
                 Back
@@ -1045,7 +1030,7 @@ export function TicketDetailPage({ mode = 'user' }: { mode?: 'user' | 'staff' | 
           });
         }}
         title="Close this ticket?"
-        description="The requester will not be able to reply unless an agent reopens it. Closing is recorded in the ticket history."
+        description="Closing locks this ticket permanently for everyone. The requester can read the transcript but cannot reply or reopen it. This is recorded in the ticket history."
         confirmLabel="Close ticket"
         tone="danger"
         loading={actionBusy === 'status'}

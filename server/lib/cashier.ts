@@ -243,7 +243,7 @@ export function getCashierDetail(db: DB, viewer: SessionUser, reference: string)
     messages,
     canDecide: canManage && row.status === 'pending' && !row.held_at,
     canCancel: row.user_id === viewer.id && row.status === 'pending',
-    canMessage: row.status !== 'cancelled',
+    canMessage: row.status === 'pending',
     canEdit: canManage && row.status === 'pending',
     canHold: canManage && row.status === 'pending',
   };

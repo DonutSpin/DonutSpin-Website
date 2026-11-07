@@ -8,6 +8,7 @@ import {
   Landmark,
   MessageSquare,
   Plus,
+  ScrollText,
   ShieldCheck,
   Wallet,
 } from 'lucide-react';
@@ -83,6 +84,7 @@ export function CashierPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const query = useApiQuery<CashierListResponse>(
     `/cashier?status=${status}&page=${page}&pageSize=12`,
+    { pollMs: 10_000 },
   );
 
   const data = query.data;
@@ -97,14 +99,21 @@ export function CashierPage() {
         title="Cashier"
         description="Request a DonutSMP money deposit or withdrawal. Owners and administrators review every amount."
         actions={
-          <Button
-            variant="primary"
-            onClick={() => setCreateOpen(true)}
-            leftIcon={<Plus className="h-4 w-4" />}
-            disabled={Boolean(config?.maintenance)}
-          >
-            New request
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/transcripts">
+              <Button variant="secondary" leftIcon={<ScrollText className="h-4 w-4" />}>
+                Transcripts
+              </Button>
+            </Link>
+            <Button
+              variant="primary"
+              onClick={() => setCreateOpen(true)}
+              leftIcon={<Plus className="h-4 w-4" />}
+              disabled={Boolean(config?.maintenance)}
+            >
+              New request
+            </Button>
+          </div>
         }
       />
 
@@ -391,7 +400,7 @@ export function CashierDetailPage() {
   const { reference = '' } = useParams();
   const navigate = useNavigate();
   const { success, error: toastError } = useToast();
-  const query = useApiQuery<{ request: CashierRequestDetail }>(`/cashier/${reference}`);
+  const query = useApiQuery<{ request: CashierRequestDetail }>(`/cashier/${reference}`, { pollMs: 5_000 });
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const request = query.data?.request;
@@ -446,11 +455,20 @@ export function CashierDetailPage() {
         description={`${money(request.amount)} DonutSMP money · submitted ${dateTime(request.createdAt)}`}
         badge={<CashierStatusBadge status={request.status} />}
         actions={
-          <Link to="/cashier">
-            <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />}>
-              All requests
-            </Button>
-          </Link>
+          <>
+            {request.status !== 'pending' && (
+              <Link to={`/transcripts/cashier/${request.reference}`}>
+                <Button variant="secondary" leftIcon={<ScrollText className="h-4 w-4" />}>
+                  Transcript
+                </Button>
+              </Link>
+            )}
+            <Link to="/cashier">
+              <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />}>
+                All requests
+              </Button>
+            </Link>
+          </>
         }
       />
 
@@ -504,6 +522,7 @@ export function CashierDetailPage() {
               messages={request.messages}
               currentUserId={request.requester.id}
               canMessage={request.canMessage}
+              status={request.status}
               onSend={sendMessage}
             />
           </div>

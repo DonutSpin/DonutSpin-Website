@@ -23,6 +23,7 @@ import { PlinkoPage } from './pages/games/plinko-page';
 import { TransactionsPage, WalletPage } from './pages/wallet';
 import { CashierDetailPage, CashierPage } from './pages/cashier';
 import { NewTicketPage, TicketDetailPage, TicketsPage } from './pages/tickets';
+import { AdminTranscriptsPage, TranscriptDetailPage, TranscriptsPage } from './pages/transcripts';
 import { NotificationsPage } from './pages/notifications';
 import { SettingsPage } from './pages/settings';
 import { StaffActivityPage, StaffInboxPage, StaffOverviewPage } from './pages/staff';
@@ -127,6 +128,8 @@ function App() {
           <Route path="tickets" element={<TicketsPage />} />
           <Route path="tickets/new" element={<NewTicketPage />} />
           <Route path="tickets/:reference" element={<TicketDetailPage mode="user" />} />
+          <Route path="transcripts" element={<TranscriptsPage />} />
+          <Route path="transcripts/:kind/:reference" element={<TranscriptDetailPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="settings" element={<SettingsPage />} />
 
@@ -304,6 +307,14 @@ function App() {
             element={
               <RequirePermission permission="credits.adjust">
                 <AdminCashierDetailPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="admin/transcripts"
+            element={
+              <RequirePermission permission="tickets.read_all">
+                <AdminTranscriptsPage />
               </RequirePermission>
             }
           />

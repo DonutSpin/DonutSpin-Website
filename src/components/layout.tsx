@@ -174,6 +174,7 @@ function playerNav(): NavGroup[] {
       title: 'Support',
       items: [
         { label: 'My tickets', to: '/tickets', icon: LifeBuoy },
+        { label: 'Transcripts', to: '/transcripts', icon: ScrollText },
         { label: 'Notifications', to: '/notifications', icon: Bell, badge: 'notifications' },
       ],
     },
@@ -196,6 +197,7 @@ function staffNav(role: Role): NavGroup[] {
         { label: 'On hold', to: '/staff/on-hold', icon: PauseCircle },
         { label: 'Account reviews', to: '/staff/reviews', icon: ClipboardList, permission: 'accounts.review' },
         { label: 'Closed', to: '/staff/closed', icon: Archive },
+        { label: 'Ticket transcripts', to: '/admin/transcripts', icon: ScrollText },
         { label: 'Ticket search', to: '/staff/search', icon: Search },
       ],
     },
@@ -233,6 +235,7 @@ function adminNav(role: Role): NavGroup[] {
       title: 'Support & economy',
       items: [
         { label: 'Support desk', to: '/admin/tickets', icon: LifeBuoy },
+        { label: 'Transcripts', to: '/admin/transcripts', icon: ScrollText },
         { label: 'Account reviews', to: '/admin/reviews', icon: ClipboardList, permission: 'accounts.review' },
         { label: 'Cashier requests', to: '/admin/cashier', icon: Landmark, permission: 'credits.adjust' },
         { label: 'Economy', to: '/admin/economy', icon: Coins, permission: 'economy.read' },

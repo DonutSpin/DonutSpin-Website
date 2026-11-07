@@ -194,8 +194,6 @@ export function createCashierRouter(db: DB): Router {
       onHold: false,
       createdAt: created.created_at,
     });
-    queueCashierTranscript(db, { requestId: created.id, eventKey: 'created', actorId: user.id });
-
     res.status(201).json({ request: getCashierDetail(db, user, reference) });
   });
 
@@ -211,11 +209,10 @@ export function createCashierRouter(db: DB): Router {
     const body = parse(messageSchema, req.body);
     const row = loadRequestOrThrow(db, req.params.reference ?? '');
     assertOwnRequest(user, row);
-    if (row.status === 'cancelled') {
-      throw conflict('This cashier request was cancelled. Open a new request if you still need help.', 'REQUEST_CANCELLED');
+    if (row.status !== 'pending') {
+      throw conflict('This cashier request is closed and can no longer receive messages.', 'REQUEST_CLOSED');
     }
 
-    let messageEventId = '';
     inTransaction(db, () => {
       addCashierMessage(db, {
         requestId: row.id,
@@ -224,7 +221,7 @@ export function createCashierRouter(db: DB): Router {
         visibility: 'public',
         body: body.body,
       });
-      messageEventId = addCashierEvent(db, {
+      addCashierEvent(db, {
         requestId: row.id,
         actorId: user.id,
         type: 'message',
@@ -246,7 +243,6 @@ export function createCashierRouter(db: DB): Router {
         ip: clientIp(req),
       });
     });
-    queueCashierTranscript(db, { requestId: row.id, eventKey: messageEventId, actorId: user.id });
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });
 
@@ -353,11 +349,10 @@ export function createAdminCashierRouter(db: DB): Router {
     requirePermission(req, 'credits.adjust');
     const body = parse(messageSchema, req.body);
     const row = loadRequestOrThrow(db, req.params.reference ?? '');
-    if (row.status === 'cancelled') {
-      throw conflict('This cashier request was cancelled.', 'REQUEST_CANCELLED');
+    if (row.status !== 'pending') {
+      throw conflict('This cashier request is closed and can no longer receive messages.', 'REQUEST_CLOSED');
     }
 
-    let messageEventId = '';
     inTransaction(db, () => {
       addCashierMessage(db, {
         requestId: row.id,
@@ -366,7 +361,7 @@ export function createAdminCashierRouter(db: DB): Router {
         visibility: 'public',
         body: body.body,
       });
-      messageEventId = addCashierEvent(db, {
+      addCashierEvent(db, {
         requestId: row.id,
         actorId: user.id,
         type: 'message',
@@ -389,7 +384,6 @@ export function createAdminCashierRouter(db: DB): Router {
         ip: clientIp(req),
       });
     });
-    queueCashierTranscript(db, { requestId: row.id, eventKey: messageEventId, actorId: user.id });
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });
 
@@ -534,7 +528,6 @@ export function createAdminCashierRouter(db: DB): Router {
       decidedAt: decided.decided_at,
     });
     queueCashierTranscript(db, { requestId: row.id, eventKey: eventId, actorId: user.id });
-
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });
 
@@ -615,7 +608,6 @@ export function createAdminCashierRouter(db: DB): Router {
       reason: body.reason ?? null,
       createdAt: row.created_at,
     });
-    queueCashierTranscript(db, { requestId: row.id, eventKey: eventId, actorId: user.id });
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });
 
@@ -687,7 +679,6 @@ export function createAdminCashierRouter(db: DB): Router {
       reason: body.reason,
       createdAt: row.created_at,
     });
-    queueCashierTranscript(db, { requestId: row.id, eventKey: eventId, actorId: user.id });
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });
 
@@ -756,7 +747,6 @@ export function createAdminCashierRouter(db: DB): Router {
       reason: row.hold_reason,
       createdAt: row.created_at,
     });
-    queueCashierTranscript(db, { requestId: row.id, eventKey: eventId, actorId: user.id });
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });
 

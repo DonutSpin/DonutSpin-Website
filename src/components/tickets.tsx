@@ -146,7 +146,7 @@ export function TicketTable({
   params.set('page', String(page));
   params.set('pageSize', String(limit ?? 20));
 
-  const query = useApiQuery<TicketListResponse>(`/tickets?${params.toString()}`);
+  const query = useApiQuery<TicketListResponse>(`/tickets?${params.toString()}`, { pollMs: 10_000 });
   const categories = useApiQuery<{ categories: SupportCategory[] }>('/tickets/categories');
   const team = useApiQuery<{ staff: StaffMember[] }>(staff && !hideFilters ? '/staff/team' : null, {
     enabled: staff && !hideFilters,

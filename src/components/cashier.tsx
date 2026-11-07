@@ -59,12 +59,14 @@ export function CashierThread({
   messages,
   currentUserId,
   canMessage,
+  status,
   onSend,
   emptyText = 'No messages yet. Start the conversation if you need to clarify the request.',
 }: {
   messages: CashierMessage[];
   currentUserId: string;
   canMessage: boolean;
+  status?: CashierRequestStatus;
   onSend: (body: string) => Promise<boolean>;
   emptyText?: string;
 }) {
@@ -147,7 +149,13 @@ export function CashierThread({
         </form>
       ) : (
         <p className="mt-4 border-t border-line pt-4 text-[11px] text-faint">
-          This request was cancelled. Open a new request if you need to continue.
+          {status === 'approved'
+            ? 'This request was approved. The conversation is now read-only.'
+            : status === 'rejected'
+              ? 'This request was rejected. The conversation is now read-only.'
+              : status === 'cancelled'
+                ? 'This request was cancelled. Open a new request if you need to continue.'
+                : 'This conversation is closed and can no longer receive messages.'}
         </p>
       )}
     </div>

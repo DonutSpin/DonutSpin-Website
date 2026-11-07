@@ -70,7 +70,7 @@ export const TICKET_STATUS_HELP: Record<TicketStatus, string> = {
   on_hold: 'Temporarily paused for a recorded reason.',
   waiting_user: 'The requester needs to provide more information.',
   resolved: 'Handled, pending final closure if required.',
-  closed: 'The conversation is finished.',
+  closed: 'The conversation is finished and the ticket is permanently read-only.',
   rejected: 'Declined with a recorded reason.',
 };
 
@@ -82,7 +82,7 @@ export const TICKET_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   on_hold: ['open', 'in_progress', 'waiting_user', 'resolved', 'closed', 'rejected'],
   waiting_user: ['open', 'in_progress', 'on_hold', 'resolved', 'closed', 'rejected'],
   resolved: ['closed', 'open', 'rejected'],
-  closed: ['open'],
+  closed: [],
   rejected: ['open'],
 };
 
@@ -519,6 +519,36 @@ export interface TicketEvent {
   toValue: string | null;
   note: string | null;
   createdAt: string;
+}
+
+export type TranscriptKind = 'ticket' | 'cashier';
+
+/** A completed ticket or cashier conversation shown in the transcript library. */
+export interface TranscriptSummary {
+  kind: TranscriptKind;
+  id: string;
+  reference: string;
+  title: string;
+  categoryLabel: string;
+  status: string;
+  priority: TicketPriority | null;
+  amount: number | null;
+  requester: { id: string; username: string };
+  assignee: string | null;
+  createdAt: string;
+  closedAt: string | null;
+  messageCount: number;
+}
+
+export interface TranscriptDetail extends TranscriptSummary {
+  description: string | null;
+  messages: TicketMessage[];
+  events: TicketEvent[];
+  canSeeInternalNotes: boolean;
+}
+
+export interface TranscriptListResponse extends Paginated<TranscriptSummary> {
+  canViewAll: boolean;
 }
 
 export type CreditRequestKind = 'grant' | 'correction' | 'missing_transaction';

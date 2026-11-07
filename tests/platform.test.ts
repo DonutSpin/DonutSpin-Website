@@ -34,6 +34,7 @@ interface TicketLike {
   id: string;
   reference: string;
   status: string;
+  priority: string;
   subject: string;
   assignee: { id: string; username: string } | null;
   holdReason: string | null;
@@ -408,7 +409,11 @@ describe('support tickets and cashier-only money requests', () => {
       subject: 'Wallet correction question',
       category: 'wallet',
       description: 'Please review a ledger entry for a round I believe settled incorrectly.',
+      // Players cannot raise their own priority; the wallet category's
+      // configured default wins.
+      priority: 'urgent',
     });
+    expect(walletTicket.priority).toBe('high');
 
     const refs = [workflowTicket.reference, walletTicket.reference];
     expect(new Set(refs).size).toBe(2);
@@ -599,21 +604,41 @@ describe('support tickets and cashier-only money requests', () => {
     expectStatus(invalidReopen, 400);
     expect(invalidReopen.body.error.code).toBe('INVALID_TRANSITION');
 
-    const reopened = await supportAgent
+    const blockedReopen = await supportAgent
       .post(`/api/tickets/${workflowTicket.reference}/status`)
       .set(CSRF)
       .send({ status: 'open', reason: 'Additional question arrived.' });
-    expectStatus(reopened, 200);
-    expect(reopened.body.ticket.reference).toBe(workflowTicket.reference);
+    expectStatus(blockedReopen, 400);
+    expect(blockedReopen.body.error.code).toBe('INVALID_TRANSITION');
+
+    const playerReplyAfterClose = await playerAgent
+      .post(`/api/tickets/${workflowTicket.reference}/messages`)
+      .set(CSRF)
+      .send({ body: 'Can I add one more detail?' });
+    expectStatus(playerReplyAfterClose, 400);
+    expect(playerReplyAfterClose.body.error.code).toBe('TICKET_CLOSED');
+
+    const staffReplyAfterClose = await supportAgent
+      .post(`/api/tickets/${workflowTicket.reference}/messages`)
+      .set(CSRF)
+      .send({ body: 'Internal follow-up after closure.' });
+    expectStatus(staffReplyAfterClose, 400);
+    expect(staffReplyAfterClose.body.error.code).toBe('TICKET_CLOSED');
+
+    const rejectTicket = await createTicket(playerAgent, {
+      subject: 'Out-of-scope request',
+      category: 'question',
+      description: 'This request needs a rejection reason recorded for the workflow test.',
+    });
 
     const rejectNoReason = await supportAgent
-      .post(`/api/tickets/${workflowTicket.reference}/status`)
+      .post(`/api/tickets/${rejectTicket.reference}/status`)
       .set(CSRF)
       .send({ status: 'rejected' });
     expectStatus(rejectNoReason, 400);
 
     const rejected = await supportAgent
-      .post(`/api/tickets/${workflowTicket.reference}/status`)
+      .post(`/api/tickets/${rejectTicket.reference}/status`)
       .set(CSRF)
       .send({ status: 'rejected', reason: 'Out of the supported scope for this queue.' });
     expectStatus(rejected, 200);
@@ -630,6 +655,12 @@ describe('support tickets and cashier-only money requests', () => {
 
     const playerClaim = await playerAgent.post(`/api/tickets/${workflowTicket.reference}/claim`).set(CSRF).send({});
     expectStatus(playerClaim, 403);
+
+    const playerPriority = await playerAgent
+      .post(`/api/tickets/${workflowTicket.reference}/priority`)
+      .set(CSRF)
+      .send({ priority: 'urgent' });
+    expectStatus(playerPriority, 403);
 
     const supportAdmin = await supportAgent.get('/api/admin/overview');
     expectStatus(supportAdmin, 403);

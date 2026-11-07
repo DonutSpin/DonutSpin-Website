@@ -10,8 +10,8 @@ DonutSpin is a self-hosted **casino for DonutSMP money**, with a player lobby, s
 - **Rewards** — a manual daily claim with configurable reset timezone, an increasing streak, milestone bonuses, grace-day handling, claim history, and a countdown to the next reset.
 - **Games** — Coinflip, Mines, Blackjack, Roulette, Towers, and Plinko. Wagers, randomness, outcomes, and payouts are settled by the server; animations only reveal settled results. Roulette players choose their own chip value, which scales every wager and payout without changing the table's odds.
 - **Game analytics** — per-game settled-round statistics, date-range filters, win-rate and payout trends, per-round configuration snapshots, sample-aware deviation warnings, and audited win-chance configuration.
-- **Cashier** — the only place for DonutSMP money requests: amount-only deposit and withdrawal requests with a conversation thread and owner/admin decisions.
-- **Support desk** — ticket queue, assignment, internal notes, replies, status and priority workflow, and staff activity views. Money requests are not accepted in tickets.
+- **Cashier** — the only place for DonutSMP money requests: amount-only deposit and withdrawal requests with a conversation thread and owner/admin decisions. Decisions are final and the conversation becomes a read-only website transcript.
+- **Support desk** — ticket queue, assignment, internal notes, replies, status and priority workflow, staff activity views, live updates, and permanent website transcripts for closed conversations. Money requests are not accepted in tickets.
 - **Administration** — user and role management, wallet adjustments, ticket oversight, game configuration, reward configuration, email settings and delivery log, platform settings, announcements, and an audit log.
 - **Email** — queued Brevo SMTP delivery with responsive HTML + plain-text templates, retries, and per-user notification preferences.
 - **Maintenance mode** — a platform-wide pause for players, enforced by both the UI and the API, with staff access preserved.
@@ -146,7 +146,8 @@ The Cashier is deliberately separate from support tickets. It is for one thing o
 - Owners and administrators review the queue at **Admin panel → Cashier requests**.
 - Approval writes an append-only ledger entry and changes the wallet immediately. Rejection requires a short reason.
 - Deposits use the `credit_request` ledger type; withdrawals use `admin_adjustment`. Both carry the cashier reference and request metadata.
-- Players and administrators can exchange public messages inside a request. Players may cancel a request while it is pending.
+- Players and administrators can exchange public messages inside a request while it is pending. Players may cancel a request while it is pending.
+- Approved, rejected, and cancelled requests are permanently read-only. Neither the requester nor staff can send another message or reopen the request; the full conversation stays available at **My transcripts** and **Admin → Transcripts**.
 - An open player session automatically refreshes its authenticated balance after a deposit or withdrawal is approved; the header, cashier summary, and wallet balance update without a page reload. Approval remains idempotent, so a repeated decision cannot credit or debit twice.
 - Only `owner` and `admin` roles hold `credits.adjust`, the permission required to decide a cashier request. Support staff cannot approve these requests.
 - Creating a cashier request is blocked during maintenance, while administrators can still review existing requests.
@@ -156,6 +157,16 @@ The Cashier is deliberately separate from support tickets. It is for one thing o
 Tickets no longer accept money requests, grant money, or adjust balances. Every new money request must use the Cashier. The legacy ticket category is archived and cannot be selected, re-enabled, or created through the API; pending and historical ticket money requests remain visible inside their original tickets as read-only records with an explicit archived notice. No legacy pending request can be approved after the migration, and no dashboard or notification tells staff to review one.
 
 Deposits and withdrawals are settled in DonutSMP money only. Every approval writes an append-only ledger entry and the balance changes immediately.
+
+### Transcripts, priority, and live updates
+
+Players open **My transcripts** (`/transcripts`) to re-read their own closed tickets and completed cashier requests. Team DonutSpin opens **Admin → Transcripts** (`/admin/transcripts`) to browse every transcript their role may see. Ticket transcripts are readable by support and above; cashier transcripts follow the existing `credits.adjust` rule, so only owners and administrators can read them. Every detail request re-checks ownership and role on the server, so changing a reference in the URL cannot expose another account's conversation. Ticket transcripts hide internal staff notes from players.
+
+Closing a ticket is permanent. The status workflow no longer allows `closed` to transition to any other state, and both the API and UI reject new messages from the requester or staff. Cashier decisions are equally final. The conversation itself is never deleted; it is rendered from the existing ticket/cashier tables on the transcript pages.
+
+Ticket priority is assigned by the category configured by Team DonutSpin. The create endpoint ignores any client-supplied priority, and only staff with the existing `tickets.priority` permission can change it afterwards.
+
+Ticket and cashier conversation pages poll quietly while the tab is visible (about every 5 seconds), so new messages, replies, status changes, and decisions appear without a manual refresh. Polls replace the snapshot atomically, which avoids duplicated messages, and hidden tabs pause automatically.
 
 ## Games and active rounds
 
@@ -457,7 +468,7 @@ Configuration, codes, announcements, invite rewards, and the primary guild live 
 
 **Info panels** are managed in the same page under the **Info panels** tab. Add any Discord channel once, give it a category (for example Development, Community, or Rules), then publish explanatory panels with embed copy, colours, images, and up to four link buttons. Editing a panel updates the same Discord message, so no channel ID or embed copy needs to be hardcoded in the bot.
 
-**Support logging** uses four dedicated channels, configured under **Admin → Discord bot → Configuration** or in `/setup`: ticket notifications (`#tickets`), ticket transcripts (`#ticket-transcripts`), cashier request logs (`#cashier-requests`), and cashier transcripts (`#cashier-transcripts`). The bot falls back to channels with those names when an ID is not configured. New tickets and the first staff reply in a conversation mention the configured owner, admin, and support role IDs with real role mentions; the bot never pings `@everyone` for these events. Ticket transcripts are attached as text on close and reopen. Every cashier action (created, approved, rejected, cancelled, amount changed, on hold, resumed) is logged with an embed, and a single growing audit transcript is maintained per request. Mark both transcript channels private and grant access only to authorized staff.
+**Support logging** uses four dedicated channels, configured under **Admin → Discord bot → Configuration** or in `/setup`: ticket notifications (`#tickets`), ticket transcripts (`#ticket-transcripts`), cashier request logs (`#cashier-requests`), and cashier transcripts (`#cashier-transcripts`). The bot falls back to channels with those names when an ID is not configured. New tickets and the first staff reply in a conversation mention the configured owner, admin, and support role IDs with real role mentions; the bot never pings `@everyone` for these events. Closing a ticket posts exactly one embed to the ticket transcript channel, with the reference, creator, assigned staff member, status, closing date, and a clickable **Open transcript on DonutSpin** link. Cashier requests post the same single embed (with amount and reviewer) once they reach a final approved, rejected, or cancelled state. No `.txt` files or multiple transcript messages are uploaded: the full conversation lives on the website and the embed links to it. Every cashier action (created, approved, rejected, cancelled, amount changed, on hold, resumed) is still logged with a separate request-log embed. Mark both transcript channels private and grant access only to authorized staff.
 
 ### Commands
 
@@ -488,7 +499,7 @@ The self-exclusion endpoint is `POST /api/me/self-exclusion` with `{ duration: '
 
 ## Tests
 
-The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, ticket creation and grouped reply emails with production links, support and cashier Discord logging and transcripts, archived legacy money-request records, cashier deposits/withdrawals, holds, amount edits and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, maintenance blocking, and the shared Discord bot API (linking, invite rewards and personal links, vouches, codes, giveaways, announcements, update channels and info panels, outbox leases, transcript delivery, and permission gates). The Discord tests use the real bot HTTP surface but do not connect to Discord itself; live gateway behaviour is verified against a development server.
+The integration suite exercises authentication, sessions, CSRF headers, registration policy, legal consent versioning and gating, self-exclusion, email verification and preferences, roles, ticket workflows, ticket creation and grouped reply emails with production links, support and cashier Discord logging plus single-embed transcripts linked to the website, website transcript permissions, permanently read-only closed conversations, category-enforced ticket priority, archived legacy money-request records, cashier deposits/withdrawals, holds, amount edits and messages, ledger integrity, all six games, daily/streak rewards, claim concurrency, reward configuration and audit records, game statistics and win-chance permissions, per-round configuration snapshots, date-range and trend calculations, deviation thresholds and sample-size handling, roulette chip-value settlement and payout arithmetic, idempotency, admin controls, public configuration, maintenance blocking, and the shared Discord bot API (linking, invite rewards and personal links, vouches, codes, giveaways, announcements, update channels and info panels, outbox leases, transcript delivery, and permission gates). The Discord tests use the real bot HTTP surface but do not connect to Discord itself; live gateway behaviour is verified against a development server.
 
 ```bash
 npm run typecheck
@@ -543,7 +554,7 @@ build/                Generated server build output (ignored by Git)
 
 - **Manual cashier review.** Cashier deposits and withdrawals are manual ledger movements settled by an owner or administrator; there is no automated payment rail. Game outcomes and balances are always server-authoritative.
 - **Email needs an owner setup step.** Delivery stays off until an owner saves a valid SMTP key and sender in **Admin → Email**. Until then, verification and reset links are written to the server log (and reset links can be exposed locally with `EXPOSE_RESET_TOKEN=true`).
-- **No attachments** in support tickets. Ticket and cashier transcripts state this explicitly where an attachment section would appear.
+- **No attachments** in support tickets. Transcripts are read-only website pages, and each closed ticket or cashier request posts one Discord embed linking to the appropriate transcript instead of uploading a file.
 - **The email queue runs inside the API process.** It is durable in SQLite and retries safely, but run a single API process, as with the rest of the SQLite deployment.
 - **SQLite is single-process oriented.** Use one server instance and a persistent volume; scale by snapshot/read replicas only with a proper migration, not by pointing multiple writers at the file.
 - **Browser automation is not part of `npm test`.** The committed tests are API/integration tests; UI flows are verified manually.

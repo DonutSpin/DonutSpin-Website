@@ -312,6 +312,9 @@ export function queueTicketTranscript(
   },
 ): string | null {
   try {
+    // Exactly one Discord transcript embed is published per ticket, when it is
+    // closed. Reopening or transcript requests must never create another one.
+    if (input.kind !== 'closed') return null;
     const existing = db
       .prepare('SELECT id FROM ticket_transcripts WHERE ticket_id = ? AND kind = ? AND event_id = ?')
       .get(input.ticketId, input.kind, input.eventId) as { id: string } | undefined;
@@ -491,6 +494,10 @@ export function queueCashierTranscript(
   try {
     const built = buildCashierTranscript(db, input.requestId);
     if (!built) return null;
+    // Cashier requests only publish a transcript once they reach a final
+    // decision. Earlier events are covered by the live request log, and the
+    // closed transcript contains the complete audit anyway.
+    if (!['approved', 'rejected', 'cancelled'].includes(built.request.status)) return null;
     const ctx = supportContext(db, 'cashier');
     const existing = db
       .prepare('SELECT id, revision, message_id FROM cashier_transcripts WHERE request_id = ?')
@@ -562,13 +569,28 @@ export interface TicketTranscriptForBot {
   channelId: string | null;
   messageId: string | null;
   createdAt: string;
+  subject: string;
+  requesterName: string;
+  assigneeName: string | null;
+  status: string;
+  priority: string;
+  category: string;
+  closedAt: string | null;
+  url: string;
 }
 
 export function getTicketTranscriptForBot(db: DB, id: string): TicketTranscriptForBot | null {
   const row = db
     .prepare(
-      `SELECT id, reference, kind, content, filename, channel_id, message_id, created_at
-         FROM ticket_transcripts WHERE id = ?`,
+      `SELECT tr.id, tr.reference, tr.kind, tr.content, tr.filename, tr.channel_id, tr.message_id,
+              tr.created_at, t.subject, t.status, t.priority, t.closed_at,
+              c.label AS category, req.username AS requester_name, ag.username AS assignee_name
+         FROM ticket_transcripts tr
+         JOIN tickets t ON t.id = tr.ticket_id
+         JOIN support_categories c ON c.key = t.category
+         JOIN users req ON req.id = t.user_id
+         LEFT JOIN users ag ON ag.id = t.assignee_id
+        WHERE tr.id = ?`,
     )
     .get(id) as
     | {
@@ -580,6 +602,13 @@ export function getTicketTranscriptForBot(db: DB, id: string): TicketTranscriptF
         channel_id: string | null;
         message_id: string | null;
         created_at: string;
+        subject: string;
+        status: string;
+        priority: string;
+        closed_at: string | null;
+        category: string;
+        requester_name: string;
+        assignee_name: string | null;
       }
     | undefined;
   if (!row) return null;
@@ -592,6 +621,14 @@ export function getTicketTranscriptForBot(db: DB, id: string): TicketTranscriptF
     channelId: row.channel_id,
     messageId: row.message_id,
     createdAt: row.created_at,
+    subject: row.subject,
+    requesterName: row.requester_name,
+    assigneeName: row.assignee_name,
+    status: row.status,
+    priority: row.priority,
+    category: row.category,
+    closedAt: row.closed_at,
+    url: `/transcripts/ticket/${encodeURIComponent(row.reference)}`,
   };
 }
 
@@ -604,13 +641,28 @@ export interface CashierTranscriptForBot {
   messageId: string | null;
   revision: number;
   updatedAt: string;
+  requesterName: string;
+  reviewerName: string | null;
+  kind: CashierRequestKind;
+  amount: number;
+  status: CashierRequestStatus;
+  createdAt: string;
+  decidedAt: string | null;
+  url: string;
 }
 
 export function getCashierTranscriptForBot(db: DB, id: string): CashierTranscriptForBot | null {
   const row = db
     .prepare(
-      `SELECT id, reference, content, filename, channel_id, message_id, revision, updated_at
-         FROM cashier_transcripts WHERE id = ?`,
+      `SELECT tr.id, tr.reference, tr.content, tr.filename, tr.channel_id, tr.message_id,
+              tr.revision, tr.updated_at,
+              r.kind, r.amount, r.status, r.created_at, r.decided_at,
+              req.username AS requester_name, rev.username AS reviewer_name
+         FROM cashier_transcripts tr
+         JOIN cashier_requests r ON r.id = tr.request_id
+         JOIN users req ON req.id = r.user_id
+         LEFT JOIN users rev ON rev.id = r.reviewer_id
+        WHERE tr.id = ?`,
     )
     .get(id) as
     | {
@@ -622,6 +674,13 @@ export function getCashierTranscriptForBot(db: DB, id: string): CashierTranscrip
         message_id: string | null;
         revision: number;
         updated_at: string;
+        kind: CashierRequestKind;
+        amount: number;
+        status: CashierRequestStatus;
+        created_at: string;
+        decided_at: string | null;
+        requester_name: string;
+        reviewer_name: string | null;
       }
     | undefined;
   if (!row) return null;
@@ -634,6 +693,14 @@ export function getCashierTranscriptForBot(db: DB, id: string): CashierTranscrip
     messageId: row.message_id,
     revision: row.revision,
     updatedAt: row.updated_at,
+    requesterName: row.requester_name,
+    reviewerName: row.reviewer_name,
+    kind: row.kind,
+    amount: row.amount,
+    status: row.status,
+    createdAt: row.created_at,
+    decidedAt: row.decided_at,
+    url: `/transcripts/cashier/${encodeURIComponent(row.reference)}`,
   };
 }
 
@@ -662,7 +729,7 @@ export function flushPendingSupportTranscripts(db: DB): void {
     const tickets = db
       .prepare(
         `SELECT id, reference, channel_id FROM ticket_transcripts
-          WHERE status = 'queued' ORDER BY created_at ASC LIMIT 25`,
+          WHERE status = 'queued' AND kind = 'closed' ORDER BY created_at ASC LIMIT 25`,
       )
       .all() as { id: string; reference: string; channel_id: string | null }[];
     const ticketCtx = supportContext(db, 'ticket');
@@ -692,8 +759,10 @@ export function flushPendingSupportTranscripts(db: DB): void {
     if (!cashierCtx) return;
     const cashierRows = db
       .prepare(
-        `SELECT id, reference, revision FROM cashier_transcripts
-          WHERE status = 'queued' ORDER BY updated_at ASC LIMIT 25`,
+        `SELECT tr.id, tr.reference, tr.revision FROM cashier_transcripts tr
+           JOIN cashier_requests r ON r.id = tr.request_id
+          WHERE tr.status = 'queued' AND r.status IN ('approved','rejected','cancelled')
+          ORDER BY tr.updated_at ASC LIMIT 25`,
       )
       .all() as { id: string; reference: string; revision: number }[];
     for (const row of cashierRows) {

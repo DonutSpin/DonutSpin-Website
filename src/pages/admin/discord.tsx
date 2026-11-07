@@ -71,9 +71,9 @@ const CHANNEL_FIELDS: { key: keyof DiscordGuildConfig['channels']; label: string
   { key: 'changelog', label: 'Changelog channel', hint: 'Website update embeds.' },
   { key: 'logs', label: 'Activity log channel', hint: 'Optional staff audit mirror.' },
   { key: 'tickets', label: 'Ticket notifications (#tickets)', hint: 'New tickets and staff replies that need attention. Roles are pinged with real mentions.' },
-  { key: 'ticketTranscripts', label: 'Ticket transcripts (#ticket-transcripts)', hint: 'Closed and reopened ticket transcripts. Staff-only channel.' },
+  { key: 'ticketTranscripts', label: 'Ticket transcripts (#ticket-transcripts)', hint: 'One embed per closed ticket, linking to the website transcript. Staff-only channel.' },
   { key: 'cashierRequests', label: 'Cashier requests (#cashier-requests)', hint: 'Every cashier request and status change.' },
-  { key: 'cashierTranscripts', label: 'Cashier transcripts (#cashier-transcripts)', hint: 'Live audit transcript for every cashier request. Staff-only channel.' },
+  { key: 'cashierTranscripts', label: 'Cashier transcripts (#cashier-transcripts)', hint: 'One embed per decided cashier request, linking to the website transcript. Staff-only channel.' },
 ];
 
 const ROLE_FIELDS: { key: keyof DiscordGuildConfig['roles']; label: string }[] = [

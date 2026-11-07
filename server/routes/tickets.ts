@@ -47,8 +47,9 @@ import {
 const createSchema = z.object({
   subject: z.string().trim().min(4, 'Use at least 4 characters.').max(140, 'Keep the subject under 140 characters.'),
   category: z.string().trim().min(1, 'Choose a category.'),
+  // Priority is assigned from the category configured by Team DonutSpin. The
+  // client cannot request a higher priority for its own ticket.
   description: z.string().trim().min(10, 'Describe the issue in at least 10 characters.').max(8000),
-  priority: ticketPrioritySchema.optional(),
 });
 
 const messageSchema = z.object({
@@ -202,18 +203,12 @@ function applyStatusChange(
     metadata: { from: ticket.status, to: next, source: input.source ?? 'staff' },
     ip: input.ip ?? null,
   });
+  // A ticket produces exactly one Discord transcript embed, when it closes.
+  // Reopening and later closure produce no additional transcript messages.
   if (next === 'closed') {
     queueTicketTranscript(db, {
       ticketId: ticket.id,
       kind: 'closed',
-      eventId,
-      actorId: actor.id,
-      note: reason,
-    });
-  } else if (eventType === 'reopened') {
-    queueTicketTranscript(db, {
-      ticketId: ticket.id,
-      kind: 'reopened',
       eventId,
       actorId: actor.id,
       note: reason,
@@ -315,7 +310,7 @@ export function createTicketsRouter(db: DB): Router {
       db.prepare(
         `INSERT INTO tickets (id, reference, user_id, subject, description, category, status, priority, created_at, updated_at, last_activity_at)
          VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?)`,
-      ).run(ticketId, ref, user.id, body.subject, body.description, category.key, body.priority ?? category.defaultPriority, now, now, now);
+      ).run(ticketId, ref, user.id, body.subject, body.description, category.key, category.defaultPriority, now, now, now);
       addTicketEvent(db, { ticketId, actorId: user.id, type: 'created', toValue: 'new' });
       notify(db, {
         userId: user.id,
@@ -359,7 +354,7 @@ export function createTicketsRouter(db: DB): Router {
       subject: body.subject,
       requester: user.username,
       category: category.label,
-      priority: body.priority ?? category.defaultPriority,
+      priority: category.defaultPriority,
       status: 'new',
       preview: body.description.slice(0, 300),
     });
@@ -627,29 +622,6 @@ export function createTicketsRouter(db: DB): Router {
       });
     });
     res.json({ ticket: getTicketDetail(db, user, ticket.reference) });
-  });
-
-  router.post('/:reference/transcript', (req, res) => {
-    const user = requireAuth(req);
-    requirePermission(req, 'tickets.manage');
-    const ticket = loadTicketByReference(db, req.params.reference ?? '');
-    const transcriptId = queueTicketTranscript(db, {
-      ticketId: ticket.id,
-      kind: 'manual',
-      eventId: newId('manual'),
-      actorId: user.id,
-      note: 'Manual transcript request',
-    });
-    if (!transcriptId) throw badRequest('The transcript could not be generated.', 'TRANSCRIPT_FAILED');
-    recordAudit(db, {
-      actorId: user.id,
-      action: 'ticket.transcript',
-      targetType: 'ticket',
-      targetId: ticket.id,
-      targetLabel: ticket.reference,
-      ip: clientIp(req),
-    });
-    res.status(202).json({ ok: true, transcriptId });
   });
 
   router.post('/:reference/claim', (req, res) => {

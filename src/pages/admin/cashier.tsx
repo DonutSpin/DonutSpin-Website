@@ -7,6 +7,7 @@ import {
   PauseCircle,
   Pencil,
   PlayCircle,
+  ScrollText,
   Search,
   ShieldCheck,
   UserRound,
@@ -89,7 +90,7 @@ export function AdminCashierPage() {
   if (kind) params.set('kind', kind);
   if (appliedSearch) params.set('q', appliedSearch);
 
-  const query = useApiQuery<AdminCashierListResponse>(`/admin/cashier?${params.toString()}`);
+  const query = useApiQuery<AdminCashierListResponse>(`/admin/cashier?${params.toString()}`, { pollMs: 10_000 });
   const data = query.data;
 
   const submitSearch = (event: FormEvent) => {
@@ -104,11 +105,18 @@ export function AdminCashierPage() {
         title="Cashier requests"
         description="The single review queue for every DonutSMP money request, deposit, and withdrawal."
         actions={
-          <Link to="/admin/economy">
-            <Button variant="secondary" leftIcon={<Wallet className="h-4 w-4" />}>
-              Economy
-            </Button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/admin/transcripts?kind=cashier">
+              <Button variant="secondary" leftIcon={<ScrollText className="h-4 w-4" />}>
+                Transcripts
+              </Button>
+            </Link>
+            <Link to="/admin/economy">
+              <Button variant="secondary" leftIcon={<Wallet className="h-4 w-4" />}>
+                Economy
+              </Button>
+            </Link>
+          </div>
         }
       />
 
@@ -276,7 +284,7 @@ export function AdminCashierDetailPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { success, error: toastError } = useToast();
-  const query = useApiQuery<{ request: CashierRequestDetail }>(`/admin/cashier/${reference}`);
+  const query = useApiQuery<{ request: CashierRequestDetail }>(`/admin/cashier/${reference}`, { pollMs: 5_000 });
   const [decision, setDecision] = useState<'approve' | 'reject' | null>(null);
   const [reason, setReason] = useState('');
   const [decisionBusy, setDecisionBusy] = useState(false);
@@ -408,11 +416,20 @@ export function AdminCashierDetailPage() {
         description={`${money(request.amount)} DonutSMP money from ${request.requester.username}`}
         badge={<CashierStatusBadge status={request.status} />}
         actions={
-          <Link to="/admin/cashier">
-            <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />}>
-              Back to queue
-            </Button>
-          </Link>
+          <>
+            {request.status !== 'pending' && (
+              <Link to={`/transcripts/cashier/${request.reference}`}>
+                <Button variant="secondary" leftIcon={<ScrollText className="h-4 w-4" />}>
+                  Transcript
+                </Button>
+              </Link>
+            )}
+            <Link to="/admin/cashier">
+              <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />}>
+                Back to queue
+              </Button>
+            </Link>
+          </>
         }
       />
 
@@ -458,6 +475,7 @@ export function AdminCashierDetailPage() {
                 messages={request.messages}
                 currentUserId={user?.id ?? ''}
                 canMessage={request.canMessage}
+                status={request.status}
                 onSend={sendMessage}
               />
             </div>

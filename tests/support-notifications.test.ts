@@ -304,7 +304,7 @@ describe('Discord support logging', () => {
     expect(replyEvents).toHaveLength(1);
   });
 
-  it('writes a full ticket transcript on close and again on reopen', async () => {
+  it('writes exactly one ticket transcript on close and permanently locks the ticket', async () => {
     const created = await createTicket('Transcript lifecycle');
     const reply = await supportAgent
       .post(`/api/tickets/${created.reference}/messages`)
@@ -335,19 +335,46 @@ describe('Discord support logging', () => {
     expect(rows[0]!.content).toContain('Closed by:');
     expect(rows[0]!.content).toContain('Issue resolved.');
     expect(rows[0]!.filename).toContain(created.reference);
-    expect(outbox('ticket_transcript').filter((event) => event.dedupe_key?.includes('ticket-transcript')).length).toBeGreaterThanOrEqual(1);
+    const transcriptEvents = outbox('ticket_transcript').filter((event) =>
+      event.dedupe_key?.includes('ticket-transcript'),
+    );
+    expect(transcriptEvents).toHaveLength(1);
+    const transcriptPayload = JSON.parse(transcriptEvents[0]!.payload) as {
+      transcriptId: string;
+      reference: string;
+      channelId: string;
+    };
+    expect(transcriptPayload.reference).toBe(created.reference);
+    expect(transcriptPayload.channelId).toBe(TICKET_TRANSCRIPTS);
+    expect(JSON.stringify(transcriptPayload)).not.toContain('content');
+    expect(JSON.stringify(transcriptPayload)).not.toContain('filename');
 
     const reopened = await supportAgent
       .post(`/api/tickets/${created.reference}/status`)
       .set(CSRF)
       .send({ status: 'open', reason: 'Player asked for another look.' });
-    expectStatus(reopened, 200);
-    const reopenedRows = db
-      .prepare('SELECT kind, content FROM ticket_transcripts WHERE ticket_id = ? ORDER BY created_at')
-      .all(created.id) as { kind: string; content: string }[];
-    expect(reopenedRows.map((row) => row.kind)).toEqual(['closed', 'reopened']);
-    expect(reopenedRows[1]!.content).toContain('Reopened by:');
-    expect(reopenedRows[1]!.content).toContain('Player asked for another look.');
+    expectStatus(reopened, 400);
+    expect(reopened.body.error.code).toBe('INVALID_TRANSITION');
+
+    const playerReply = await playerAgent
+      .post(`/api/tickets/${created.reference}/messages`)
+      .set(CSRF)
+      .send({ body: 'One more question after closure.' });
+    expectStatus(playerReply, 400);
+    expect(playerReply.body.error.code).toBe('TICKET_CLOSED');
+
+    const staffReply = await supportAgent
+      .post(`/api/tickets/${created.reference}/messages`)
+      .set(CSRF)
+      .send({ body: 'Staff follow-up after closure.' });
+    expectStatus(staffReply, 400);
+    expect(staffReply.body.error.code).toBe('TICKET_CLOSED');
+
+    rows = db
+      .prepare('SELECT kind, content, filename, status FROM ticket_transcripts WHERE ticket_id = ? ORDER BY created_at')
+      .all(created.id) as { kind: string; content: string; filename: string; status: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe('closed');
   });
 
   it('logs every cashier transition and keeps one growing transcript without sensitive email data', async () => {
@@ -356,15 +383,16 @@ describe('Discord support logging', () => {
     const reference = create.body.request.reference as string;
     const requestId = create.body.request.id as string;
 
-    let transcript = db.prepare('SELECT * FROM cashier_transcripts WHERE request_id = ?').get(requestId) as {
-      content: string;
-      revision: number;
-    };
-    expect(transcript.revision).toBe(1);
-    expect(transcript.content).toContain('AUDIT EVENTS');
-    expect(transcript.content).toContain('created');
-    expect(transcript.content).toContain('notifyplayer');
-    expect(transcript.content).not.toContain(playerEmail);
+    let transcript = db.prepare('SELECT * FROM cashier_transcripts WHERE request_id = ?').get(requestId) as
+      | { content: string; revision: number }
+      | undefined;
+    expect(transcript).toBeUndefined();
+    expect(
+      outbox('cashier_transcript').filter((event) => {
+        const payload = JSON.parse(event.payload) as { reference?: string };
+        return payload.reference === reference;
+      }),
+    ).toHaveLength(0);
 
     let events = outbox('cashier_notification').filter((event) => {
       const payload = JSON.parse(event.payload) as { reference?: string };
@@ -385,9 +413,18 @@ describe('Discord support logging', () => {
       content: string;
       revision: number;
     };
-    expect(transcript.revision).toBe(2);
+    expect(transcript.revision).toBe(1);
+    expect(transcript.content).toContain('AUDIT EVENTS');
+    expect(transcript.content).toContain('notifyplayer');
+    expect(transcript.content).not.toContain(playerEmail);
     expect(transcript.content).toContain('approved');
     expect(transcript.content).toContain('Verified the deposit.');
+    expect(
+      outbox('cashier_transcript').filter((event) => {
+        const payload = JSON.parse(event.payload) as { reference?: string };
+        return payload.reference === reference;
+      }),
+    ).toHaveLength(1);
 
     events = outbox('cashier_notification').filter((event) => {
       const payload = JSON.parse(event.payload) as { reference?: string };
@@ -407,7 +444,7 @@ describe('Discord support logging', () => {
     expect(
       (db.prepare('SELECT revision FROM cashier_transcripts WHERE request_id = ?').get(requestId) as { revision: number })
         .revision,
-    ).toBe(2);
+    ).toBe(1);
 
     const second = await playerAgent.post('/api/cashier').set(CSRF).send({ kind: 'withdrawal', amount: 100_000 });
     expectStatus(second, 201);
@@ -444,15 +481,161 @@ describe('Discord support logging', () => {
       .map((payload) => payload.event);
     expect(secondEvents).toEqual(['created', 'on_hold', 'resumed', 'amount_changed', 'cancelled']);
 
-    const secondTranscript = db.prepare('SELECT content, revision FROM cashier_transcripts WHERE request_id = ?').get(secondId) as {
-      content: string;
-      revision: number;
-    };
-    expect(secondTranscript.revision).toBe(5);
+    const secondTranscript = db
+      .prepare('SELECT content, revision FROM cashier_transcripts WHERE request_id = ?')
+      .get(secondId) as { content: string; revision: number };
+    expect(secondTranscript.revision).toBe(1);
     expect(secondTranscript.content).toContain('on_hold');
     expect(secondTranscript.content).toContain('resumed');
     expect(secondTranscript.content).toContain('AMOUNT_CHANGED');
     expect(secondTranscript.content).toContain('cancelled');
+    expect(
+      outbox('cashier_transcript').filter((event) => {
+        const payload = JSON.parse(event.payload) as { reference?: string };
+        return payload.reference === secondReference;
+      }),
+    ).toHaveLength(1);
+  });
+
+  it('serves website transcripts with strict access and links the Discord embed to the site', async () => {
+    const ticket = await createTicket('Website transcript access');
+    expectStatus(await supportAgent.post(`/api/tickets/${ticket.reference}/claim`).set(CSRF).send({}), 200);
+    expectStatus(
+      await supportAgent
+        .post(`/api/tickets/${ticket.reference}/messages`)
+        .set(CSRF)
+        .send({ body: 'Public answer visible in the transcript.' }),
+      201,
+    );
+    expectStatus(
+      await supportAgent
+        .post(`/api/tickets/${ticket.reference}/messages`)
+        .set(CSRF)
+        .send({ body: 'Private staff note for the transcript.', visibility: 'internal' }),
+      201,
+    );
+    expectStatus(
+      await supportAgent
+        .post(`/api/tickets/${ticket.reference}/status`)
+        .set(CSRF)
+        .send({ status: 'closed', reason: 'Closed for the transcript test.' }),
+      200,
+    );
+
+    const cashier = await playerAgent.post('/api/cashier').set(CSRF).send({ kind: 'deposit', amount: 75_000 });
+    expectStatus(cashier, 201);
+    const cashierReference = cashier.body.request.reference as string;
+    expectStatus(
+      await ownerAgent
+        .post(`/api/admin/cashier/${cashierReference}/decision`)
+        .set(CSRF)
+        .send({ decision: 'approve', reason: 'Transcript access test.' }),
+      200,
+    );
+
+    const ownList = await playerAgent.get('/api/transcripts?scope=own&pageSize=50');
+    expectStatus(ownList, 200);
+    const ownReferences = ownList.body.items.map((item: { reference: string }) => item.reference);
+    expect(ownReferences).toContain(ticket.reference);
+    expect(ownReferences).toContain(cashierReference);
+    const ticketSummary = ownList.body.items.find(
+      (item: { reference: string }) => item.reference === ticket.reference,
+    ) as { status: string; assignee: string | null; kind: string };
+    expect(ticketSummary.status).toBe('closed');
+    expect(ticketSummary.assignee).toBe('notifysupport');
+    expect(ticketSummary.kind).toBe('ticket');
+
+    const playerTicket = await playerAgent.get(`/api/transcripts/ticket/${ticket.reference}`);
+    expectStatus(playerTicket, 200);
+    expect(playerTicket.body.transcript.canSeeInternalNotes).toBe(false);
+    expect(JSON.stringify(playerTicket.body.transcript)).not.toContain('Private staff note');
+    expect(JSON.stringify(playerTicket.body.transcript)).toContain('Public answer visible');
+
+    const supportTicket = await supportAgent.get(`/api/transcripts/ticket/${ticket.reference}`);
+    expectStatus(supportTicket, 200);
+    expect(supportTicket.body.transcript.canSeeInternalNotes).toBe(true);
+    expect(JSON.stringify(supportTicket.body.transcript)).toContain('Private staff note');
+
+    const supportAll = await supportAgent.get('/api/transcripts?scope=all&pageSize=50');
+    expectStatus(supportAll, 200);
+    const supportReferences = supportAll.body.items.map((item: { reference: string }) => item.reference);
+    expect(supportReferences).toContain(ticket.reference);
+    // Support agents cannot read cashier transcripts without credits.adjust.
+    expect(supportReferences).not.toContain(cashierReference);
+    expectStatus(await supportAgent.get(`/api/transcripts/cashier/${cashierReference}`), 403);
+
+    const ownerAll = await ownerAgent.get('/api/transcripts?scope=all&pageSize=50');
+    expectStatus(ownerAll, 200);
+    expect(ownerAll.body.items.map((item: { reference: string }) => item.reference)).toContain(cashierReference);
+    const ownerCashier = await ownerAgent.get(`/api/transcripts/cashier/${cashierReference}`);
+    expectStatus(ownerCashier, 200);
+    expect(ownerCashier.body.transcript.status).toBe('approved');
+    expect(ownerCashier.body.transcript.amount).toBe(75_000);
+
+    const playerCashier = await playerAgent.get(`/api/transcripts/cashier/${cashierReference}`);
+    expectStatus(playerCashier, 200);
+    expect(playerCashier.body.transcript.assignee).toBe('notifyowner');
+
+    const supportModule = await import('../server/lib/discord/support.ts');
+    const ticketRow = db
+      .prepare('SELECT id FROM ticket_transcripts WHERE reference = ?')
+      .get(ticket.reference) as { id: string };
+    const botTicket = supportModule.getTicketTranscriptForBot(db, ticketRow.id);
+    expect(botTicket?.url).toBe(`/transcripts/ticket/${ticket.reference}`);
+    expect(botTicket?.requesterName).toContain('notifyplayer');
+    expect(botTicket?.assigneeName).toBe('notifysupport');
+    expect(botTicket?.closedAt).toBeTruthy();
+    expect(botTicket?.category).toBe('Technical support');
+
+    const cashierRow = db
+      .prepare('SELECT id FROM cashier_transcripts WHERE reference = ?')
+      .get(cashierReference) as { id: string };
+    const botCashier = supportModule.getCashierTranscriptForBot(db, cashierRow.id);
+    expect(botCashier?.url).toBe(`/transcripts/cashier/${cashierReference}`);
+    expect(botCashier?.status).toBe('approved');
+    expect(botCashier?.reviewerName).toBe('notifyowner');
+    expect(botCashier?.createdAt).toBeTruthy();
+
+    const transcriptEvents = outbox('ticket_transcript').filter((event) => {
+      const payload = JSON.parse(event.payload) as { reference?: string };
+      return payload.reference === ticket.reference;
+    });
+    expect(transcriptEvents).toHaveLength(1);
+    expect(JSON.stringify(JSON.parse(transcriptEvents[0]!.payload))).not.toContain('content');
+  });
+
+  it('keeps decided cashier requests permanently read-only', async () => {
+    const created = await playerAgent.post('/api/cashier').set(CSRF).send({ kind: 'deposit', amount: 40_000 });
+    expectStatus(created, 201);
+    const reference = created.body.request.reference as string;
+    expectStatus(
+      await ownerAgent
+        .post(`/api/admin/cashier/${reference}/decision`)
+        .set(CSRF)
+        .send({ decision: 'approve', reason: 'Read-only test.' }),
+      200,
+    );
+
+    const playerMessage = await playerAgent
+      .post(`/api/cashier/${reference}/messages`)
+      .set(CSRF)
+      .send({ body: 'Can I still change this?' });
+    expectStatus(playerMessage, 409);
+    expect(playerMessage.body.error.code).toBe('REQUEST_CLOSED');
+
+    const staffMessage = await ownerAgent
+      .post(`/api/admin/cashier/${reference}/messages`)
+      .set(CSRF)
+      .send({ body: 'Staff follow-up after the decision.' });
+    expectStatus(staffMessage, 409);
+    expect(staffMessage.body.error.code).toBe('REQUEST_CLOSED');
+
+    const detail = await playerAgent.get(`/api/cashier/${reference}`);
+    expectStatus(detail, 200);
+    expect(detail.body.request.canMessage).toBe(false);
+
+    const cancel = await playerAgent.post(`/api/cashier/${reference}/cancel`).set(CSRF).send({});
+    expectStatus(cancel, 409);
   });
 
   it('prevents another user from reading a ticket or cashier request', async () => {
@@ -469,5 +652,11 @@ describe('Discord support logging', () => {
 
     expectStatus(await stranger.get(`/api/tickets/${ticket.reference}`), 403);
     expectStatus(await stranger.get(`/api/cashier/${cashier.body.request.reference}`), 404);
+    expectStatus(await stranger.get(`/api/transcripts/ticket/${ticket.reference}`), 403);
+    expectStatus(await stranger.get(`/api/transcripts/cashier/${cashier.body.request.reference}`), 403);
+    const strangerList = await stranger.get('/api/transcripts?scope=own&pageSize=50');
+    expectStatus(strangerList, 200);
+    expect(strangerList.body.items).toHaveLength(0);
+    expectStatus(await stranger.get('/api/transcripts?scope=all'), 403);
   });
 });
