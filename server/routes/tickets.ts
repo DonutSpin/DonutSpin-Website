@@ -388,23 +388,11 @@ export function createTicketsRouter(db: DB): Router {
     }
 
     const internal = body.visibility === 'internal';
-    const lastStaff = db
-      .prepare(
-        `SELECT created_at FROM ticket_messages
-          WHERE ticket_id = ? AND visibility = 'public' AND author_role <> 'user'
-          ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-      )
-      .get(ticket.id) as { created_at: string } | undefined;
-    // Never ping the support roles for every sentence in a rapid back-and-forth.
-    // One staff message in a five-minute burst announces the conversation;
-    // later replies in the same burst stay quiet even if the player replied in
-    // between. A genuinely fresh conversation pings again.
-    const recentStaffReply = Boolean(
-      lastStaff && Date.now() - new Date(lastStaff.created_at).getTime() < 5 * 60_000,
-    );
+    let messageId = '';
+    let replyStatus = ticket.status;
 
     inTransaction(db, () => {
-      const messageId = addTicketMessage(db, {
+      messageId = addTicketMessage(db, {
         ticketId: ticket.id,
         authorId: user.id,
         authorRole: user.role,
@@ -434,21 +422,6 @@ export function createTicketsRouter(db: DB): Router {
           authorRole: user.role,
           body: body.body,
         });
-        if (!recentStaffReply) {
-          queueTicketNotification(db, {
-            kind: 'reply',
-            ticketId: ticket.id,
-            messageId,
-            reference: ticket.reference,
-            subject: ticket.subject,
-            requester: getRequesterName(db, ticket.user_id),
-            category: categoryLabel(db, ticket.category),
-            priority: ticket.priority,
-            status: next ?? ticket.status,
-            preview: body.body.slice(0, 300),
-            staffName: user.username,
-          });
-        }
         if (next) {
           db.prepare('UPDATE tickets SET status = ?, hold_reason = NULL WHERE id = ?').run(next, ticket.id);
           addTicketEvent(db, {
@@ -489,6 +462,7 @@ export function createTicketsRouter(db: DB): Router {
         // Requester replied: waiting tickets return to the queue, resolved tickets reopen.
         if (ticket.status === 'waiting_user' || ticket.status === 'resolved') {
           const next: TicketStatus = 'open';
+          replyStatus = next;
           db.prepare('UPDATE tickets SET status = ?, updated_at = ? WHERE id = ?').run(next, nowIso(), ticket.id);
           addTicketEvent(db, {
             ticketId: ticket.id,
@@ -519,6 +493,25 @@ export function createTicketsRouter(db: DB): Router {
         }
       }
     });
+
+    // The Discord #tickets channel is for the requester's side of the
+    // conversation. Staff replies stay on the website so the channel does not
+    // echo every internal answer; a new requester message is the signal the
+    // support team needs to look at the ticket again.
+    if (!staff) {
+      queueTicketNotification(db, {
+        kind: 'requester_reply',
+        ticketId: ticket.id,
+        messageId,
+        reference: ticket.reference,
+        subject: ticket.subject,
+        requester: getRequesterName(db, ticket.user_id),
+        category: categoryLabel(db, ticket.category),
+        priority: ticket.priority,
+        status: replyStatus,
+        preview: body.body.slice(0, 300),
+      });
+    }
 
     markTicketRead(db, ticket.id, user.id);
     markTicketSeenByRequester(db, ticket.id, user.id);

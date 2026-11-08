@@ -213,8 +213,9 @@ export function createCashierRouter(db: DB): Router {
       throw conflict('This cashier request is closed and can no longer receive messages.', 'REQUEST_CLOSED');
     }
 
+    let messageId = '';
     inTransaction(db, () => {
-      addCashierMessage(db, {
+      messageId = addCashierMessage(db, {
         requestId: row.id,
         authorId: user.id,
         authorRole: user.role,
@@ -242,6 +243,23 @@ export function createCashierRouter(db: DB): Router {
         targetLabel: row.reference,
         ip: clientIp(req),
       });
+    });
+    // Staff replies stay on the website. The Discord channel only receives the
+    // requester's messages, matching how the ticket channel is handled.
+    queueCashierNotification(db, {
+      event: 'message',
+      eventKey: messageId,
+      requestId: row.id,
+      messageId,
+      reference: row.reference,
+      username: row.requester_name ?? user.username,
+      userId: row.user_id,
+      kind: row.kind,
+      amount: row.amount,
+      status: row.status,
+      onHold: Boolean(row.held_at),
+      preview: body.body.slice(0, 300),
+      createdAt: row.created_at,
     });
     res.json({ request: getCashierDetail(db, user, row.reference) });
   });

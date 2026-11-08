@@ -267,7 +267,7 @@ describe('support email notifications', () => {
 });
 
 describe('Discord support logging', () => {
-  it('pings configured support roles for a new ticket and throttles reply pings', async () => {
+  it('pings support roles for new tickets and requester replies, but never for staff replies', async () => {
     const created = await createTicket('Discord ticket notification');
     const createdEvents = outbox('ticket_notification').filter((event) => {
       const payload = JSON.parse(event.payload) as { reference?: string };
@@ -286,22 +286,93 @@ describe('Discord support logging', () => {
     expect(createdPayload.roleIds).toEqual([OWNER_ROLE, ADMIN_ROLE, STAFF_ROLE]);
     expect(createdPayload.requester).toContain('notifyplayer');
 
-    const firstReply = await supportAgent
+    const staffReply = await supportAgent
       .post(`/api/tickets/${created.reference}/messages`)
       .set(CSRF)
-      .send({ body: 'A staff reply that should ping the support roles.' });
-    expectStatus(firstReply, 201);
-    const secondReply = await supportAgent
-      .post(`/api/tickets/${created.reference}/messages`)
-      .set(CSRF)
-      .send({ body: 'A second reply in the same burst must stay quiet.' });
-    expectStatus(secondReply, 201);
+      .send({ body: 'A staff reply that must stay on the website.' });
+    expectStatus(staffReply, 201);
+    expect(
+      outbox('ticket_notification').filter((event) => {
+        const payload = JSON.parse(event.payload) as { reference?: string; kind?: string };
+        return payload.reference === created.reference && payload.kind === 'requester_reply';
+      }),
+    ).toHaveLength(0);
 
+    const ownerReply = await playerAgent
+      .post(`/api/tickets/${created.reference}/messages`)
+      .set(CSRF)
+      .send({ body: 'The ticket owner is following up with more information.' });
+    expectStatus(ownerReply, 201);
     const replyEvents = outbox('ticket_notification').filter((event) => {
       const payload = JSON.parse(event.payload) as { reference?: string; kind?: string };
-      return payload.reference === created.reference && payload.kind === 'reply';
+      return payload.reference === created.reference && payload.kind === 'requester_reply';
     });
     expect(replyEvents).toHaveLength(1);
+    const replyPayload = JSON.parse(replyEvents[0]!.payload) as {
+      channelId: string;
+      roleIds: string[];
+      requester: string;
+      preview: string;
+    };
+    expect(replyPayload.channelId).toBe(TICKETS);
+    expect(replyPayload.roleIds).toEqual([OWNER_ROLE, ADMIN_ROLE, STAFF_ROLE]);
+    expect(replyPayload.requester).toContain('notifyplayer');
+    expect(replyPayload.preview).toContain('following up with more information');
+
+    const secondOwnerReply = await playerAgent
+      .post(`/api/tickets/${created.reference}/messages`)
+      .set(CSRF)
+      .send({ body: 'One more detail from the ticket owner.' });
+    expectStatus(secondOwnerReply, 201);
+    expect(
+      outbox('ticket_notification').filter((event) => {
+        const payload = JSON.parse(event.payload) as { reference?: string; kind?: string };
+        return payload.reference === created.reference && payload.kind === 'requester_reply';
+      }),
+    ).toHaveLength(2);
+  });
+
+  it('pings support roles when a cashier request is opened or the requester replies', async () => {
+    const created = await playerAgent.post('/api/cashier').set(CSRF).send({ kind: 'deposit', amount: 65_000 });
+    expectStatus(created, 201);
+    const reference = created.body.request.reference as string;
+
+    const events = () =>
+      outbox('cashier_notification')
+        .map((event) => JSON.parse(event.payload) as Record<string, unknown>)
+        .filter((payload) => payload.reference === reference);
+
+    expect(events()).toHaveLength(1);
+    expect(events()[0]!.event).toBe('created');
+    expect(events()[0]!.channelId).toBe(CASHIER);
+    expect(events()[0]!.roleIds).toEqual([OWNER_ROLE, ADMIN_ROLE, STAFF_ROLE]);
+
+    const ownerReply = await playerAgent
+      .post(`/api/cashier/${reference}/messages`)
+      .set(CSRF)
+      .send({ body: 'Here is the transfer reference you asked for.' });
+    expectStatus(ownerReply, 200);
+    expect(events()).toHaveLength(2);
+    expect(events()[1]!.event).toBe('message');
+    expect(events()[1]!.channelId).toBe(CASHIER);
+    expect(events()[1]!.roleIds).toEqual([OWNER_ROLE, ADMIN_ROLE, STAFF_ROLE]);
+    expect(events()[1]!.preview).toContain('transfer reference');
+
+    const staffReply = await ownerAgent
+      .post(`/api/admin/cashier/${reference}/messages`)
+      .set(CSRF)
+      .send({ body: 'Thanks, checking the ledger now.' });
+    expectStatus(staffReply, 200);
+    expect(events()).toHaveLength(2);
+
+    const approved = await ownerAgent
+      .post(`/api/admin/cashier/${reference}/decision`)
+      .set(CSRF)
+      .send({ decision: 'approve', reason: 'Verified against the ledger.' });
+    expectStatus(approved, 200);
+    expect(events()).toHaveLength(3);
+    expect(events()[2]!.event).toBe('approved');
+    expect(events()[2]!.roleIds).toEqual([]);
   });
 
   it('writes exactly one ticket transcript on close and permanently locks the ticket', async () => {

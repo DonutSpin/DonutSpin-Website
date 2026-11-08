@@ -17,12 +17,11 @@ function supportContext(db: DB, kind: 'ticket' | 'cashier'): SupportContext | nu
   const guild = getPrimaryGuild(db);
   if (!guild) return null;
   const guildConfig = getGuildConfig(db, guild.guild_id);
+  // Owner, admin, and support/staff roles are pinged for both support desks.
+  // Cashier requests used to arrive silently even though tickets already pinged
+  // the team.
   const roleIds = Array.from(
-    new Set(
-      kind === 'ticket'
-        ? [...guildConfig.roles.owner, ...guildConfig.roles.admin, ...guildConfig.roles.staff]
-        : [],
-    ),
+    new Set([...guildConfig.roles.owner, ...guildConfig.roles.admin, ...guildConfig.roles.staff]),
   );
   return {
     guildId: guild.guild_id,
@@ -67,7 +66,7 @@ function roleLabel(role: string): string {
 }
 
 export interface TicketNotificationInput {
-  kind: 'created' | 'reply';
+  kind: 'created' | 'requester_reply';
   ticketId: string;
   messageId?: string;
   reference: string;
@@ -77,7 +76,6 @@ export interface TicketNotificationInput {
   priority: TicketPriority;
   status: string;
   preview?: string;
-  staffName?: string;
 }
 
 /** Queues a small, safe embed payload. The bot resolves channels and mentions. */
@@ -99,7 +97,6 @@ export function queueTicketNotification(db: DB, input: TicketNotificationInput):
         priority: input.priority,
         status: input.status,
         preview: input.preview ?? '',
-        staffName: input.staffName ?? null,
         url: `/tickets/${encodeURIComponent(input.reference)}`,
         channelId: ctx.channelId,
         roleIds: ctx.roleIds,
@@ -114,6 +111,7 @@ export function queueTicketNotification(db: DB, input: TicketNotificationInput):
 export interface CashierNotificationInput {
   event:
     | 'created'
+    | 'message'
     | 'approved'
     | 'rejected'
     | 'cancelled'
@@ -122,6 +120,7 @@ export interface CashierNotificationInput {
     | 'resumed';
   eventKey: string;
   requestId: string;
+  messageId?: string;
   reference: string;
   username: string;
   userId: string;
@@ -132,6 +131,7 @@ export interface CashierNotificationInput {
   onHold: boolean;
   staffName?: string | null;
   reason?: string | null;
+  preview?: string | null;
   createdAt: string;
   decidedAt?: string | null;
 }
@@ -140,12 +140,16 @@ export function queueCashierNotification(db: DB, input: CashierNotificationInput
   try {
     const ctx = supportContext(db, 'cashier');
     if (!ctx) return null;
+    // Ping the support team when a request is opened or the requester adds
+    // information. Decision and status updates stay quiet.
+    const pingRoles = input.event === 'created' || input.event === 'message';
     return safeQueue(db, {
       guildId: ctx.guildId,
       eventType: 'cashier_notification',
       dedupeKey: `cashier-notify:${input.requestId}:${input.eventKey}`,
       payload: {
         event: input.event,
+        messageId: input.messageId ?? null,
         reference: input.reference,
         username: input.username,
         userId: input.userId,
@@ -156,10 +160,12 @@ export function queueCashierNotification(db: DB, input: CashierNotificationInput
         onHold: input.onHold,
         staffName: input.staffName ?? null,
         reason: input.reason ?? null,
+        preview: input.preview ?? null,
         createdAt: input.createdAt,
         decidedAt: input.decidedAt ?? null,
         url: `/admin/cashier/${encodeURIComponent(input.reference)}`,
         channelId: ctx.channelId,
+        roleIds: pingRoles ? ctx.roleIds : [],
       },
     });
   } catch (error) {
